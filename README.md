@@ -47,3 +47,7 @@ Deixe esse terminal aberto. Em outro terminal execute `npm run dev` na raiz do p
 - A API de teste escuta somente em `127.0.0.1:8000`, não deve ser exposta na internet.
 - IndexedDB é armazenamento local do navegador e não substitui um sistema de backup. Limpar os dados do site pode apagar os arquivos.
 - A opção **Desconectar backend** fecha a conexão do processo; **Sair do Telegram** revoga a sessão.
+
+## Login com QR Code
+
+Na tela **Configurações > Conexão Telegram**, escolha **Gerar QR Code**. No celular abra **Telegram > Configurações > Dispositivos > Conectar dispositivo** e escaneie. O código temporário pode expirar; nesse caso clique em **Gerar outro QR Code**. Caso sua conta exija senha de duas etapas, informe-a na tela do Drive. A alternativa de login por telefone continua disponível. Após atualizar o projeto, reinstale as dependências Python com `pip install -r requirements.txt` e reinicie o backend. O código QR é produzido localmente, sem serviço externo.
