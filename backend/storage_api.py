@@ -4,11 +4,14 @@ The Telegram channel stores file bytes; SQLite stores the folder tree and
 message references. Protect backend/.data as it contains sensitive sessions.
 """
 import io
+import hashlib
 import os
 import sqlite3
 import time
 import uuid
 from pathlib import Path
+from PIL import Image, ImageOps, UnidentifiedImageError
+import pillow_jxl  # Register JPEG XL decoder for previews
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -16,6 +19,29 @@ from pydantic import BaseModel, Field
 
 DB_PATH = Path(__file__).resolve().parent / ".data" / "files.sqlite3"
 MAX_SIZE = 20 * 1024 * 1024  # Initial bounded MVP, not a large-file backup tool.
+Image.MAX_IMAGE_PIXELS = 35_000_000
+THUMBS = DB_PATH.parent / "previews"
+THUMBS.mkdir(parents=True, exist_ok=True)
+def is_image(row):
+    return row["mime"].startswith("image/") or row["name"].lower().endswith((".png",".jpg",".jpeg",".gif",".webp",".jxl",".bmp",".tif",".tiff"))
+def prepare_image(raw, maximum):
+    try:
+        with Image.open(io.BytesIO(raw)) as source:
+            frame = ImageOps.exif_transpose(source)
+            frame.thumbnail((maximum, maximum), Image.Resampling.LANCZOS)
+            if frame.mode not in ("RGB","L"):
+                base=Image.new("RGB", frame.size, (30,30,30))
+                if "A" in frame.getbands():
+                    base.paste(frame, mask=frame.getchannel("A"))
+                else:
+                    base.paste(frame.convert("RGB"))
+                frame=base
+            out=io.BytesIO()
+            frame.save(out, "JPEG", quality=84, optimize=True)
+            return out.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        raise HTTPException(415, "Não foi possível criar a prévia desta imagem.")
+
 
 def connection():
     db = sqlite3.connect(str(DB_PATH), timeout=20)
@@ -112,6 +138,39 @@ def build_router(authorized_account, channel_links, lock):
                 # The message may exist on Telegram even if catalog persistence fails.
                 raise HTTPException(500, "Arquivo enviado, mas catálogo local não foi gravado. Não reenvie antes de conferir o canal.") from exc
             return {"id": id_, "kind": "file", "name": name, "size": len(data)}
+
+    @router.get("/preview/{file_id}")
+    async def preview(file_id: str, full: bool = False):
+        async with lock:
+            client, account = await authorized_account()
+            cid = channel_id(channel_links, account)
+            with connection() as db:
+                row = db.execute("SELECT * FROM nodes WHERE id=? AND account=? AND kind='file'",
+                                 (file_id,account)).fetchone()
+            if not row:
+                raise HTTPException(404, "Arquivo não encontrado.")
+            if not is_image(row):
+                raise HTTPException(415, "A prévia é disponível apenas para imagens.")
+            # Cache only derivatives, never unencrypted originals; directory is local and private.
+            key = hashlib.sha256((account+":"+file_id+":"+str(row["message_id"])+":"+str(full)).encode()).hexdigest()
+            target = THUMBS / (key+".jpg")
+            if target.exists():
+                return Response(target.read_bytes(), media_type="image/jpeg", headers={"Cache-Control":"private, max-age=120"})
+            try:
+                message = await client.get_messages(cid, ids=row["message_id"])
+                if not message or not message.media:
+                    raise HTTPException(404,"Imagem não encontrada no canal.")
+                raw = await client.download_media(message, file=bytes)
+                if not raw:
+                    raise HTTPException(502,"Falha ao recuperar imagem.")
+                image_bytes = prepare_image(raw, 1800 if full else 550)
+                target.write_bytes(image_bytes)
+                os.chmod(target, 0o600)
+                return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control":"private, max-age=120"})
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(502, "Prévia indisponível: "+type(exc).__name__) from exc
 
     @router.get("/download/{file_id}")
     async def download(file_id: str):
