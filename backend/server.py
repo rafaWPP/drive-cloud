@@ -1,9 +1,12 @@
 """Integração Telegram local: somente autenticação (sem uploads nesta etapa)."""
 import asyncio
+import base64
+import io
 import os
 import re
 from pathlib import Path
 
+import qrcode
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +32,10 @@ client = None
 phone_pending = None
 phone_code_hash = None
 lock = asyncio.Lock()
+qr_login = None
+qr_task = None
+qr_state = 'idle'
+qr_error = None
 
 class PhoneIn(BaseModel):
     phone: str = Field(min_length=8, max_length=25)
@@ -80,6 +87,88 @@ async def status():
         except Exception:
             return {"connected": False, "configured": True, "error": "Não foi possível consultar o Telegram"}
 
+
+def qr_image(url):
+    img = qrcode.make(url)
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+async def wait_for_qr(login):
+    global qr_state, qr_error
+    try:
+        await login.wait()
+        qr_state = "connected"
+    except errors.SessionPasswordNeededError:
+        qr_state = "password"
+    except asyncio.TimeoutError:
+        qr_state = "expired"
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        qr_error = "Falha ao autorizar QR Code. Gere outro código."
+        qr_state = "error"
+
+async def cancel_qr():
+    global qr_login, qr_task, qr_state, qr_error
+    if qr_task and not qr_task.done():
+        qr_task.cancel()
+        try:
+            await qr_task
+        except asyncio.CancelledError:
+            pass
+    qr_task = None
+    qr_login = None
+    qr_state = "idle"
+    qr_error = None
+
+@app.post("/api/telegram/qr/start")
+async def start_qr():
+    global qr_login, qr_task, qr_state
+    async with lock:
+        c = await connected_client()
+        if await c.is_user_authorized():
+            return {"step": "connected", **response_user(await c.get_me())}
+        await cancel_qr()
+        try:
+            qr_login = await c.qr_login()
+            qr_state = "waiting"
+            qr_task = asyncio.create_task(wait_for_qr(qr_login))
+            return {"step": "qr", "image": qr_image(qr_login.url),
+                    "expires": qr_login.expires.isoformat()}
+        except errors.RPCError as e:
+            raise HTTPException(400, detail="Telegram recusou a criação do QR Code: "+type(e).__name__)
+
+@app.get("/api/telegram/qr/status")
+async def qr_status():
+    async with lock:
+        if not API_ID or not API_HASH:
+            return {"step": "not_configured"}
+        if qr_state == "password":
+            return {"step": "password"}
+        if qr_state == "waiting" and qr_login and qr_login.expires.timestamp() <= __import__('time').time():
+            return {"step": "expired"}
+        if qr_state == "error":
+            return {"step": "error", "detail": qr_error}
+        if qr_state == "connected":
+            c = await connected_client()
+            return {"step": "connected", **response_user(await c.get_me())}
+        return {"step": qr_state}
+
+@app.post("/api/telegram/qr/password")
+async def qr_password(payload: PasswordIn):
+    global qr_state
+    async with lock:
+        if qr_state != "password":
+            raise HTTPException(409, detail="O Telegram ainda não solicitou senha de duas etapas")
+        try:
+            c = await connected_client()
+            user = await c.sign_in(password=payload.password)
+            qr_state = "connected"
+            return {"step": "connected", **response_user(user)}
+        except errors.RPCError as e:
+            raise HTTPException(400, detail="Senha recusada pelo Telegram: "+type(e).__name__)
+
 @app.post("/api/telegram/send-code")
 async def send_code(payload: PhoneIn):
     global phone_pending, phone_code_hash
@@ -120,7 +209,7 @@ async def verify_password(payload: PasswordIn):
     global phone_pending, phone_code_hash
     async with lock:
         if not phone_pending:
-            raise HTTPException(409, detail="Inicie o login primeiro")
+            raise HTTPException(409, detail="Inicie o login por telefone primeiro")
         try:
             c = await connected_client()
             user = await c.sign_in(password=payload.password)
@@ -133,6 +222,7 @@ async def verify_password(payload: PasswordIn):
 async def disconnect():
     global client, phone_pending, phone_code_hash
     async with lock:
+        await cancel_qr()
         if client:
             await client.disconnect()
         client = None
@@ -143,6 +233,7 @@ async def disconnect():
 async def logout():
     global client, phone_pending, phone_code_hash
     async with lock:
+        await cancel_qr()
         try:
             if client:
                 if not client.is_connected():
@@ -163,5 +254,6 @@ async def logout():
 
 @app.on_event("shutdown")
 async def shutdown():
+    await cancel_qr()
     if client and client.is_connected():
         await client.disconnect()
