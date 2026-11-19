@@ -26,6 +26,9 @@ def connection():
         mime TEXT NOT NULL DEFAULT 'application/octet-stream',
         message_id INTEGER, created INTEGER NOT NULL
     )""")
+    cols = {r[1] for r in db.execute("PRAGMA table_info(nodes)")}
+    if "trashed" not in cols:
+        db.execute("ALTER TABLE nodes ADD COLUMN trashed INTEGER NOT NULL DEFAULT 0")
     db.execute("CREATE INDEX IF NOT EXISTS nodes_account_parent ON nodes(account,parent)")
     return db
 
@@ -134,5 +137,40 @@ def build_router(authorized_account, channel_links, lock):
             # Frontend uses Blob download attribute; no untrusted filenames in headers.
             return Response(content=raw, media_type="application/octet-stream",
                             headers={"Cache-Control":"no-store"})
+
+
+    class ChangeInput(BaseModel):
+        name: str | None = Field(default=None, max_length=180)
+        parent: str | None = None
+        trashed: bool | None = None
+
+    @router.patch("/items/{item_id}")
+    async def change_item(item_id: str, body: ChangeInput):
+        async with lock:
+            _, account = await authorized_account()
+            channel_id(channel_links, account)
+            with connection() as db:
+                row = db.execute("SELECT * FROM nodes WHERE id=? AND account=?", (item_id, account)).fetchone()
+                if not row:
+                    raise HTTPException(404, "Item não encontrado.")
+                if body.name is not None:
+                    name = body.name.strip()
+                    if not name or "/" in name or "\\\\" in name:
+                        raise HTTPException(422, "Nome inválido.")
+                    db.execute("UPDATE nodes SET name=? WHERE id=? AND account=?", (name, item_id, account))
+                if "parent" in body.model_fields_set:
+                    parent_valid(db, account, body.parent)
+                    if body.parent == item_id:
+                        raise HTTPException(409, "Uma pasta não pode ser movida para si mesma.")
+                    cursor = body.parent
+                    while cursor:
+                        if cursor == item_id:
+                            raise HTTPException(409, "Não é possível mover uma pasta para dentro dela mesma.")
+                        ancestor = db.execute("SELECT parent FROM nodes WHERE id=? AND account=?", (cursor,account)).fetchone()
+                        cursor = ancestor["parent"] if ancestor else None
+                    db.execute("UPDATE nodes SET parent=? WHERE id=? AND account=?", (body.parent,item_id,account))
+                if body.trashed is not None:
+                    db.execute("UPDATE nodes SET trashed=? WHERE id=? AND account=?", (int(body.trashed),item_id,account))
+            return {"ok": True}
 
     return router
