@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.data/
+*.session
+*.session-journal
+__pycache__/
+*.pyc
+.venv/
