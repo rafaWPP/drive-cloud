@@ -59,3 +59,30 @@ Ao concluir a autorização no Telegram, a tela **Configurações > Conexão Tel
 A criação só acontece depois da autenticação e quando a tela de conexão é aberta. O programa **ainda não envia arquivos ao canal**: uploads continuam salvos no IndexedDB do navegador. Não apague `backend/.data` — é onde ficam os vínculos e a sessão Telegram. Esse diretório está ignorado no Git. Se fizer backup dessa pasta, trate-o como material confidencial.
 
 Para atualizar o projeto, execute `git pull origin main`, reinicie o backend e recarregue a página. A criação de canal é uma operação real na sua conta Telegram e depende dos limites e permissões do Telegram.
+
+## 3. Upload e download reais (Telegram Cloud V1)
+
+Depois de conectar a conta e criar o canal privado, abra **Meu Drive > Nuvem Telegram**. Essa área é separada de **Arquivos locais**, que continua usando IndexedDB do navegador.
+
+- **Enviar ao Telegram** faz upload real para o canal privado associado à conta.
+- **Baixar** busca o conteúdo pelo identificador da mensagem no Telegram.
+- **Nova pasta** registra pastas no SQLite local; não cria um canal para cada pasta.
+- Os metadados ficam em `backend/.data/files.sqlite3`, o vínculo do canal em `backend/.data/storage_channels.json` e a sessão em `backend/.data/telegram.session`. Nenhum deles vai para o GitHub.
+- Limite piloto: **20 MB por arquivo**. Não há envio em partes, fila resiliente, criptografia de ponta a ponta própria ou restauração entre máquinas nesta etapa.
+- **Atenção**: arquivos que estavam em **Arquivos locais** não são migrados automaticamente para o Telegram. O canal do Telegram guarda o conteúdo, mas sem o banco SQLite local a listagem e a estrutura de pastas desta versão não são reconstruídas automaticamente.
+- Faça backup seguro do diretório `backend/.data` (ele contém credenciais sensíveis!) e mantenha outra cópia dos arquivos importantes.
+
+Atualização no Linux (nos dois terminais, com o backend parado enquanto instala dependências):
+
+```bash
+cd ~/Área\ de\ trabalho/drive-cloud
+git pull origin main
+cd backend
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn server:app --host 127.0.0.1 --port 8000
+```
+
+No outro terminal, execute `npm run dev` na pasta raiz. Acesse `http://localhost:5173`.
+
+O projeto é experimental; **não use o Telegram como única cópia de backup**.
