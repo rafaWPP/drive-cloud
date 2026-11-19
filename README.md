@@ -86,3 +86,18 @@ uvicorn server:app --host 127.0.0.1 --port 8000
 No outro terminal, execute `npm run dev` na pasta raiz. Acesse `http://localhost:5173`.
 
 O projeto é experimental; **não use o Telegram como única cópia de backup**.
+
+## Interface integrada — tema grafite
+
+A navegação **Meu Drive > Todos os arquivos** agora abre o catálogo Telegram. O antigo IndexedDB segue disponível em **Meu Drive > Arquivos antigos (navegador)**: a mudança não apaga arquivos locais e **não migra dados automaticamente**.
+
+- Arraste arquivos para a área principal ou use **Upload**. O painel apresenta fila, sucesso, falha e progresso de transferência **navegador → backend**. O envio do backend para o Telegram ocorre depois e só é considerado concluído quando há confirmação. A barra percentual **não** mede o envio interno ao Telegram.
+- **Cancelar todos** interrompe a solicitação em andamento do navegador e a fila pendente. **Se o Telegram já recebeu os dados, o envio remoto pode continuar**; verifique o canal e a lista antes de reenviar.
+- Modo lista e grade com seleção múltipla, download por seleção, renomear, mover e lixeira reversível. O diálogo de mover usa o identificador da pasta de destino nesta versão de teste.
+- Os dados do catálogo são mantidos em SQLite; ainda não existe recuperação automática do catálogo pelo histórico do Telegram.
+- **Lixeira** é lógica: não apaga as mensagens remotas do Telegram.
+- Compartilhamento público, visualização de imagens, enfileiramento durável, criptografia própria e sincronização entre dispositivos continuam planejados.
+
+Reinicie **backend** após o `git pull`, pois novas rotas e a migração do banco SQLite são carregadas na inicialização. No frontend o Vite geralmente recarrega automaticamente.
+
+**Segurança:** esta versão é experimental e deve rodar apenas no PC. Não exponha a porta 8000 publicamente e não utilize arquivos críticos como única cópia.
