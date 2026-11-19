@@ -358,3 +358,7 @@ async def shutdown():
     await cancel_qr()
     if client and client.is_connected():
         await client.disconnect()
+
+# Rotas locais de arquivos; usam a mesma sessão, vínculo de canal e trava de conta.
+from storage_api import build_router
+app.include_router(build_router(authorized_account, channel_links, lock))
