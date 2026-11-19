@@ -65,7 +65,7 @@ async def connected_client():
     global client
     configured()
     if client is None:
-        client = TelegramClient(str(DATA / "telegram"), API_ID, API_HASH, receive_updates=False)
+        client = TelegramClient(str(DATA / "telegram"), API_ID, API_HASH, receive_updates=True)
     if not client.is_connected():
         await client.connect()
     return client
