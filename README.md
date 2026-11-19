@@ -101,3 +101,13 @@ A navegação **Meu Drive > Todos os arquivos** agora abre o catálogo Telegram.
 Reinicie **backend** após o `git pull`, pois novas rotas e a migração do banco SQLite são carregadas na inicialização. No frontend o Vite geralmente recarrega automaticamente.
 
 **Segurança:** esta versão é experimental e deve rodar apenas no PC. Não exponha a porta 8000 publicamente e não utilize arquivos críticos como única cópia.
+
+## Atualização visual: prévia de imagens e cores padronizadas
+
+O visual agora segue uma paleta dark grafite neutra, com botões consistentes: **azul** para ação primária, **grafite** para secundárias, **azul-escuro** para seleção, **vermelho** reservado para ações destrutivas. A navegação do Meu Drive exibe apenas a área principal do Telegram; o IndexedDB antigo não foi apagado, apenas retirado do menu.
+
+A grade e a lista usam miniaturas de imagens recuperadas do canal. Ao clicar numa imagem, o Drive abre uma prévia ampliada com botão de download e **X** para fechar. Arquivos JPEG XL (.jxl) são convertidos para JPEG somente para a visualização; o arquivo original armazenado no Telegram permanece intacto. Algumas imagens podem não gerar prévia se estiverem corrompidas, excederem os limites de processamento ou não forem suportadas pelo decodificador.
+
+O painel de uploads oferece botão de fechar e uma ação para reabri-lo. O progresso porcentual continua representando o envio do navegador ao backend local, **não** o estágio interno de envio ao Telegram.
+
+**Atualização obrigatória do backend:** após `git pull`, execute `pip install -r requirements.txt` dentro do ambiente virtual para instalar Pillow e o plugin JPEG XL. Reinicie o Uvicorn. Esta versão não foi testada diretamente na máquina do usuário.
