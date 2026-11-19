@@ -83,3 +83,65 @@ header .new:hover{background:#fff}
 .upload-meter span{display:block;height:100%;background:#3184fc;border-radius:6px;transition:width .15s}
 .upload-info{font-size:10px;color:#96969a;padding:0 16px 13px;line-height:1.5}
 @media(max-width:700px){.cloud-table .inline-actions{opacity:1}.cloud-tile .tile-menu,.cloud-tile .tile-select{opacity:1}.upload-tray{right:15px;bottom:12px}}
+
+/* Drive Cloud visual system v2 — neutral dark, consistent role colors.
+   Primary: blue  #3478e6  | Secondary: #353538 | Danger: #d95454
+   Focus ring: #79aeff | Success: #3dbb85 */
+:root{--dc-bg:#1b1b1d;--dc-surface:#242426;--dc-raised:#303033;--dc-border:#414145;--dc-text:#f0f0f1;--dc-muted:#a7a7ad;--dc-primary:#3478e6;--dc-primary-hover:#4988f4;--dc-danger:#d95454;--dc-success:#3dbb85}
+button{transition:background .13s,color .13s,border-color .13s,opacity .13s}
+button:focus-visible,input:focus-visible{outline:2px solid #79aeff;outline-offset:2px}
+button:disabled{opacity:.48}
+header .new{background:#f5f5f6;border:1px solid #f5f5f6;color:#19191b}
+header .new:hover{background:#dedee1}
+.cloud-controls>button,.bulkbar button,.cloud-list-action,.upload-head button,.upload-tabs button{border:1px solid var(--dc-border);background:#333336;color:var(--dc-text);border-radius:8px;font-weight:600}
+.cloud-controls>button:hover:not(:disabled),.bulkbar button:hover:not(:disabled),.upload-head button:hover:not(:disabled){background:#424247}
+.cloud-controls>button.cloud-primary,.tg-form>button:not(.tg-back){background:var(--dc-primary);border-color:var(--dc-primary);color:#fff}
+.cloud-controls>button.cloud-primary:hover:not(:disabled),.tg-form>button:not(.tg-back):hover{background:var(--dc-primary-hover)}
+.cloud-table .table-row{grid-template-columns:minmax(280px,1fr) 140px 110px 135px;min-width:770px}
+.cloud-table .table-row .filename{min-width:0}
+.cloud-table .inline-actions{opacity:1;justify-content:flex-end}
+.cloud-table .inline-actions button:hover{background:#46464b}
+.cloud-table .table-row.selected,.cloud-tile.selected{background:#173968;border-color:#2972d6}
+.cloud-table .table-row.selected:hover{background:#214679}
+.cloud-page .grid{grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.cloud-tile{padding:0 0 15px;border:0;background:transparent;min-height:0;display:flex;align-items:stretch;overflow:visible;border-radius:10px;cursor:default}
+.cloud-tile:hover{background:#29292b}
+.cloud-tile .tile-icon{height:185px;margin:0 0 8px;width:100%;border-radius:9px;background:#131315;display:flex;justify-content:center;align-items:center;overflow:hidden;cursor:zoom-in}
+.cloud-tile .tile-name,.cloud-tile>small{margin-left:10px;margin-right:10px;text-align:left}
+.cloud-tile .tile-name{max-width:calc(100% - 20px);font-size:12px;margin-bottom:5px}
+.cloud-tile .tile-menu{right:10px;top:12px;z-index:20}
+.cloud-tile .tile-select{left:12px;top:13px;z-index:2}
+.cloud-tile .file-menu{z-index:30}
+.cloud-thumb-photo,.cloud-thumb-fallback,.cloud-thumb-folder{width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.cloud-thumb-photo img{width:100%;height:100%;object-fit:contain;display:block}
+.cloud-thumb-fallback{color:#b4b4bc}
+.cloud-thumb-folder{background:transparent}
+.cloud-row-thumb{width:32px;height:32px;flex-shrink:0;border-radius:5px;display:flex;overflow:hidden;align-items:center;justify-content:center;background:#29292d}
+.cloud-row-thumb .cloud-thumb-photo img{object-fit:cover}
+.cloud-row-thumb .cloud-thumb-fallback svg{width:19px;height:19px}
+.thumb-loading{width:24px;height:24px;border-radius:50%;border:2px solid #46464c;border-top-color:#4c91ef;animation:dcspin .8s linear infinite}
+@keyframes dcspin{to{transform:rotate(360deg)}}
+.upload-tray{background:#252527;border:1px solid #454548}
+.upload-head{background:#29292b}
+.upload-head button:last-child{width:32px;height:32px;display:grid;place-items:center}
+.upload-meter span{background:var(--dc-primary)}
+.upload-tray .upload-tabs button.active{background:#f0f0f1;color:#19191b}
+.uploads-reopen{position:fixed;right:25px;bottom:23px;z-index:85;border:1px solid #59595c;background:#303033;color:#f5f5f5;padding:11px 17px;border-radius:10px;box-shadow:0 8px 30px #0008;display:flex;align-items:center;gap:9px;font-size:12px}
+.uploads-reopen:hover{background:#404044}
+.preview-backdrop{position:fixed;inset:0;background:#070709eb;z-index:200;display:flex;align-items:center;justify-content:center;padding:24px}
+.preview-modal{width:min(1140px,100%);height:min(88vh,850px);background:#202023;border:1px solid #414145;border-radius:14px;box-shadow:0 22px 90px #000b;display:flex;flex-direction:column;overflow:hidden}
+.preview-topbar{height:68px;flex-shrink:0;padding:12px 19px;background:#252528;border-bottom:1px solid #3b3b40;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.preview-topbar>div:first-child{display:flex;align-items:center;gap:12px;min-width:0}
+.preview-topbar strong{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:500px;font-size:13px}
+.preview-topbar span{color:#99999f;font-size:11px;white-space:nowrap}
+.preview-top-actions{display:flex;align-items:center;gap:10px}
+.preview-top-actions button,.preview-failed button{display:flex;align-items:center;gap:8px;background:#343438;border:1px solid #4a4a4d;color:#f5f5f5;border-radius:8px;padding:9px 12px;font-size:12px}
+.preview-top-actions button:hover{background:#454549}
+.preview-top-actions button:last-child{padding:8px}
+.preview-stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:16px;background:#141416}
+.preview-stage>img{width:100%;height:100%;object-fit:contain}
+.preview-foot{padding:12px 17px;background:#252528;font-size:10px;color:#9e9ea3;text-align:center;border-top:1px solid #3c3c40}
+.preview-failed{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#c1c1c5;text-align:center}
+.preview-failed button{background:var(--dc-primary);border-color:var(--dc-primary)}
+@media(max-width:850px){.cloud-page .grid{grid-template-columns:repeat(auto-fill,minmax(155px,1fr))}.cloud-tile .tile-icon{height:145px}.preview-topbar strong{max-width:190px}}
+@media(max-width:560px){.preview-backdrop{padding:7px}.preview-modal{height:94vh}.preview-topbar span{display:none}.preview-topbar strong{max-width:135px}.cloud-page .grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cloud-tile .tile-icon{height:125px}}
