@@ -145,3 +145,10 @@ header .new:hover{background:#dedee1}
 .preview-failed button{background:var(--dc-primary);border-color:var(--dc-primary)}
 @media(max-width:850px){.cloud-page .grid{grid-template-columns:repeat(auto-fill,minmax(155px,1fr))}.cloud-tile .tile-icon{height:145px}.preview-topbar strong{max-width:190px}}
 @media(max-width:560px){.preview-backdrop{padding:7px}.preview-modal{height:94vh}.preview-topbar span{display:none}.preview-topbar strong{max-width:135px}.cloud-page .grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cloud-tile .tile-icon{height:125px}}
+
+/* Destructive actions use one consistent semantic color. */
+.bulkbar button.danger-action{border-color:#694143;color:#ffb7b7;background:#392629}
+.bulkbar button.danger-action:hover{background:#513034}
+.cloud-table .inline-actions button.danger-action:hover{color:#ff9c9c;background:#512d30}
+.cloud-tile .file-menu button.danger-action{color:#ffabab}
+.cloud-tile .file-menu button.danger-action:hover{background:#503035}
