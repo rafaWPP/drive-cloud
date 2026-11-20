@@ -304,3 +304,13 @@ As solicitações de vídeo ainda dependem da conexão local com Telegram. Teste
 - **Cache e limites:** o cache efêmero em RAM da API de compartilhamento pode reduzir solicitações repetidas ao Telegram. A primeira abertura continua dependendo da conexão e da sessão Telegram; a implementação ainda não realiza streaming direto de arquivos enormes.
 
 Para receber a mudança: `git pull origin main`; reinicie o backend Python porque foi adicionada uma rota; recarregue o frontend com `Ctrl+Shift+R`. Valide localmente com um arquivo MP4 ou WebM pequeno e um link de compartilhamento novo.
+
+## Compartilhamento — links e carregamento de mídia (V17)
+
+O Drive Cloud agora emite **um único link de compartilhamento** (`?share=` ou `?embed=`) e a página gera internamente um **ticket temporário de reprodução**, válido por até duas horas ou até expirar o compartilhamento. As URLs brutas da API `/api/public/share/.../media` exigem esse ticket; navegar diretamente para a API em uma aba retorna erro. Se a página permanecer aberta por mais de duas horas, atualize-a para renovar a autorização. **Não é DRM**: quem tem permissão para visualizar/baixar pode obter os bytes da mídia; revogar o link/aguardar a expiração é o mecanismo de controle do acesso.
+
+A navegação de pastas compartilhadas usa uma consulta recursiva limitada à árvore autorizada, e cada prévia valida somente a ancestralidade do arquivo, evitando percorrer todo o catálogo para cada imagem. Miniaturas usam versões pequenas em JPEG, preferindo a miniatura do Telegram ou uma derivada já armazenada localmente. Imagens completas só são baixadas ao abrir.
+
+**Vídeo:** a API agora usa `Telethon.iter_download(offset=...)` e respostas HTTP `206 Partial Content` em blocos de até 2 MB, sem obrigar o backend a baixar os 50 MB antes do primeiro quadro. A primeira reprodução ainda depende da conexão com o Telegram, do codec e do posicionamento dos metadados do vídeo. Não há transcodificação automática; MP4/WebM precisam conter codecs compatíveis com o navegador. O limite de 50 MB para mídia compartilhada no teste local permanece.
+
+Para testar: `git pull origin main`, reinicie o backend Python (essencial para novas rotas/credenciais de reprodução), atualize a página com Ctrl+Shift+R e abra novamente um link compartilhado de teste. Links antigos do Drive continuam válidos até expirar, mas URLs antigas que apontam **diretamente** à API de mídia deixam de funcionar sem o ticket da página. Nunca exponha o backend de testes do Telegram à internet.
