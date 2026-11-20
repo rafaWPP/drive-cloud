@@ -1450,3 +1450,7 @@ main>header{display:flex;align-items:center;width:100%}
 main>header .avatar{margin-left:auto;position:relative;flex:0 0 32px;overflow:hidden}
 main>header .search{flex:1 1 320px;max-width:465px}
 @media(max-width:700px){main>header .avatar{display:grid}}
+
+.dc-remote-restore-preview{display:flex;flex-direction:column;align-items:flex-start;gap:10px;border-radius:10px;padding:14px;background:#272b32;color:#e9eef4}
+.dc-remote-restore-preview p{margin:0;color:#c5d3e6;font-size:12px;line-height:1.6}
+.dc-remote-restore-preview small{color:#abb3bf;line-height:1.5}
