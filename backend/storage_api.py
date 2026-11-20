@@ -237,4 +237,56 @@ def build_router(authorized_account, channel_links, lock):
                     db.execute("UPDATE nodes SET starred=? WHERE id=? AND account=?", (int(body.starred),item_id,account))
             return {"ok": True}
 
+
+    @router.get("/catalog/export")
+    async def export_catalog():
+        """Portable metadata snapshot; does not contain Telegram credentials or file bytes."""
+        import json
+        from datetime import datetime, timezone
+        async with lock:
+            _, account = await authorized_account()
+            cid = channel_id(channel_links, account)
+            with connection() as db:
+                rows = db.execute("SELECT id,kind,parent,name,size,mime,message_id,created,trashed,starred FROM nodes WHERE account=? ORDER BY created,id",(account,)).fetchall()
+            payload = {"format":"drive-cloud-catalog","version":1,
+                       "exported_at":datetime.now(timezone.utc).isoformat(),
+                       "telegram_account":account,"channel_id":str(cid),
+                       "items":[dict(r) for r in rows]}
+            result = json.dumps(payload,ensure_ascii=False,indent=2).encode("utf-8")
+            return Response(content=result,media_type="application/json",
+                            headers={"Content-Disposition":'attachment; filename="drive-cloud-catalog.json"',
+                                     "Cache-Control":"no-store"})
+
+    @router.delete("/items/{item_id}/permanent")
+    async def delete_permanently(item_id: str):
+        """Delete Telegram messages AND SQLite records only for items in trash."""
+        async with lock:
+            client, account = await authorized_account()
+            cid = channel_id(channel_links, account)
+            with connection() as db:
+                root=db.execute("SELECT id,kind,trashed FROM nodes WHERE id=? AND account=?",(item_id,account)).fetchone()
+                if not root:
+                    raise HTTPException(404,"Item não encontrado.")
+                if not root["trashed"]:
+                    raise HTTPException(409,"Mova o item para a lixeira antes de excluir definitivamente.")
+                rows=db.execute("""WITH RECURSIVE descendants(id) AS (
+                    SELECT id FROM nodes WHERE id=? AND account=?
+                    UNION ALL
+                    SELECT n.id FROM nodes n JOIN descendants d ON n.parent=d.id WHERE n.account=?
+                )
+                SELECT id,kind,message_id FROM nodes WHERE account=? AND id IN (SELECT id FROM descendants)""",
+                (item_id,account,account,account)).fetchall()
+                ids=[row["id"] for row in rows]
+                message_ids=[int(row["message_id"]) for row in rows if row["kind"]=="file" and row["message_id"] is not None]
+                try:
+                    if message_ids:
+                        await client.delete_messages(cid,message_ids,revoke=True)
+                except Exception as exc:
+                    raise HTTPException(502,"Falha ao excluir no Telegram; catálogo mantido: "+type(exc).__name__) from exc
+                try:
+                    db.executemany("DELETE FROM nodes WHERE id=? AND account=?",[(id_,account) for id_ in ids])
+                except sqlite3.Error as exc:
+                    raise HTTPException(500,"Mensagens excluídas no Telegram, mas o catálogo local não foi atualizado. Não repita a exclusão sem verificar.") from exc
+            return {"deleted":len(ids),"telegram_messages":len(message_ids)}
+
     return router
