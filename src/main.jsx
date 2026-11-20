@@ -39,12 +39,51 @@ return <section className="telegram-panel"><div className="telegram-header"><Clo
 }
 
 const isCloudImage=item=>item.kind==='file'&&(item.mime?.startsWith('image/')||/\.(jxl|jpe?g|png|gif|webp|bmp|tiff?)$/i.test(item.name));
-function CloudThumbnail({item,compact=false}){const [failed,setFailed]=useState(false),[loaded,setLoaded]=useState(false);
-useEffect(()=>{setFailed(false);setLoaded(false)},[item.id,item.message_id,item.name]);
-useEffect(()=>{if(item.kind==='folder'||!isCloudImage(item)||failed||loaded)return;const timer=setTimeout(()=>setFailed(true),15000);return()=>clearTimeout(timer)},[item.id,item.message_id,item.name,item.kind,failed,loaded]);
-if(item.kind==='folder')return <div className="cloud-thumb-folder"><Folder size={compact?25:78} fill="#96bcf1" color="#b1d0ff" strokeWidth={1.2}/></div>;
-if(!isCloudImage(item)||failed)return <div className="cloud-thumb-fallback"><IconFile item={item} large={!compact}/></div>;
-return <div className="cloud-thumb-photo">{!loaded&&<span className="thumb-dots" aria-label="Carregando prévia"><i/><i/><i/></span>}<img loading={compact?'eager':'lazy'} style={{display:loaded?'block':'none'}} src={'http://127.0.0.1:8000/api/cloud/preview/'+encodeURIComponent(item.id)} alt={item.name} onLoad={()=>setLoaded(true)} onError={()=>setFailed(true)}/></div>}
+// Reuse successful previews across navigation, list/grade switches and remounts.
+const cloudPreviewCache=new Map();
+function cachedCloudPreview(item){
+ const key=item.id+':'+(item.message_id??'');
+ const existing=cloudPreviewCache.get(key);
+ if(existing){if(existing.url)return Promise.resolve(existing.url);if(existing.promise)return existing.promise;if(existing.retryAt>Date.now())return Promise.reject(Error('A prévia está temporariamente indisponível'))}
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),18000);
+ const promise=fetch('http://127.0.0.1:8000/api/cloud/preview/'+encodeURIComponent(item.id),{signal:controller.signal,cache:'force-cache'}).then(response=>{
+   if(!response.ok)throw Error('Prévia indisponível');
+   return response.blob();
+ }).then(blob=>{
+   const url=URL.createObjectURL(blob);
+   cloudPreviewCache.delete(key);cloudPreviewCache.set(key,{url});
+   // Bound thumbnail memory usage and revoke older blob URLs.
+   while(cloudPreviewCache.size>100){
+     const firstKey=cloudPreviewCache.keys().next().value;
+     const value=cloudPreviewCache.get(firstKey);
+     if(value?.url)URL.revokeObjectURL(value.url);
+     cloudPreviewCache.delete(firstKey);
+   }
+   return url;
+ }).catch(error=>{
+   cloudPreviewCache.set(key,{retryAt:Date.now()+30000});
+   throw error;
+ }).finally(()=>clearTimeout(timeout));
+ cloudPreviewCache.set(key,{promise});
+ return promise;
+}
+function CloudThumbnail({item,compact=false}){
+ const [result,setResult]=useState({url:cloudPreviewCache.get(item.id+':'+(item.message_id??''))?.url||null,failed:false});
+ useEffect(()=>{
+   if(item.kind==='folder'||!isCloudImage(item))return;
+   let live=true;
+   const key=item.id+':'+(item.message_id??'');
+   const cached=cloudPreviewCache.get(key)?.url;
+   if(cached){setResult({url:cached,failed:false});return}
+   setResult({url:null,failed:false});
+   cachedCloudPreview(item).then(url=>{if(live)setResult({url,failed:false})}).catch(()=>{if(live)setResult({url:null,failed:true})});
+   return()=>{live=false};
+ },[item.id,item.message_id,item.kind,item.name]);
+ if(item.kind==='folder')return <div className="cloud-thumb-folder"><Folder size={compact?25:78} fill="#96bcf1" color="#b1d0ff" strokeWidth={1.2}/></div>;
+ if(!isCloudImage(item)||result.failed)return <div className="cloud-thumb-fallback"><IconFile item={item} large={!compact}/></div>;
+ return <div className="cloud-thumb-photo">{!result.url&&<span className="thumb-dots" aria-label="Carregando prévia"><i/><i/><i/></span>}{result.url&&<img src={result.url} alt={item.name}/>}</div>
+}
 function DriveToast({toast,onDismiss}){const [closing,setClosing]=useState(false);
 useEffect(()=>setClosing(false),[toast?.id]);
 useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setClosing(true),toast.duration||4200);return()=>clearTimeout(t)},[toast?.id]);
@@ -142,7 +181,7 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
 </section>
 }
 function App(){
-const [toast,setToast]=useState(null);const showToast=t=>setToast({...t,id:crypto.randomUUID()});const [telegramConnected,setTelegramConnected]=useState(false);const [driveUsage,setDriveUsage]=useState(null);const[items,setItems]=useState([]),[section,setSection]=useState('home'),[area,setArea]=useState('home'),[folder,setFolder]=useState(null),[view,setView]=useState('grid'),[query,setQuery]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[mobile,setMobile]=useState(false);
+const driveSections=['cloudFiles','home','recent','starred'];const [toast,setToast]=useState(null);const showToast=t=>setToast({...t,id:crypto.randomUUID()});const [telegramConnected,setTelegramConnected]=useState(false);const [driveUsage,setDriveUsage]=useState(null);const[items,setItems]=useState([]),[section,setSection]=useState('home'),[area,setArea]=useState('home'),[folder,setFolder]=useState(null),[view,setView]=useState('grid'),[query,setQuery]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[mobile,setMobile]=useState(false);
 const input=useRef(null);
 const refresh=async()=>setItems(await all());
 useEffect(()=>{refresh().catch(e=>setNotice('Falha ao abrir o armazenamento: '+e.message));
@@ -178,7 +217,7 @@ return <div className="shell"><aside className="rail"><div className="logo"><Clo
 <main><header><button className="mobile-toggle" onClick={()=>setMobile(!mobile)}>☰</button><button className="new" onClick={()=>nav('cloudFiles')}><Plus size={18}/> Novo</button><div className="search"><Search size={18}/><input placeholder="Buscar arquivos e pastas..." value={query} onChange={e=>setQuery(e.target.value)}/></div><span className="status"><i/> Modo local</span><span className="avatar">DC</span></header>
 <div className="content"><div className="heading"><div><h1>{trail.length&&section==='files'?trail.at(-1).name:label}</h1>{!['cloudFiles','home','recent','starred'].includes(section)&&<p>{area==='backups'?'Seus backups em um só lugar.':area==='sync'?'Gerencie a sincronização entre dispositivos.':'Personalize seu Drive Cloud.'}</p>}</div>{!['cloudFiles','home','recent','starred'].includes(section)&&<div className="actions"><button onClick={()=>input.current?.click()} disabled={busy}><Upload size={17}/> {busy?'Salvando...':'Upload'}</button><button onClick={folderCreate}><FolderPlus size={17}/> Nova pasta</button></div>}</div>
 {!['cloudFiles','home','recent','starred'].includes(section)&&<div className="crumb"><button onClick={()=>nav('cloudFiles')}><Home size={15}/> Meu Drive</button>{trail.map(e=><React.Fragment key={e.id}><ChevronRight size={15}/><button onClick={()=>nav('files',e.id)}>{e.name}</button></React.Fragment>)}</div>}
-{section==='telegram'?<TelegramSettings onToast={showToast}/>:['cloudFiles','home','recent','starred'].includes(section)?<CloudFiles key={section} mode={section==='cloudFiles'?'files':section} globalSearch={query} onToast={showToast}/>:<><div className="toolbar"><div className="chips"><button onClick={()=>nav('recent')}><Clock3 size={15}/> Recentes</button><button onClick={()=>nav('starred')}><Star size={15}/> Favoritos</button></div><div className="toggle"><button aria-label="Modo grade" className={view==='grid'?'chosen':''} onClick={()=>setView('grid')}><Grid2X2 size={18}/></button><button aria-label="Modo lista" className={view==='list'?'chosen':''} onClick={()=>setView('list')}><List size={18}/></button></div></div>
+<div style={{display:driveSections.includes(section)?'block':'none'}}><CloudFiles mode={section==='cloudFiles'?'files':driveSections.includes(section)?section:'files'} globalSearch={query} onToast={showToast}/></div>{section==='telegram'?<TelegramSettings onToast={showToast}/>:!driveSections.includes(section)?<><div className="toolbar"><div className="chips"><button onClick={()=>nav('recent')}><Clock3 size={15}/> Recentes</button><button onClick={()=>nav('starred')}><Star size={15}/> Favoritos</button></div><div className="toggle"><button aria-label="Modo grade" className={view==='grid'?'chosen':''} onClick={()=>setView('grid')}><Grid2X2 size={18}/></button><button aria-label="Modo lista" className={view==='list'?'chosen':''} onClick={()=>setView('list')}><List size={18}/></button></div></div>
 {visible.length===0?<div className="empty"><Folder size={50}/><h3>Nenhum arquivo por aqui</h3><p>{['shared','sync','backupHistory','backupSchedule','devices','syncActivity','settings','telegram','security','preferences'].includes(section)?'Este recurso será adicionado em uma próxima etapa.':'Envie arquivos ou crie uma pasta para começar.'}</p></div>:view==='grid'?<div className="grid">{visible.map(i=><article key={i.id} className="tile"><button className="more" aria-label={'Opções de '+i.name} onClick={()=>{const action=window.prompt('Ação: '+(i.trashed?'restaurar, excluir':'abrir, favorito, lixeira'));if(!action)return;if(action==='abrir')open(i);else act(i,({favorito:'star',lixeira:'trash',restaurar:'restore',excluir:'delete'})[action]||action)}}><MoreHorizontal size={20}/></button><div className="tile-icon" onDoubleClick={()=>open(i)}><IconFile item={i} large/></div><button className="tile-name" onClick={()=>open(i)} title={i.name}>{i.name}</button><small>{i.kind==='folder'?'Pasta':size(i.size)} {i.starred?'★':''}</small></article>)}</div>:<div className="table-scroll"><div className="table"><div className="table-head"><span>Nome</span><span>Modificado</span><span>Tamanho</span><span>Ações</span></div>{visible.map(i=><div className="table-row" key={i.id}><button onClick={()=>open(i)}><IconFile item={i}/><span>{i.name} {i.starred?'★':''}</span></button><span>{date(i.time)}</span><span>{i.kind==='folder'?'—':size(i.size)}</span><div className="row-actions">{i.trashed?<><button title="Restaurar" onClick={()=>act(i,'restore')}>↶</button><button title="Excluir definitivamente" onClick={()=>act(i,'delete')}><Trash2 size={16}/></button></>:<><button title="Favorito" onClick={()=>act(i,'star')}><Star size={16} fill={i.starred?'#bca3f2':'none'}/></button><button title="Mover para lixeira" onClick={()=>act(i,'trash')}><Trash2 size={16}/></button></>}</div></div>)}</div></div>}
 </>}<footer>{['cloudFiles','home','recent','starred'].includes(section)?'Arquivos no Telegram • Catálogo SQLite local • Versão experimental':'Área experimental • Mantenha outra cópia dos arquivos importantes'} <span>Drive Cloud • V1</span></footer></div></main><input ref={input} type="file" multiple hidden onChange={e=>upload([...e.target.files])}/><DriveToast toast={toast} onDismiss={()=>setToast(null)}/></div>}
 createRoot(document.getElementById('root')).render(<App/>);
