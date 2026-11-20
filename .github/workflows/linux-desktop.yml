@@ -1,6 +1,9 @@
 name: Linux Desktop (Tauri)
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Validate Drive Cloud"]
+    types: [completed]
   push:
     branches:
       - feature/tauri-desktop-linux
@@ -14,11 +17,14 @@ on:
       - '.github/workflows/linux-desktop.yml'
 jobs:
   package-linux:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'feature/tauri-desktop-linux')
     runs-on: ubuntu-22.04
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
