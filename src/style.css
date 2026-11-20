@@ -1550,3 +1550,13 @@ main>header .search{flex:1 1 320px;max-width:465px}
 .dc-onboard-offline button{align-self:flex-start;background:#347ade;border:0;color:#fff;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer}
 @media(max-width:850px){.dc-onboard-frame{grid-template-columns:1fr;min-height:auto;max-width:620px}.dc-onboard-intro{padding:24px 27px;gap:22px;border-right:0;border-bottom:1px solid #344052}.dc-onboard-main h1{font-size:27px}.dc-onboard-main>p{margin:12px 0 19px}.dc-onboard-timeline{flex-direction:row;gap:10px;flex-wrap:wrap}.dc-onboard-timeline-item{gap:7px}.dc-onboard-timeline-item small{display:none}.dc-onboard-trust{display:none}.dc-onboard-action{padding:25px 27px 32px;justify-content:flex-start}.dc-onboard-screen{align-items:flex-start;padding:17px}}
 @media(max-width:480px){.dc-onboard-intro{padding:21px 19px}.dc-onboard-action{padding:23px 19px 28px}.dc-onboard-main h1{font-size:25px}.dc-onboard-timeline-item strong{font-size:11px}.dc-onboard-timeline-item>span{width:26px;height:26px;flex-basis:26px}.dc-onboard-title h2{font-size:22px}.dc-ob-telegram-panel .tg-api-alert{padding:11px}.dc-onboard-screen{padding:0}.dc-onboard-frame{border:0;border-radius:0;min-height:100dvh}}
+
+
+/* Channel setup failures: visible diagnosis, distinct from an expired login. */
+.tg-storage-error{display:flex;align-items:flex-start;gap:11px;margin:13px 0;padding:13px 14px;background:#332b2e;border:1px solid #76545c;border-radius:9px;color:#f4cad0}
+.tg-storage-error>svg{flex-shrink:0;color:#ec9aa7;margin-top:2px}
+.tg-storage-error>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.tg-storage-error strong{font-size:12px;color:#ffdae0;font-weight:700}
+.tg-storage-error p{margin:0;font-size:12px;line-height:1.6;color:#f2cbd0;overflow-wrap:anywhere;user-select:text}
+.tg-storage-error small{font-size:10px;line-height:1.5;color:#c9a8af}
+.dc-onboard-channel-hint{padding:11px 12px;border-radius:8px;background:#29323e;border:1px solid #405267;color:#b8cfe5;font-size:11px;line-height:1.6;overflow-wrap:anywhere;margin:10px 0 0}
