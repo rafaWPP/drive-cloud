@@ -266,3 +266,34 @@ html,body,#root{background:var(--drive-bg)}
 .cloud-tile:has(.cloud-star-mark)>small{padding-left:17px}
 @media(max-width:1000px){.home-welcome{flex-direction:column;align-items:flex-start}.home-stats{width:100%;flex-wrap:wrap}.home-stats>div{flex:1}.cloud-search{width:125px}}
 @media(max-width:600px){.home-welcome{padding:19px}.home-stats>div{min-width:75px;padding:10px}.cloud-search{width:100%;max-width:none}.cloud-controls{flex-wrap:wrap}}
+
+/* V5 — cleaner navigation and controls, neutral dark UI */
+.cloud-page .cloud-toolbar{gap:12px;margin:0 0 18px}
+.cloud-toolbar .cloud-controls{gap:7px}
+.cloud-toolbar .cloud-controls>button,.cloud-toolbar .cloud-controls .toggle{height:32px;min-height:32px;padding:0 11px;border:0;border-radius:7px;background:#333336;color:#efeff0;box-shadow:none;font-size:12px;font-weight:600;line-height:1}
+.cloud-toolbar .cloud-controls>button:hover:not(:disabled){background:#414145}
+.cloud-toolbar .cloud-controls>.cloud-primary{background:#353539;color:#fff;border:0}
+.cloud-toolbar .cloud-controls>.cloud-primary:hover:not(:disabled){background:#46464a}
+.cloud-toolbar .cloud-controls svg{height:16px;width:16px;stroke-width:1.85}
+.cloud-toolbar .cloud-controls .toggle{display:flex;align-items:center;padding:3px;gap:3px}
+.cloud-toolbar .cloud-controls .toggle button{width:29px;height:26px;display:grid;place-items:center;border-radius:5px;background:transparent;color:#b9b9bf}
+.cloud-toolbar .cloud-controls .toggle button.chosen{background:#525256;color:#fff}
+.cloud-toolbar .cloud-crumb button{font-size:12px}
+.cloud-toolbar .cloud-crumb button:hover{color:#fff}
+.home-sections{display:flex;flex-direction:column;gap:26px;margin:4px 0 34px}
+.home-sections>section{display:flex;flex-direction:column;gap:12px}
+.home-section-title{display:flex;align-items:center;gap:10px;color:#e5e5e7}
+.home-section-title h3{font-size:15px;font-weight:700;margin:0}
+.home-section-title svg{color:#b4b4bb}
+.home-section-title span{font-size:11px;color:#8f8f95;margin-left:6px}
+.home-quick-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(225px,1fr));gap:10px}
+.home-quick-list>button{height:64px;min-width:0;display:flex;align-items:center;gap:11px;padding:9px 12px;border:0;background:#29292b;color:#e9e9eb;text-align:left;border-radius:9px}
+.home-quick-list>button:hover{background:#343438}
+.home-quick-list .home-quick-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.home-quick-list>button small{color:#9b9ba1;font-size:10px;white-space:nowrap}
+.home-quick-list>p{margin:0;color:#898990;font-size:12px;padding:15px 3px}
+.home-quick-thumb{width:38px;height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:6px;background:#19191b}
+.home-quick-thumb .cloud-thumb-photo img{object-fit:cover}
+.home-quick-thumb .cloud-thumb-fallback svg{width:22px;height:22px}
+.cloud-thumb-photo img{visibility:visible}
+@media(max-width:670px){.cloud-toolbar .cloud-controls>button{padding:0 9px}.home-quick-list{grid-template-columns:1fr}}
