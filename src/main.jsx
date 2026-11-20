@@ -696,7 +696,7 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
 {jobs.length>0&&trayVisible&&<div className={'upload-tray dc-upload-v2 '+(panel?'is-expanded':'is-compact')+' dc-upload-'+uploadStatus} role="region" aria-label="Gerenciador de uploads">
  <div className="upload-head">
   <div className="upload-title">
-   <div className={'dc-upload-title-visual '+uploadStatus} aria-hidden="true">{uploadStatus==='sending'?<Upload size={21} strokeWidth={2.25}/>:uploadStatus==='failed'?<CircleAlert size={21}/>:uploadStatus==='complete'?<Check size={22} strokeWidth={2.75}/>:<X size={20}/>}</div>
+   <div className={'dc-upload-title-visual '+uploadStatus} aria-hidden="true"><Folder size={21} strokeWidth={1.95}/></div>
    <div><b aria-live="polite">{uploadStatus==='sending'?'Fazendo upload de '+uploadingNow+' '+(uploadingNow===1?'item':'itens'):uploadStatus==='failed'?failures+' '+(failures===1?'upload com falha':'uploads com falha'):uploadStatus==='complete'?completed+(completed===1?' upload concluído':' uploads concluídos'):'Transferências canceladas'}</b>{panel&&<small>{uploadStatus==='complete'?'Arquivos salvos no Drive':uploadStatus==='sending'?'Transferindo arquivos para o Telegram':'Gerenciador de transferências'}</small>}</div>
   </div>
   <div className="upload-head-actions">{busy&&<button className="upload-cancel-all" onClick={stopUploads}>Cancelar envios</button>}<button type="button" className="upload-icon-button" aria-label={panel?'Recolher':'Expandir'} onClick={()=>setPanel(v=>!v)}><ChevronDown size={18} style={{transform:panel?'rotate(0deg)':'rotate(180deg)'}}/></button><button type="button" className="upload-icon-button" aria-label="Fechar transferências" onClick={()=>setTrayVisible(false)}><X size={18}/></button></div>
