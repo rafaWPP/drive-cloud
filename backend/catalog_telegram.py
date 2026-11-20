@@ -57,6 +57,20 @@ def decode_catalog(raw: bytes, account: str, channel: int) -> dict:
     return payload
 
 
+async def send_catalog_snapshot(client, db, account, channel):
+    """Save metadata in the account's private channel without changing files."""
+    raw = encode_catalog(catalog_payload(db, account, channel))
+    file = io.BytesIO(raw)
+    file.name = "drive-cloud-catalog-v1.json"
+    try:
+        message = await client.send_file(
+            channel, file, caption=MARKER, force_document=True
+        )
+    except Exception as exc:
+        raise HTTPException(502, "Não foi possível salvar o catálogo no Telegram.") from exc
+    return {"saved": True, "message_id": message.id, "bytes": len(raw)}
+
+
 def build_catalog_sync_router(authorized_account, channel_links, lock, connection, channel_id):
     router = APIRouter(prefix="/api/cloud/catalog/telegram")
 
@@ -66,16 +80,7 @@ def build_catalog_sync_router(authorized_account, channel_links, lock, connectio
             client, account = await authorized_account()
             channel = channel_id(channel_links, account)
             with connection() as db:
-                raw = encode_catalog(catalog_payload(db, account, channel))
-            file = io.BytesIO(raw)
-            file.name = "drive-cloud-catalog-v1.json"
-            try:
-                message = await client.send_file(
-                    channel, file, caption=MARKER, force_document=True
-                )
-            except Exception as exc:
-                raise HTTPException(502, "Não foi possível salvar o catálogo no Telegram.") from exc
-            return {"saved": True, "message_id": message.id, "bytes": len(raw)}
+                return await send_catalog_snapshot(client, db, account, channel)
 
     async def newest_snapshot(client, channel):
         # Search only the private storage channel. Never assume other files are catalogs.
