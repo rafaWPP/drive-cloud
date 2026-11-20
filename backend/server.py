@@ -34,7 +34,7 @@ API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
 app = FastAPI(title="Drive Cloud - Telegram local", docs_url=None, redoc_url=None)
 ALLOWED = {"http://127.0.0.1:5173", "http://localhost:5173", "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
 app.add_middleware(CORSMiddleware, allow_origins=list(ALLOWED), allow_credentials=False,
-                   allow_methods=["GET", "HEAD", "POST", "PATCH", "DELETE"], allow_headers=["Content-Type", "Range"],
+                   allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Content-Type", "Range"],
                    expose_headers=["Content-Length", "Content-Range", "Accept-Ranges", "Content-Disposition"])
 client = None
 phone_pending = None
@@ -421,11 +421,13 @@ async def shutdown():
 
 # Rotas locais de arquivos; usam a mesma sessão, vínculo de canal e trava de conta.
 from folder_sync import build_folder_sync_router
+from resumable_upload import build_resumable_router
 from catalog_telegram import build_catalog_sync_router
 from storage_api import build_router
 from backup_api import build_backup_router, backup_scheduler
 from share_api import build_share_router
 app.include_router(build_router(authorized_account, channel_links, lock))
+app.include_router(build_resumable_router(authorized_account, channel_links, lock))
 from storage_api import connection, channel_id
 app.include_router(build_catalog_sync_router(authorized_account, channel_links, lock, connection, channel_id))
 folder_sync_router, folder_sync_scheduler = build_folder_sync_router(authorized_account, channel_links, lock)
