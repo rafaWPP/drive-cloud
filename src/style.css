@@ -565,3 +565,23 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 @keyframes move-window-enter{from{opacity:0;transform:translateY(22px) scale(.965)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(prefers-reduced-motion:reduce){.move-backdrop,.move-dialog.file-manager-dialog{animation:none}}
 @media(max-width:540px){.file-manager-dialog .move-dialog-header{padding:18px}.move-browser-top{padding:10px;gap:5px}.move-browser-top .move-create{font-size:0;padding:8px}.move-browser-top .move-create svg{width:18px;height:18px}.move-destination{padding:11px 13px}.file-manager-dialog .move-footer{padding:13px}}
+
+/* Create folder modal; use the same subtle dialog treatment as the folder explorer */
+.folder-create-dialog{width:min(440px,calc(100vw - 28px));border:1px solid #3c3c42;background:#202023;border-radius:16px;overflow:hidden;box-shadow:0 25px 75px #000b;animation:move-window-enter .28s cubic-bezier(.18,.84,.22,1) both}
+.folder-create-dialog .move-dialog-header{padding:22px 23px 18px;border-bottom:1px solid #36363a}
+.folder-create-dialog .move-dialog-header h3{font-size:18px;margin:0 0 6px}
+.folder-create-dialog .move-dialog-header p{color:#98989e;font-size:11px;margin:0}
+.folder-create-body{padding:21px 23px;display:flex;flex-direction:column;gap:11px}
+.folder-create-body label{font-size:12px;font-weight:650;color:#dedee1}
+.folder-create-body input{height:41px;width:100%;background:#2c2c2f;border:1px solid #4b4b50;border-radius:8px;padding:0 12px;color:#f4f4f5;font-size:12px;outline:0}
+.folder-create-body input:focus{border-color:#6da4f3;box-shadow:0 0 0 3px #3478e621}
+.folder-create-body input::placeholder{color:#888890}
+.folder-create-body>span{font-size:11px;color:#9a9aa0}
+.folder-create-dialog .move-footer{padding:15px 23px;border-top:1px solid #343438;display:flex;justify-content:flex-end;gap:9px}
+.folder-create-dialog .move-footer button{height:35px;padding:0 15px;border:0;border-radius:8px;background:#37373b;color:#ebebed;font-size:12px;font-weight:650}
+.folder-create-dialog .move-footer .move-confirm{background:#3478e6;color:#fff}
+.folder-create-dialog .move-footer .move-confirm:hover:not(:disabled){background:#4b8df0}
+.dc-compact-meter{display:flex}
+.dc-compact-meter>span{flex-shrink:0;min-width:0}
+.dc-compact-meter>.dc-trash-share{background:#74747a}
+@media(prefers-reduced-motion:reduce){.folder-create-dialog{animation:none}}
