@@ -16,6 +16,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/tauri-desktop-linux
 
 jobs:
   package-windows:
@@ -41,7 +42,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install -r backend/requirements.txt pyinstaller
-          python -m PyInstaller --noconfirm --clean --onefile --name drive-cloud-backend --paths backend --hidden-import server --collect-submodules telethon --distpath build/desktop-sidecar backend/desktop_entry.py
+          python -m PyInstaller --noconfirm --clean --onefile --name drive-cloud-backend --paths backend --hidden-import server --collect-submodules pillow_jxl --collect-submodules telethon --distpath build/desktop-sidecar backend/desktop_entry.py
           New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
           Copy-Item build/desktop-sidecar/drive-cloud-backend.exe src-tauri/binaries/drive-cloud-backend-x86_64-pc-windows-msvc.exe
       - name: Verificar conector Windows empacotado
