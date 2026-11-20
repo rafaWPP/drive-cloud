@@ -215,6 +215,8 @@ def build_router(authorized_account, channel_links, lock):
                 raise HTTPException(404, "Arquivo não encontrado.")
             if not is_image(row):
                 raise HTTPException(415, "A prévia é disponível apenas para imagens.")
+            if int(row["size"]) > MAX_PREVIEW_SIZE:
+                raise HTTPException(413, "Arquivo acima do limite de prévia. Faça o download para visualizar.")
             # Cache only derivatives, never unencrypted originals; directory is local and private.
             key = hashlib.sha256((account+":"+file_id+":"+str(row["message_id"])+":"+str(full)).encode()).hexdigest()
             target = THUMBS / (key+".jpg")
