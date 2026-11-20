@@ -108,14 +108,18 @@ def build_share_router(authorized_account, channel_links, lock):
 
     async def lookup(token):
         if len(token)>256 or not token:
-            raise HTTPException(404,"Link inválido")
+            raise HTTPException(404,"Link inválido.")
         digest=hashlib.sha256(token.encode()).hexdigest()
         with connection() as db:
             schema(db)
-            link=db.execute("""SELECT * FROM share_links WHERE token_hash=? AND revoked=0
-                AND expires>?""",(digest,int(time.time()))).fetchone()
+            link=db.execute("SELECT * FROM share_links WHERE token_hash=?",
+                            (digest,)).fetchone()
             if not link:
-                raise HTTPException(404,"Link expirado ou revogado.")
+                raise HTTPException(404,"Link inválido.")
+            if link["revoked"]:
+                raise HTTPException(410,"O proprietário revogou este compartilhamento.")
+            if link["expires"]<=int(time.time()):
+                raise HTTPException(410,"Este link de compartilhamento expirou.")
             root=db.execute("SELECT * FROM nodes WHERE id=? AND account=? AND trashed=0",
                             (link["item_id"],link["owner"])).fetchone()
             if not root:
