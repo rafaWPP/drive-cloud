@@ -1598,3 +1598,37 @@ main>header .search{flex:1 1 320px;max-width:465px}
 .dc-native-drop-progress{display:flex;align-items:center;gap:10px;margin:0 0 15px;padding:11px 14px;border:1px solid #42546a;border-radius:9px;background:#243346;color:#dceafa;font-size:12px}
 .dc-native-drop-progress .dc-spin{animation:dc-spin 1.2s linear infinite}
 @keyframes dc-spin{to{transform:rotate(360deg)}}
+
+
+/* Folder sync dropdowns: Tauri/GTK native selects used light system menus
+   with pale foreground text. Use the app's own high-contrast menu consistently
+   across Linux, Windows and browser. */
+.dc-remote-root-selection{max-width:600px;gap:8px}
+.dc-remote-root-selection>strong{font-size:12px;font-weight:650;color:#e8edf5}
+.dc-remote-root-selection>.dc-menu-select{width:100%;min-width:0}
+.dc-remote-root-selection .dc-menu-select-trigger{
+  display:flex;min-height:41px;background:#303841;color:#f0f3f9;
+  border:1px solid #4e5c6d;padding:0 12px;opacity:1
+}
+.dc-remote-root-selection .dc-menu-select-trigger:hover:not(:disabled){background:#384653}
+.dc-sync-mode{display:flex;align-items:center;gap:8px;min-width:0}
+.dc-sync-mode>span{color:#c6d0df;font-size:11px;flex-shrink:0}
+.dc-sync-mode .dc-menu-select{min-width:230px;max-width:280px}
+.dc-folder-sync-actions .dc-sync-mode .dc-menu-select-trigger{
+  display:flex;width:100%;min-height:38px;background:#303841;color:#edf3fa;
+  border:1px solid #4e5c6d;padding:0 10px;font-size:11px;
+  font-weight:650;white-space:nowrap;opacity:1
+}
+.dc-folder-sync-actions .dc-sync-mode .dc-menu-select-trigger:hover:not(:disabled){background:#384653}
+.dc-folder-sync-actions .dc-sync-mode .dc-menu-select-trigger:disabled,
+.dc-remote-root-selection .dc-menu-select-trigger:disabled{opacity:.58;cursor:not-allowed}
+.dc-folder-sync-actions .dc-sync-mode .dc-menu-select-trigger>.dc-menu-select-caption{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left
+}
+.dc-select-portal .dc-menu-select-option{color:#f2f5fb;background:transparent}
+.dc-select-portal .dc-menu-select-option:hover:not(:disabled){background:#43516b}
+.dc-select-portal .dc-menu-select-option.selected{background:#344b69}
+@media(max-width:650px){
+ .dc-folder-sync-actions .dc-sync-mode{flex:1 1 100%;width:100%}
+ .dc-folder-sync-actions .dc-sync-mode .dc-menu-select{width:100%;max-width:none}
+}
