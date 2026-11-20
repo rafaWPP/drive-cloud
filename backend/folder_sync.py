@@ -20,6 +20,8 @@ from sync_reconcile import (remote_tree, safe_relative, decision, get_remote_fil
                             install_download, MAX_DOWNLOADS_PER_RUN)
 
 from storage_api import MAX_SIZE, connection, channel_id
+from catalog_merge import merge_catalog
+from catalog_telegram import MARKER, MAX_SNAPSHOT_BYTES, decode_catalog, send_catalog_snapshot
 
 MAX_SCAN_FILES = 10000
 MAX_UPLOADS_PER_RUN = 3
@@ -58,6 +60,10 @@ def ensure_schema(db: sqlite3.Connection):
         folder_id TEXT NOT NULL, rel_path TEXT NOT NULL,
         node_id TEXT NOT NULL, outcome TEXT NOT NULL, created INTEGER NOT NULL,
         PRIMARY KEY(folder_id,rel_path,node_id))""")
+    db.execute("""CREATE TABLE IF NOT EXISTS sync_catalog_seen(
+        account TEXT NOT NULL, channel TEXT NOT NULL, message_id INTEGER NOT NULL,
+        imported_at INTEGER NOT NULL,
+        PRIMARY KEY(account,channel,message_id))""")
     db.execute("CREATE INDEX IF NOT EXISTS sync_folders_account ON sync_folders(account)")
 
 
@@ -135,6 +141,61 @@ def pending_files(db, folder, files):
 def build_folder_sync_router(authorized_account, channel_links, lock):
     router = APIRouter(prefix="/api/sync")
     active_runs = set()
+
+    async def refresh_catalog_impl(client, account, channel):
+        """Append-only union of bounded channel snapshots; must hold account lock."""
+        messages = []
+        async for message in client.iter_messages(channel, search=MARKER, limit=121):
+            if message.message == MARKER and message.file:
+                messages.append(message)
+        if len(messages) > 120:
+            raise HTTPException(409, "Histórico do catálogo acima do limite de reconciliação. Faça cópias antes de continuar.")
+        total_imported = 0
+        conflicts = 0
+        processed = 0
+        for message in reversed(messages):
+            with connection() as db:
+                ensure_schema(db)
+                previously = db.execute(
+                    "SELECT 1 FROM sync_catalog_seen WHERE account=? AND channel=? AND message_id=?",
+                    (account, str(channel), message.id),
+                ).fetchone()
+            if previously:
+                continue
+            if not message.file.size or message.file.size > MAX_SNAPSHOT_BYTES:
+                raise HTTPException(413, "Snapshot remoto ultrapassa o limite de 2 MB.")
+            try:
+                raw = await client.download_media(message, file=bytes)
+            except Exception as exc:
+                raise HTTPException(502, "Falha ao atualizar metadados do Telegram.") from exc
+            if not isinstance(raw, bytes):
+                raise HTTPException(502, "Falha ao receber catálogo remoto.")
+            payload = decode_catalog(raw, account, channel)
+            with connection() as db:
+                ensure_schema(db)
+                result = merge_catalog(db, payload, account, channel)
+                db.execute(
+                    "INSERT OR IGNORE INTO sync_catalog_seen(account,channel,message_id,imported_at)"
+                    " VALUES (?,?,?,?)",
+                    (account, str(channel), message.id, int(time.time())),
+                )
+            total_imported += result["imported"]
+            conflicts += result["metadata_differences_preserved"]
+            processed += 1
+        return {"snapshots_checked": len(messages), "snapshots_processed": processed,
+                "items_added": total_imported, "metadata_differences_preserved": conflicts}
+
+    @router.post("/catalog/refresh")
+    async def refresh_catalog():
+        async with lock:
+            client, account = await authorized_account()
+            channel = channel_id(channel_links, account)
+            result = await refresh_catalog_impl(client, account, channel)
+            if result["items_added"]:
+                # Propagate the safe union to newer devices; never replace a snapshot.
+                with connection() as db:
+                    await send_catalog_snapshot(client, db, account, channel)
+            return result
 
     @router.post("/folders/preview")
     async def preview_folder(body: FolderRequest):
@@ -299,14 +360,38 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                     ensure_schema(db)
                     db.execute("UPDATE sync_folders SET last_run=?,last_error=NULL WHERE id=? AND account=?",
                                (int(time.time()), folder_id, account))
+                snapshot_saved = False
+                if sent:
+                    try:
+                        with connection() as db:
+                            await send_catalog_snapshot(client, db, account, telegram_channel)
+                        snapshot_saved = True
+                    except HTTPException:
+                        # Files remain saved on Telegram, even if metadata publishing fails.
+                        snapshot_saved = False
                 return {"sent": sent, "remaining_estimate": max(0, len(pending) - sent),
-                        "over_limit": oversized, "deletions_ignored": True}
+                        "over_limit": oversized, "deletions_ignored": True,
+                        "catalog_snapshot_saved": snapshot_saved}
         finally:
             active_runs.discard(folder_id)
 
     @router.post("/folders/{folder_id}/run")
     async def run_sync(folder_id: str):
-        return await perform_sync(folder_id)
+        async with lock:
+            _, account = await authorized_account()
+            with connection() as db:
+                ensure_schema(db)
+                folder = db.execute(
+                    "SELECT mode FROM sync_folders WHERE id=? AND account=?", (folder_id, account)
+                ).fetchone()
+                if not folder:
+                    raise HTTPException(404, "Pasta de sincronização não encontrada.")
+                mode = folder["mode"]
+        pulled = await perform_pull(folder_id) if mode == "two-way" else None
+        uploaded = await perform_sync(folder_id)
+        if pulled is not None:
+            uploaded["remote"] = pulled
+        return uploaded
 
     async def perform_pull(folder_id: str, dry_run: bool = False):
         """Reconcile active Telegram versions without overwriting PC files."""
@@ -317,6 +402,8 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
             async with lock:
                 client, account = await authorized_account()
                 channel = channel_id(channel_links, account)
+                if not dry_run:
+                    await refresh_catalog_impl(client, account, channel)
                 with connection() as db:
                     ensure_schema(db)
                     folder = db.execute("SELECT * FROM sync_folders WHERE id=? AND account=?",
@@ -474,9 +561,8 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                                     "SELECT mode FROM sync_folders WHERE id=? AND account=?",
                                     (folder_id, current_account),
                                 ).fetchone()
-                        if current and current["mode"] == "two-way":
-                            await perform_pull(folder_id)
-                        await perform_sync(folder_id)
+                        if current:
+                            await run_sync(folder_id)
                     except (HTTPException, OSError):
                         continue  # A missing/unmounted directory never triggers remote deletion.
             except asyncio.CancelledError:
