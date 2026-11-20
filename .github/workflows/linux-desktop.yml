@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/tauri-desktop-linux
   push:
     branches:
       - feature/tauri-desktop-linux
