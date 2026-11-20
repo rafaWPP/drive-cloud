@@ -93,7 +93,22 @@ def build_share_router(authorized_account, channel_links, lock):
             return dict(link), dict(root)
 
     def child_rows(db,root,owner):
-        all_rows=[dict(r) for r in db.execute("SELECT * FROM nodes WHERE account=? AND trashed=0",(owner,))]
+        # Fetch only the shared subtree; scanning the whole user's Drive used to
+        # make even small shared folders slow when the catalog had many files.
+        all_rows=[dict(r) for r in db.execute("""
+            WITH RECURSIVE descendants(id,depth) AS (
+                SELECT id,0 FROM nodes WHERE id=? AND account=? AND trashed=0
+                UNION ALL
+                SELECT n.id,d.depth+1 FROM nodes n JOIN descendants d
+                ON n.parent=d.id JOIN nodes parent ON parent.id=d.id
+                WHERE n.account=? AND n.trashed=0 AND parent.kind='folder'
+                      AND d.depth<48
+            )
+            SELECT n.* FROM nodes n JOIN descendants d ON n.id=d.id
+            LIMIT ?
+        """,(root["id"],owner,owner,MAX_PUBLIC_ITEMS+1))]
+        if len(all_rows)>MAX_PUBLIC_ITEMS:
+            raise HTTPException(413,"Muitos itens nesta pasta compartilhada.")
         children={}
         for item in all_rows:
             children.setdefault(item["parent"],[]).append(item)
@@ -112,6 +127,26 @@ def build_share_router(authorized_account, channel_links, lock):
                     child_name=child["name"].replace("/","_").replace("\\","_").replace(chr(0),"_")
                     stack.append((child,relative+child_name+("/" if child["kind"]=="folder" else "")))
         return output
+
+    def scoped_file(db,root,owner,file_id):
+        """Check a single child's ancestry instead of listing every folder item."""
+        row=db.execute("""SELECT * FROM nodes WHERE id=? AND account=?
+                          AND kind='file' AND trashed=0""",(file_id,owner)).fetchone()
+        if not row:
+            return None
+        belongs=db.execute("""
+            WITH RECURSIVE ancestry(id,parent,depth) AS (
+              SELECT id,parent,0 FROM nodes
+                WHERE id=? AND account=? AND kind='file' AND trashed=0
+              UNION ALL
+              SELECT parent.id,parent.parent,a.depth+1 FROM nodes parent
+                JOIN ancestry a ON parent.id=a.parent
+                WHERE parent.account=? AND parent.kind='folder'
+                  AND parent.trashed=0 AND a.depth<48
+            )
+            SELECT 1 FROM ancestry WHERE id=? LIMIT 1
+        """,(file_id,owner,owner,root["id"])).fetchone()
+        return dict(row) if belongs else None
 
     @router.post("/api/share")
     async def create_share(body: ShareIn):
@@ -279,9 +314,7 @@ def build_share_router(authorized_account, channel_links, lock):
             if root["kind"]!="folder" or link["mode"]!="view":
                 raise HTTPException(403,"Arquivo fora da pasta compartilhada.")
             with connection() as db:
-                items=child_rows(db,root,link["owner"])
-            item=next((row for row,_ in items
-                       if row["id"]==item_id and row["kind"]=="file"),None)
+                item=scoped_file(db,root,link["owner"],item_id)
             if item is None:
                 raise HTTPException(404,"Arquivo fora do compartilhamento.")
         else:
@@ -404,8 +437,7 @@ def build_share_router(authorized_account, channel_links, lock):
             if root["kind"]!="folder" or link["mode"]!="view":
                 raise HTTPException(403,"Arquivo fora do compartilhamento.")
             with connection() as db:
-                items=child_rows(db,root,link["owner"])
-            target=next((row for row,_ in items if row["id"]==file_id and row["kind"]=="file"),None)
+                target=scoped_file(db,root,link["owner"],file_id)
             if not target:
                 raise HTTPException(404,"Arquivo não encontrado neste compartilhamento.")
         if target["kind"]!="file" or not safe_media_type(target):
@@ -441,8 +473,7 @@ def build_share_router(authorized_account, channel_links, lock):
             if account!=link["owner"]:
                 raise HTTPException(403,"Sessão Telegram indisponível.")
             with connection() as db:
-                items=child_rows(db,root,account)
-            item=next((x for x,_ in items if x["id"]==file_id and x["kind"]=="file"),None)
+                item=scoped_file(db,root,account,file_id)
             if not item:raise HTTPException(404,"Arquivo fora desta pasta compartilhada.")
             if not is_image(item):raise HTTPException(415,"Prévia indisponível.")
             if item["size"]>20*1024*1024:raise HTTPException(413,"Imagem grande demais para visualização.")
@@ -462,8 +493,7 @@ def build_share_router(authorized_account, channel_links, lock):
             client,account=await authorized_account()
             if account!=link["owner"]:raise HTTPException(403,"Conta do Telegram indisponível.")
             with connection() as db:
-                items=child_rows(db,root,account)
-            item=next((x for x,_ in items if x["id"]==file_id and x["kind"]=="file"),None)
+                item=scoped_file(db,root,account,file_id)
             if not item:raise HTTPException(404,"Arquivo não incluído neste link.")
             msg=await client.get_messages(channel_id(channel_links,account),ids=item["message_id"])
             if not msg or not msg.media:raise HTTPException(404,"Arquivo ausente.")
