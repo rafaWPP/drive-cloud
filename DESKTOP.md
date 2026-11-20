@@ -39,3 +39,11 @@ Os arquivos continuam armazenados no canal Telegram; a organização do Drive ai
 - Preparar Windows e Android com arquiteturas nativas apropriadas.
 
 Sem hospedagem própria para arquivos, o produto continua dependendo dos termos e limites do Telegram.
+
+## Porta local automática (Linux desktop)
+
+O Tauri seleciona uma porta de loopback livre do sistema operacional ao iniciar. Passa a porta ao conector via `DRIVE_CLOUD_BACKEND_PORT` e informa a origem HTTP à interface via comando interno `backend_origin`. O frontend espera essa configuração antes de renderizar. A versão Vite de desenvolvimento permanece na porta 8000, salvo configuração futura.
+
+O teste do GitHub Actions inicia o conector empacotado na porta 48763, diferente da porta 8000, para verificar o parâmetro. Isso não substitui o teste completo do aplicativo instalado.
+
+**Limitações importantes:** a seleção da porta ocorre antes de iniciar o processo, portanto uma corrida rara ainda é possível se outro processo ocupar a porta naquele intervalo. Mais importante, uma porta aleatória **não é um controle de segurança**: o backend atual ainda precisa de autenticação local por instância ou canal interno protegido antes de distribuição comercial, porque outro processo no computador pode tentar acessar a API HTTP local. Não exponha a API na rede ou internet.
