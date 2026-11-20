@@ -243,3 +243,25 @@ A área **Meu Drive** agora apresenta uma árvore de pastas na lateral, com opç
 O bloco lateral de armazenamento agora separa título e quantidade utilizada em linhas diferentes, evitando sobreposição de texto. A barra continua mostrando a proporção entre os arquivos ativos e os itens na lixeira do catálogo local, não um limite de armazenamento do Telegram.
 
 **Para atualizar:** `git pull origin main`, reinicie o backend `uvicorn server:app --host 127.0.0.1 --port 8000` após ativar a venv, e faça `Ctrl+Shift+R` no navegador. Teste com uma pasta descartável contendo subpastas e arquivos pequenos. O código foi publicado, mas ainda não passou pelos testes executados no computador do usuário.
+
+## Navegação, ZIP e páginas de sistema (V12)
+
+- A árvore lateral de pastas expande/recolhe com transição suave e destaca o caminho da pasta aberta.
+- A preparação do ZIP usa o progresso em **bytes efetivamente recuperados do Telegram** via `progress_callback` e exibe a etapa de compactação. O arquivo é baixado quando o backend confirma o ZIP pronto; não significa que o download do navegador tenha concluído.
+- A tela de **Conexão Telegram** foi simplificada: nome da conta, status, canal privado e ações de desconectar/sair sem dados técnicos desnecessários. Upload/Nova pasta e a busca ficam nas telas de arquivos, não em configurações ou backups.
+- Indicador de armazenamento: mostra bytes do catálogo (ativos + lixeira), sem exibir uma barra artificial de 100%, porque **a API Telegram não fornece uma quota de armazenamento da conta** para essa integração.
+- **Backups > Meus backups, Agendamentos, Histórico** usam endpoints reais `/api/backup`: permitem snapshots JSON manuais de metadados do catálogo, agendamento diário/semanal e download de snapshots. As cópias ficam em `backend/.data/catalog_backups` (até 25 por conta). O serviço agendador só executa com backend e sessão Telegram ativos. Um snapshot **não contém os arquivos binários**.
+- **Sincronização, Dispositivos e Atividades** apresentam o estado real e a arquitetura futura. Sincronização automática de diretórios/dispositivos **ainda não foi implementada**; não há agente Linux ou mobile rodando.
+- **Configurações, Preferências e Segurança**: densidade visual e animações salvas no navegador, além de gestão e revogação de links de compartilhamento.
+
+### Compartilhamento de links (protótipo localhost)
+O menu de arquivo/pasta oferece **Compartilhar link**, com dois modos:
+- **Download**: página local com ação direta para baixar arquivo ou pasta ZIP;
+- **Compartilhado**: página local que pode listar a hierarquia da pasta, baixar arquivos individuais e baixar a pasta inteira; visualização de imagem quando suportada.
+
+Cada link possui um token aleatório de alta entropia (somente o hash fica no SQLite), validade de 1 hora, 24 horas ou 7 dias e botão para revogar. Os links são gerados em `http://127.0.0.1:5173/?share=...` ou no endereço do navegador local e **não funcionam na internet nem em outro aparelho**. Esta é uma etapa de teste; para disponibilização pública de verdade serão necessários domínio HTTPS, serviço público isolado, autenticação de administração, proteção contra abuso e uma arquitetura multiusuário. **Não exponha o backend localhost/Telethon por túnel ou proxy**, pois ele também tem APIs administrativas e a sessão Telegram do proprietário.
+
+Downloads por link nessa etapa são limitados a 50 MB de dados originais e 100 itens para pastas. Não é adequado para conteúdo de distribuição pública em escala.
+
+### Atualização
+Execute `git pull origin main`, reinicie o backend Python, recarregue o navegador. Teste primeiro um snapshot de catálogo e um compartilhamento local usando arquivos descartáveis. A versão publicada no GitHub ainda depende de testes de execução no PC local e de confirmação do build pelo workflow.
