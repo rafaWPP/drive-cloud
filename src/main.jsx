@@ -31,7 +31,7 @@ return()=>{cancelled=true};
 useEffect(()=>{if(step!=='qr')return;let stopped=false;const timer=setInterval(async()=>{try{const r=await call('/api/telegram/qr/status');if(stopped)return;if(r.step==='connected'){setStatus({...r,configured:true});setStep('connected')}else if(r.step==='password')setStep('qr-password');else if(r.step==='expired'||r.step==='error'){setStep('qr-expired');if(r.detail)setError(r.detail)}}catch(e){if(!stopped)setError(e.message)}},1400);return()=>{stopped=true;clearInterval(timer)}},[step]);
 async function saveTelegramApi(event){
  event.preventDefault();
- if(!/^\d+$/.test(apiId.trim())||!Number.isSafeInteger(Number(apiId))||Number(apiId)<1||Number(apiId)>2147483647){setApiError('Informe o App api_id numérico que aparece em my.telegram.org (somente números).');return}
+ if(!/^[0-9]+$/.test(apiId.trim())||!Number.isSafeInteger(Number(apiId))||Number(apiId)<1||Number(apiId)>2147483647){setApiError('Informe o App api_id numérico que aparece em my.telegram.org (somente números).');return}
  if(!/^[a-fA-F0-9]{32}$/.test(apiHash.trim())){setApiError('O API Hash precisa conter 32 caracteres hexadecimais.');return}
  setSavingApi(true);setApiError('');
  try{
