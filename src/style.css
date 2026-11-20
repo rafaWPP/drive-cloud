@@ -1360,3 +1360,41 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 @keyframes dc-preview-counter-orbit{to{transform:rotate(-360deg)}}
 .dc-shared-media-view>.dc-preview-image-wrap{min-height:250px}
 @media(prefers-reduced-motion:reduce){.dc-preview-loading-orbit,.dc-preview-loading-orbit img{animation:none}}
+
+/* Upload panel — state belongs in the header; file and destination use quiet icons. */
+.dc-upload-v2 .upload-head{min-height:63px}
+.dc-upload-v2 .upload-title b{max-width:230px;font-size:12px;letter-spacing:-.1px}
+.dc-upload-v2 .dc-upload-title-visual{
+ width:34px;height:34px;flex:0 0 34px;
+ border-radius:10px;transition:color .18s,background .18s;
+}
+.dc-upload-v2 .dc-upload-title-visual.sending{background:#2b4264;color:#80b6ff}
+.dc-upload-v2 .dc-upload-title-visual.complete{background:#254536;color:#68dc9b}
+.dc-upload-v2 .dc-upload-title-visual.failed{background:#503036;color:#f3a4b0}
+.dc-upload-v2 .dc-upload-title-visual.cancelled{background:#3c3e44;color:#c1c4cb}
+.dc-upload-v2.dc-upload-complete .upload-head{border-bottom-color:#343c39}
+.dc-upload-v2 .dc-compact-upload-icon.file,
+.dc-upload-v2 .upload-job-icon.dc-file-glyph{
+ display:grid;place-items:center;
+ background:#343a45;color:#b1c9ed;
+ border:0;border-radius:9px;
+}
+.dc-upload-v2 .dc-compact-upload-icon.file{width:35px;height:35px;flex:0 0 35px}
+.dc-upload-v2 .upload-job-icon.dc-file-glyph{width:34px;height:34px;flex:0 0 34px}
+.dc-upload-v2 .dc-upload-path{
+ display:flex;align-items:center;gap:5px;
+ min-width:0;color:#9ea8b8;font-size:10px;line-height:1.45;
+ overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+}
+.dc-upload-v2 .dc-upload-path svg{flex-shrink:0;color:#9eb4d2}
+.dc-upload-v2 .dc-upload-path b{
+ display:inline-block;min-width:0;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap;color:#c4d0e0;font-weight:650;font-size:10px;
+}
+.dc-upload-v2 .dc-upload-failure{color:#ec9aa6!important}
+.dc-upload-v2.is-compact .dc-compact-upload-item{padding:14px 16px;min-height:68px}
+.dc-upload-v2.is-compact .dc-compact-upload-info{gap:5px}
+.dc-upload-v2.is-compact .dc-compact-upload-info strong{font-size:11.5px}
+.dc-upload-v2 .upload-job-main>.dc-upload-path{margin-top:6px}
+.dc-upload-v2 .dc-compact-progress-label{font-variant-numeric:tabular-nums}
+@media(prefers-reduced-motion:reduce){.dc-upload-v2 .dc-upload-title-visual{transition:none}}
