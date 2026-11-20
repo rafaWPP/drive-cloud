@@ -25,6 +25,10 @@ try:
 except OSError:
     pass
 
+# Load credentials saved by the installed application before initializing Telethon.
+# Values in the app-specific data directory take precedence over the developer .env.
+load_dotenv(DATA / ".env", override=True)
+
 API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
 API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
 app = FastAPI(title="Drive Cloud - Telegram local", docs_url=None, redoc_url=None)
@@ -112,7 +116,7 @@ async def save_credentials(payload: CredentialsIn):
         config_path = DATA / ".env"
         temp_path = DATA / ".env.tmp"
         try:
-            with temp_path.open("x", encoding="utf-8") as stream:
+            with temp_path.open("w", encoding="utf-8") as stream:
                 os.chmod(temp_path, 0o600)
                 stream.write(f"TELEGRAM_API_ID={payload.api_id}\\nTELEGRAM_API_HASH={new_hash}\\n".replace("\\n", "\n"))
                 stream.flush()
