@@ -209,3 +209,41 @@ html,body,#root{background:var(--drive-bg)}
  .selection-zone .bulkbar .bulk-actions{width:100%;overflow-x:auto;flex-wrap:nowrap}
  .selection-zone .bulkbar button{white-space:nowrap;padding:7px 10px}
 }
+
+/* Refined contextual menus and desktop file actions */
+.cloud-tile .tile-menu{top:10px;right:10px;opacity:0;z-index:35;display:flex;align-items:flex-start;justify-content:flex-end}
+.cloud-tile:hover .tile-menu,.cloud-tile .tile-menu:focus-within,.cloud-tile .tile-menu:has(.file-menu){opacity:1}
+.cloud-tile .tile-menu .file-menu-trigger{height:34px;width:34px;border:1px solid #4b4b4f;border-radius:9px;background:#303034;color:#f5f5f5;display:grid;place-items:center;padding:0;box-shadow:0 2px 8px #0004;position:relative;z-index:4}
+.cloud-tile .tile-menu .file-menu-trigger:hover,.cloud-tile .tile-menu .file-menu-trigger.is-open{background:#47474a;border-color:#68686d}
+.cloud-tile .tile-menu .file-menu{position:absolute;top:42px;right:0;left:auto;width:225px;min-width:225px;max-width:min(225px,calc(100vw - 25px));display:flex;flex-direction:column;gap:2px;padding:7px;border-radius:12px;background:#29292c;border:1px solid #46464b;box-shadow:0 16px 40px #000b;z-index:3;text-align:left}
+.cloud-tile .file-menu-title{font-size:11px;font-weight:700;color:#b4b4bb;line-height:1.4;padding:9px 11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cloud-tile .tile-menu .file-menu button{width:100%;height:39px;display:flex;align-items:center;justify-content:flex-start;gap:12px;padding:0 11px;border-radius:8px;background:transparent;border:0;color:#eeeeef;font-size:12px;font-weight:500;white-space:nowrap;text-align:left}
+.cloud-tile .tile-menu .file-menu button svg{width:17px;height:17px;flex-shrink:0;stroke-width:1.8;color:#b9b9bd}
+.cloud-tile .tile-menu .file-menu button:hover{background:#404044}
+.cloud-tile .tile-menu .file-menu button.danger-action{color:#faadad}
+.cloud-tile .tile-menu .file-menu button.danger-action svg{color:#f4a0a0}
+.cloud-tile .tile-menu .file-menu button.danger-action:hover{background:#493034}
+.cloud-tile .file-menu-separator{height:1px;background:#414145;margin:5px 4px}
+.cloud-tile .tile-menu .file-menu-dismiss{position:fixed;inset:0;background:transparent;border:0;padding:0;z-index:2;cursor:default}
+.cloud-table .inline-actions{gap:5px}
+.cloud-table .inline-actions button{height:33px;width:33px;display:grid;place-items:center;padding:0;color:#c1c1c7;border-radius:8px;transition:background .14s,color .14s}
+.cloud-table .inline-actions button svg{stroke-width:1.9}
+.cloud-table .inline-actions button:hover{color:#fff;background:#424246}
+.move-backdrop{position:fixed;inset:0;z-index:205;display:flex;align-items:center;justify-content:center;background:#0009;padding:18px}
+.move-dialog{width:min(460px,100%);background:#262628;border:1px solid #45454a;border-radius:16px;box-shadow:0 20px 70px #000a;overflow:hidden;color:#efeff0}
+.move-dialog-header{padding:21px 23px 16px;display:flex;justify-content:space-between;align-items:start;border-bottom:1px solid #3c3c40}
+.move-dialog-header h3{font-size:18px;margin:0 0 6px}.move-dialog-header p{font-size:12px;color:#a8a8ae;margin:0}
+.move-close{background:transparent;border:0;color:#b7b7be;border-radius:8px;padding:6px;display:grid;place-items:center}
+.move-close:hover{background:#3d3d42}
+.move-list{max-height:min(48vh,350px);overflow:auto;padding:12px}
+.move-list button{height:45px;width:100%;border:1px solid transparent;background:transparent;color:#e4e4e7;text-align:left;display:flex;align-items:center;gap:12px;padding:0 12px;border-radius:9px;font-size:13px}
+.move-list button span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.move-list button svg:first-child{color:#accbfb}
+.move-list button:hover{background:#39393d}
+.move-list button.active{background:#173b70;border-color:#285eaa}
+.move-footer{padding:16px 22px;display:flex;justify-content:flex-end;gap:9px;border-top:1px solid #3d3d40}
+.move-footer button{background:#343437;border:1px solid #505055;border-radius:9px;color:#f0f0f1;padding:10px 15px;font-size:12px;font-weight:650;display:flex;align-items:center;gap:8px}
+.move-footer button:hover{background:#444448}
+.move-footer .move-confirm{background:#3478e6;border-color:#3478e6;color:#fff}
+.move-footer .move-confirm:hover{background:#4988f4}
+@media(max-width:850px){.cloud-table .inline-actions button{opacity:1}}
