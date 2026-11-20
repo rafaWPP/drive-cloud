@@ -148,3 +148,14 @@ Atualize com `git pull origin main`, **reinicie o backend** (`uvicorn server:app
 - Não há migração ou exclusão de dados locais e do Telegram nesta atualização.
 
 Execute `git pull origin main` e atualize a página com `Ctrl + Shift + R`. Mudanças somente no frontend; o backend pode continuar ligado.
+
+## Ajustes da interface V6 — notificações e limpeza
+
+- Removidos subtítulos e títulos duplicados nas telas **Início**, **Recentes**, **Favoritos** e **Meu Drive**; permanecem os títulos principais e o conteúdo.
+- Barra de seleção com botões mais baixos, sem bordas pesadas, no mesmo padrão grafite dos controles do Meu Drive.
+- Notificações unificadas em forma de **toast central inferior**, com ícone de sucesso, informação ou erro, cores próprias de cada tipo, animação de subir ao aparecer e descer ao fechar, botão **X** e fechamento automático. Quando um item é movido à lixeira, aparece **Desfazer** por alguns segundos.
+- Operações de enviar, baixar, criar pasta, renomear, mover, favoritar, restaurar e erros de arquivo apresentam notificação visual; ações de login e logout também.
+- O bloco antigo de “Armazenamento local” da lateral foi removido porque mostrava o IndexedDB antigo, não o Telegram. A lateral agora mostra apenas o status de conexão do Telegram.
+- Esta atualização é exclusivamente do frontend, sem alteração de arquivos remotos ou do SQLite.
+
+Atualização: `git pull origin main` e `Ctrl+Shift+R`; sem necessidade de reiniciar o backend.
