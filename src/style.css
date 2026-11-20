@@ -423,3 +423,20 @@ html,body,#root{background:var(--drive-bg)}
 .dc-confirm-buttons{justify-content:flex-end}
 .dc-confirm-buttons button{height:37px;padding:0 16px}
 @media(prefers-reduced-motion:reduce){.dc-confirm-icon{animation:none}}
+
+/* V9 — top navigation aligned to the neutral, thin Drive controls */
+main>header{height:70px;padding:0 34px;gap:13px;border-bottom:1px solid #303033;background:#1d1d1f}
+main>header .new{height:34px;min-height:34px;padding:0 13px;background:#353538;color:#efeff0;border:0;border-radius:8px;font-size:12px;font-weight:650;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;box-shadow:none}
+main>header .new svg{width:16px;height:16px;stroke-width:1.8}
+main>header .new:hover{background:#444448}
+main>header .new:active{background:#4e4e52}
+main>header .search{height:34px;min-height:34px;max-width:465px;min-width:140px;flex:1;display:flex;align-items:center;gap:9px;padding:0 11px;border:1px solid #38383c;border-radius:8px;background:#252527;color:#98989f;box-shadow:none;transition:border-color .16s,background .16s}
+main>header .search:hover{border-color:#48484c}
+main>header .search:focus-within{background:#29292c;border-color:#6c8cbe}
+main>header .search svg{width:15px;height:15px;flex-shrink:0;color:#92929b;stroke-width:1.9}
+main>header .search input{height:100%;width:100%;min-width:0;outline:0;border:0;background:transparent;color:#ededee;font-size:12px;font-weight:400}
+main>header .search input:focus-visible{outline:0}
+main>header .search input::placeholder{color:#85858c;opacity:1}
+main>header .status{font-size:11px;color:#aaa;gap:7px}
+main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
+@media(max-width:700px){main>header{height:62px;padding:0 12px;gap:9px}main>header .new{padding:0 10px}main>header .search{min-width:0}}
