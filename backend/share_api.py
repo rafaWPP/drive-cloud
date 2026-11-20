@@ -164,6 +164,7 @@ def build_share_router(authorized_account, channel_links, lock):
                 if not msg or not msg.media:raise HTTPException(404,"Arquivo ausente do canal.")
                 data=await client.download_media(msg,file=bytes)
                 if data is None:raise HTTPException(502,"Falha ao recuperar arquivo.")
+                if len(data)>MAX_PUBLIC_ZIP:raise HTTPException(413,"Arquivo grande demais para link de teste.")
                 name=root["name"].replace("/","_").replace("\\","_")
                 from urllib.parse import quote
                 return Response(data,media_type="application/octet-stream",
@@ -174,6 +175,7 @@ def build_share_router(authorized_account, channel_links, lock):
             if sum(x["size"] for x,_ in items if x["kind"]=="file")>MAX_PUBLIC_ZIP:
                 raise HTTPException(413,"Pasta maior que 50 MB para download por link nesta versão.")
             output=io.BytesIO()
+            processed=0
             with zipfile.ZipFile(output,"w",zipfile.ZIP_DEFLATED,compresslevel=5) as archive:
                 base=root["name"].replace("/","_").replace("\\","_")+"/"
                 used=set()
@@ -188,6 +190,8 @@ def build_share_router(authorized_account, channel_links, lock):
                         if not msg or not msg.media:raise HTTPException(404,"Arquivo ausente: "+row["name"])
                         data=await client.download_media(msg,file=bytes)
                         if data is None:raise HTTPException(502,"Falha ao recuperar arquivo.")
+                        processed+=len(data)
+                        if processed>MAX_PUBLIC_ZIP:raise HTTPException(413,"Tamanho real da pasta excede o limite de 50 MB.")
                         archive.writestr(archive_name,data)
             from urllib.parse import quote
             return Response(output.getvalue(),media_type="application/zip",
@@ -210,6 +214,7 @@ def build_share_router(authorized_account, channel_links, lock):
             if not msg or not msg.media:raise HTTPException(404,"Arquivo ausente.")
             data=await client.download_media(msg,file=bytes)
             if data is None:raise HTTPException(502,"Falha ao recuperar arquivo.")
+            if len(data)>MAX_PUBLIC_ZIP:raise HTTPException(413,"Arquivo grande demais para link de teste.")
             from urllib.parse import quote
             return Response(data,media_type="application/octet-stream",
                 headers={"Cache-Control":"no-store","Content-Disposition":
