@@ -9,6 +9,7 @@ import {openUrl} from '@tauri-apps/plugin-opener';
 import {open as openNativeDialog} from '@tauri-apps/plugin-dialog';
 let backendOrigin='http://127.0.0.1:8000';
 const uid=()=>crypto.randomUUID();
+const MAX_FILE_BYTES = 512*1024*1024;
 const size=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
 const date=n=>new Date(n).toLocaleDateString('pt-BR');
 function IconFile({item,large=false}){const n=large?56:26;if(item.kind==='folder')return <Folder size={n} fill="#8db8fc" color="#a8cbff" strokeWidth={1.4}/>;if(item.type?.startsWith('image/'))return <Image size={n} color="#c3a4ff"/>;if(item.type?.startsWith('video/'))return <Video size={n} color="#70caa8"/>;if(/zip|tar|gz|rar/i.test(item.name))return <FileArchive size={n} color="#e5bd78"/>;if(item.name.toLowerCase().endsWith('.pdf'))return <FileText size={n} color="#fa929e"/>;return <File size={n} color="#b8b8ce"/>}
@@ -468,8 +469,8 @@ const chosen=visible.filter(i=>selected.includes(i.id));
 const setJob=(id,values)=>setJobs(j=>j.map(x=>x.id===id?{...x,...values}:x));
 function addFiles(inputFiles){
  const files=Array.from(inputFiles||[]);if(!files.length)return;
- const valid=files.filter(file=>file.size<=20*1024*1024);
- const rejected=files.filter(file=>file.size>20*1024*1024);
+ const valid=files.filter(file=>file.size<=MAX_FILE_BYTES);
+ const rejected=files.filter(file=>file.size>MAX_FILE_BYTES);
  if(rejected.length){
    onToast?.({kind:'error',message:rejected.length===1?'Arquivo excede o limite atual de 20 MB: '+rejected[0].name:rejected.length+' arquivos excedem o limite atual de 20 MB.',duration:6500});
  }
@@ -790,7 +791,7 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
 <div className="preview-topbar"><div>{isCloudVideo(preview)?<Play size={19}/>:<Image size={19}/>}<strong title={preview.name}>{preview.name}</strong><span>{size(preview.size)}</span></div><div className="preview-top-actions"><button onClick={()=>download(preview)}><Download size={16}/> Baixar</button><button title="Fechar prévia" aria-label="Fechar prévia" onClick={()=>setPreview(null)}><X size={20}/></button></div></div>
 <div className="preview-stage">{previewError?<div className="preview-failed"><CircleAlert size={43}/><p>Não foi possível abrir a prévia.</p><button onClick={()=>download(preview)}>Baixar arquivo original</button></div>:isCloudVideo(preview)?<SharedMediaDisplay key={preview.id} src={backendOrigin+'/api/cloud/media/'+encodeURIComponent(preview.id)} statusUrl={backendOrigin+'/api/cloud/media-status/'+encodeURIComponent(preview.id)} name={preview.name} video/>:<DriveImagePreview key={preview.id} src={backendOrigin+'/api/cloud/preview/'+encodeURIComponent(preview.id)+'?full=true'} name={preview.name} onError={()=>setPreviewError(true)}/>}</div>
 <div className="preview-foot">{isCloudVideo(preview)?'Player Drive Cloud • Original preservado no Telegram':'Pré-visualização otimizada • JXL convertido apenas na prévia • Original preservado no Telegram'}</div></div></div>}
-<p className="cloud-disclaimer">Arquivos são armazenados no canal privado; pastas e referências ficam no SQLite deste computador. O limite atual é de 20 MB por arquivo; ainda não há criptografia própria ou recuperação automática do catálogo. Não use como cópia única de backups.</p>
+<p className="cloud-disclaimer">Arquivos são armazenados no canal privado; pastas e referências ficam no SQLite deste computador. O limite atual é de 512 MB por arquivo; ainda não há criptografia própria nem recuperação automática de conflitos do catálogo. Não use como cópia única de backups.</p>
 </section>
 }
 function BackupPages({section,onToast}){
@@ -910,7 +911,7 @@ function SyncPages({section,onToast}){
   {error&&<div className="public-share-error" role="alert">{error}</div>}
   {section==='sync'&&<div className="dc-module-section dc-local-folder-setup"><h3>Adicionar pasta</h3><p>Escolha uma pasta. Primeiro analisaremos os arquivos e mostraremos o que poderá ser enviado; nada é enviado até você confirmar.</p>
    <div className="dc-folder-path-row"><input aria-label="Pasta do computador" value={path} onChange={e=>{setPath(e.target.value);setPreview(null)}} placeholder="Selecione uma pasta do computador"/><button type="button" disabled={busy} onClick={browseFolder}><Folder size={15}/> Procurar</button><button type="button" disabled={busy||!path.trim()} onClick={inspect}>Analisar</button></div>
-   {preview&&<div className="dc-folder-preview"><strong>{preview.files} arquivos • {size(preview.bytes)}</strong><small>{preview.over_limit?preview.over_limit+' arquivo(s) acima de 20 MB serão ignorados.':'Nenhum arquivo acima de 20 MB.'}</small><button className="dc-module-primary" disabled={busy} onClick={register}>Adicionar ao Drive Cloud</button></div>}
+   {preview&&<div className="dc-folder-preview"><strong>{preview.files} arquivos • {size(preview.bytes)}</strong><small>{preview.over_limit?preview.over_limit+' arquivo(s) acima de 512 MB serão ignorados.':'Nenhum arquivo acima de 512 MB.'}</small><button className="dc-module-primary" disabled={busy} onClick={register}>Adicionar ao Drive Cloud</button></div>}
   </div>}
   <div className="dc-module-section"><h3>{section==='devices'?'Pastas neste dispositivo':section==='syncActivity'?'Atividade de backup':'Pastas configuradas'}</h3><p>O envio acontece em lotes de até três arquivos; o monitoramento automático verifica alterações periodicamente apenas quando ativado.</p>
    <div className="dc-folder-sync-list">{folders.length?folders.map(folder=><div className="dc-folder-sync-item" key={folder.id}><div className="dc-folder-sync-title"><Folder size={19}/><div><strong>{folder.path.split(/[\\/]/).filter(Boolean).at(-1)||folder.path}</strong><small title={folder.path}>{folder.path}</small></div></div>
