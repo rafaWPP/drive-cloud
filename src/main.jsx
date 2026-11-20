@@ -795,6 +795,7 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
 function BackupPages({section,onToast}){
  const [status,setStatus]=useState(null),[history,setHistory]=useState([]),[loading,setLoading]=useState(false),[frequency,setFrequency]=useState('off'),[error,setError]=useState('');
  const [remoteSnapshot,setRemoteSnapshot]=useState(null),[remoteBusy,setRemoteBusy]=useState(false),[remoteError,setRemoteError]=useState('');
+ const [restorePreview,setRestorePreview]=useState(null);
  const base=backendOrigin+'/api/backup';
  async function req(path,method='GET',body){
   const r=await fetch(base+path,{method,...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
@@ -814,6 +815,22 @@ function BackupPages({section,onToast}){
    setRemoteSnapshot(data);
   }catch(e){setRemoteError(e.message)}finally{setRemoteBusy(false)}
  }
+ async function restoreFromTelegram(dryRun=true){
+  setRemoteBusy(true);setRemoteError('');
+  try{
+   const download=await fetch(backendOrigin+'/api/cloud/catalog/telegram/download',{cache:'no-store'});
+   if(!download.ok){const detail=await download.json().catch(()=>({}));throw Error(detail.detail||'Não foi possível recuperar a cópia do Telegram')}
+   const blob=await download.blob();
+   const form=new FormData();
+   form.append('file',blob,'drive-cloud-telegram-catalog.json');
+   form.append('dry_run',String(dryRun));
+   const result=await fetch(backendOrigin+'/api/cloud/catalog/import',{method:'POST',body:form});
+   const data=await result.json().catch(()=>({}));
+   if(!result.ok)throw Error(data.detail||'Não foi possível validar os dados da cópia');
+   if(dryRun){setRestorePreview(data)}
+   else {setRestorePreview(null);onToast?.({kind:'success',message:data.imported+' itens recuperados. Reabra Meu Drive para atualizar a lista.'})}
+  }catch(e){setRestorePreview(null);setRemoteError(e.message)}finally{setRemoteBusy(false)}
+ }
  async function saveRemoteSnapshot(){
   setRemoteBusy(true);setRemoteError('');
   try{
@@ -827,8 +844,8 @@ function BackupPages({section,onToast}){
  return <div className="dc-module-page"><div className="dc-module-note"><DatabaseBackup size={19}/><div><strong>Backup do catálogo</strong><p>Estas cópias guardam a organização, as pastas e as referências aos arquivos do Telegram. Não são cópias dos arquivos. Para guardar arquivos offline, baixe as pastas em ZIP.</p></div></div>
  {error&&<div className="public-share-error">{error}</div>}
  {(section==='backups'||section==='backupHistory')&&<div className="dc-module-section"><div><h3>Catálogo no Telegram</h3><p>Salve no seu canal privado uma cópia da organização das pastas e das referências dos arquivos. Esta cópia não substitui arquivos locais nem ativa sincronização automática.</p></div>
- <div className="dc-schedule-controls"><button className="dc-module-primary" disabled={remoteBusy} onClick={saveRemoteSnapshot}><DatabaseBackup size={17}/>{remoteBusy?'Aguarde...':'Salvar catálogo no Telegram'}</button><button disabled={remoteBusy} onClick={fetchRemoteInfo}>Verificar cópia no Telegram</button>{remoteSnapshot&&<p>Última cópia: {remoteSnapshot.items} itens • {remoteSnapshot.exported_at?new Date(remoteSnapshot.exported_at).toLocaleString('pt-BR'):'data indisponível'}. <a href={backendOrigin+'/api/cloud/catalog/telegram/download'} download="drive-cloud-telegram-catalog.json">Baixar JSON</a></p>}{remoteError&&<p className="public-share-error">{remoteError}</p>}</div>
- <small>Restaurar ou mesclar automaticamente ainda não está disponível. Guarde cópias dos arquivos importantes.</small>
+ <div className="dc-schedule-controls"><button className="dc-module-primary" disabled={remoteBusy} onClick={saveRemoteSnapshot}><DatabaseBackup size={17}/>{remoteBusy?'Aguarde...':'Salvar catálogo no Telegram'}</button><button disabled={remoteBusy} onClick={fetchRemoteInfo}>Verificar cópia no Telegram</button><button disabled={remoteBusy} onClick={()=>restoreFromTelegram(true)}>Analisar recuperação</button>{restorePreview&&<div className="dc-remote-restore-preview"><strong>Recuperação sem exclusões</strong><p>{restorePreview.checked} itens verificados • {restorePreview.new_items} itens ausentes neste computador • {restorePreview.existing_items} já existentes.</p><small>A recuperação adiciona apenas itens ausentes e não apaga ou sobrescreve arquivos. Confira se a conta e o canal são os corretos.</small><button className="dc-module-primary" disabled={remoteBusy||!restorePreview.new_items} onClick={()=>restoreFromTelegram(false)}>Confirmar recuperação de {restorePreview.new_items} itens</button></div>}{remoteSnapshot&&<p>Última cópia: {remoteSnapshot.items} itens • {remoteSnapshot.exported_at?new Date(remoteSnapshot.exported_at).toLocaleString('pt-BR'):'data indisponível'}. <a href={backendOrigin+'/api/cloud/catalog/telegram/download'} download="drive-cloud-telegram-catalog.json">Baixar JSON</a></p>}{remoteError&&<p className="public-share-error">{remoteError}</p>}</div>
+ <small>A recuperação manual adiciona somente itens ausentes. A sincronização automática e a resolução de conflitos entre dispositivos ainda não estão disponíveis.</small>
  </div>}
 
  {section==='backups'&&<div className="dc-dashboard-grid"><div className="dc-module-card"><div className="dc-module-card-top"><DatabaseBackup size={20}/><span>Último backup</span></div><strong>{status?.last_backup?new Date(status.last_backup.created*1000).toLocaleString('pt-BR'):'Nenhum backup ainda'}</strong><small>{status?.last_backup?status.last_backup.item_count+' registros protegidos':'Crie o primeiro snapshot local do catálogo.'}</small></div><div className="dc-module-card"><div className="dc-module-card-top"><Clock3 size={20}/><span>Agendamento</span></div><strong>{frequency==='daily'?'Diário':frequency==='weekly'?'Semanal':'Desativado'}</strong><small>{status?.next_run?'Próxima execução: '+new Date(status.next_run*1000).toLocaleString('pt-BR'):'Executa enquanto o backend local estiver ligado.'}</small></div><div className="dc-module-card"><div className="dc-module-card-top"><List size={20}/><span>Histórico</span></div><strong>{history.length} snapshots</strong><small>Últimas cópias do catálogo neste computador.</small></div></div>}
