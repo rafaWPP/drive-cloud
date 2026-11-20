@@ -5,7 +5,7 @@ import{Play,Pause,Volume2,VolumeX,Maximize,Minimize,Cloud,Home,Folder,Image,Data
 import{all,save,read,erase}from'./storage';
 import './style.css';
 import {invoke} from '@tauri-apps/api/core';
-import {getCurrentWebviewWindow} from '@tauri-apps/api/webviewWindow';
+import {getCurrentWebview} from '@tauri-apps/api/webview';
 import {openUrl} from '@tauri-apps/plugin-opener';
 import {open as openNativeDialog} from '@tauri-apps/plugin-dialog';
 let backendOrigin='http://127.0.0.1:8000';
@@ -986,7 +986,7 @@ async function uploadNativeDrop(paths){
 useEffect(()=>{
  if(!window.__TAURI_INTERNALS__)return;
  let alive=true,release=null;
- getCurrentWebviewWindow().onDragDropEvent(event=>{
+ getCurrentWebview().onDragDropEvent(event=>{
   if(!alive)return;
   const payload=event.payload;
   if(payload.type==='enter'&&mode!=='trash')setDrag(true);
