@@ -13,7 +13,7 @@ import time
 import uuid
 import zipfile
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Literal
@@ -34,7 +34,7 @@ def schema(db):
 
 class ShareIn(BaseModel):
     item_id: str
-    mode: Literal["download","view"] = "view"
+    mode: Literal["download","view","embed"] = "view"
     expires_hours: Literal[1,24,168] = 24
 
 def build_share_router(authorized_account, channel_links, lock):
@@ -197,6 +197,77 @@ def build_share_router(authorized_account, channel_links, lock):
             return Response(output.getvalue(),media_type="application/zip",
                 headers={"Cache-Control":"no-store","Content-Disposition":
                     "attachment; filename*=UTF-8''"+quote(root["name"]+".zip")})
+
+    def safe_media_type(item):
+        """Only render ordinary browser-safe media; everything else stays a download."""
+        import mimetypes
+        name=str(item["name"]).lower()
+        ext=name.rsplit(".",1)[-1] if "." in name else ""
+        supported={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png",
+                   "webp":"image/webp","gif":"image/gif",
+                   "mp4":"video/mp4","webm":"video/webm","m4v":"video/mp4"}
+        return supported.get(ext)
+
+    async def send_media(link,root,request:Request,item_id=None):
+        if link["mode"] not in ("view","embed"):
+            raise HTTPException(403,"Este link não permite incorporar mídia.")
+        if item_id:
+            if root["kind"]!="folder" or link["mode"]!="view":
+                raise HTTPException(403,"Arquivo fora de uma pasta compartilhada.")
+            with connection() as db:
+                items=child_rows(db,root,link["owner"])
+            item=next((row for row,_ in items if row["id"]==item_id and row["kind"]=="file"),None)
+            if item is None:
+                raise HTTPException(404,"Mídia não incluída nesta pasta.")
+        else:
+            item=root
+        media_type=safe_media_type(item)
+        if not media_type or item["kind"]!="file":
+            raise HTTPException(415,"Tipo de mídia não suportado para incorporação.")
+        if item["size"]>MAX_PUBLIC_ZIP:
+            raise HTTPException(413,"Incorporação local limitada a 50 MB por arquivo.")
+        async with lock:
+            client,account=await authorized_account()
+            if account!=link["owner"]:
+                raise HTTPException(403,"Sessão do proprietário indisponível.")
+            msg=await client.get_messages(channel_id(channel_links,account),ids=item["message_id"])
+            if not msg or not msg.media:
+                raise HTTPException(404,"Mídia não encontrada.")
+            data=await client.download_media(msg,file=bytes)
+        if data is None:
+            raise HTTPException(502,"Falha ao recuperar mídia.")
+        if len(data)>MAX_PUBLIC_ZIP:
+            raise HTTPException(413,"Arquivo grande demais para incorporação local.")
+        total=len(data)
+        headers={"Cache-Control":"no-store","Accept-Ranges":"bytes",
+                 "X-Content-Type-Options":"nosniff"}
+        byte_range=request.headers.get("range")
+        if byte_range:
+            import re
+            match=re.fullmatch(r"bytes=(\\d*)-(\\d*)",byte_range.strip())
+            if match is None or (not match.group(1) and not match.group(2)):
+                raise HTTPException(416,"Intervalo de bytes inválido.",headers={"Content-Range":f"bytes */{total}"})
+            if match.group(1):
+                start=int(match.group(1))
+                end=int(match.group(2)) if match.group(2) else total-1
+            else:
+                suffix=int(match.group(2))
+                start=max(0,total-suffix);end=total-1
+            if total==0 or start>=total or end<start or end>=total:
+                raise HTTPException(416,"Intervalo fora do arquivo.",headers={"Content-Range":f"bytes */{total}"})
+            headers["Content-Range"]=f"bytes {start}-{end}/{total}"
+            return Response(data[start:end+1],status_code=206,media_type=media_type,headers=headers)
+        return Response(data,media_type=media_type,headers=headers)
+
+    @router.get("/api/public/share/{token}/media")
+    async def media_root(token:str,request:Request):
+        link,root=await lookup(token)
+        return await send_media(link,root,request)
+
+    @router.get("/api/public/share/{token}/media/{file_id}")
+    async def media_child(token:str,file_id:str,request:Request):
+        link,root=await lookup(token)
+        return await send_media(link,root,request,file_id)
 
     @router.get("/api/public/share/{token}/image/{file_id}")
     async def preview_shared_child(token:str,file_id:str):
