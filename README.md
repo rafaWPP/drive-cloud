@@ -265,3 +265,13 @@ Downloads por link nessa etapa são limitados a 50 MB de dados originais e 100 i
 
 ### Atualização
 Execute `git pull origin main`, reinicie o backend Python, recarregue o navegador. Teste primeiro um snapshot de catálogo e um compartilhamento local usando arquivos descartáveis. A versão publicada no GitHub ainda depende de testes de execução no PC local e de confirmação do build pelo workflow.
+
+## Explorador de pasta compartilhada (V13)
+
+Os links de compartilhamento no modo **Compartilhado** agora mostram um explorador semelhante ao Meu Drive, com breadcrumbs, botão Voltar, entrada em subpastas, alternância lista/grade, busca na pasta atual, visualização de imagens e download individual. O item selecionado fica dentro do escopo da pasta original; a API devolve identificadores de pastas-pai e permite prévias apenas de arquivos pertencentes à árvore compartilhada. Links de **Download** seguem mostrando somente o acesso direto ao arquivo ou ZIP completo.
+
+A janela **Compartilhar link** agora apresenta o item, cartões para escolher entre Download e Compartilhado, validade, campo para copiar o endereço e lista de links ativos com opção Revogar. Mantém as animações discretas e o tema grafite.
+
+**Segurança e limites:** continua exclusivamente em localhost. Compartilhar uma URL localhost com outra pessoa não permite acesso de outro computador. Não exponha o backend principal por túnel, encaminhamento de portas ou proxy; ele controla a sessão do Telegram. Downloads e prévias exigem a sessão local do proprietário. Atualize com `git pull origin main` e reinicie o backend Python, pois foi acrescentado o endpoint de prévia compartilhada.
+
+Verificação automática compila o frontend e verifica sintaxe do backend; testes ponta a ponta com Telegram e ZIP ainda dependem do ambiente local.
