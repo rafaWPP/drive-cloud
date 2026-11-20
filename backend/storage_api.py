@@ -473,8 +473,17 @@ def build_router(authorized_account, channel_links, lock):
                 os.chmod(temporary_path, 0o600)
                 try:
                     saved = await client.download_media(msg, file=str(temporary_path))
-                    if not saved or not temporary_path.exists():
+                    if not saved:
                         raise HTTPException(502, "Não foi possível recuperar arquivo.")
+                    # Telethon may append the document extension to a path.
+                    received = Path(saved) if isinstance(saved, str) else temporary_path
+                    if received.parent.resolve() != DB_PATH.parent.resolve() or received.is_symlink():
+                        raise HTTPException(502, "Destino inesperado no download do Telegram.")
+                    if received != temporary_path:
+                        temporary_path.unlink(missing_ok=True)
+                        temporary_path = received
+                    if not temporary_path.is_file() or temporary_path.stat().st_size != row["size"]:
+                        raise HTTPException(502, "Tamanho do download não confere com o catálogo.")
                 except Exception:
                     temporary_path.unlink(missing_ok=True)
                     raise
@@ -484,7 +493,9 @@ def build_router(authorized_account, channel_links, lock):
                 raise HTTPException(502, "Falha no download do Telegram: " + type(exc).__name__) from exc
             return FileResponse(
                 temporary_path, media_type="application/octet-stream",
-                headers={"Cache-Control": "no-store"},
+                filename=row["name"],
+                content_disposition_type="attachment",
+                headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
                 background=BackgroundTask(lambda: temporary_path.unlink(missing_ok=True)),
             )
 
