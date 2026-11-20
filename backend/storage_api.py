@@ -55,6 +55,8 @@ def connection():
     cols = {r[1] for r in db.execute("PRAGMA table_info(nodes)")}
     if "trashed" not in cols:
         db.execute("ALTER TABLE nodes ADD COLUMN trashed INTEGER NOT NULL DEFAULT 0")
+    if "starred" not in cols:
+        db.execute("ALTER TABLE nodes ADD COLUMN starred INTEGER NOT NULL DEFAULT 0")
     db.execute("CREATE INDEX IF NOT EXISTS nodes_account_parent ON nodes(account,parent)")
     return db
 
@@ -202,6 +204,7 @@ def build_router(authorized_account, channel_links, lock):
         name: str | None = Field(default=None, max_length=180)
         parent: str | None = None
         trashed: bool | None = None
+        starred: bool | None = None
 
     @router.patch("/items/{item_id}")
     async def change_item(item_id: str, body: ChangeInput):
@@ -230,6 +233,8 @@ def build_router(authorized_account, channel_links, lock):
                     db.execute("UPDATE nodes SET parent=? WHERE id=? AND account=?", (body.parent,item_id,account))
                 if body.trashed is not None:
                     db.execute("UPDATE nodes SET trashed=? WHERE id=? AND account=?", (int(body.trashed),item_id,account))
+                if body.starred is not None:
+                    db.execute("UPDATE nodes SET starred=? WHERE id=? AND account=?", (int(body.starred),item_id,account))
             return {"ok": True}
 
     return router
