@@ -184,3 +184,7 @@ Após `git pull origin main`, reinicie o backend para habilitar rotas de exporta
 - Indicador na barra lateral reduzido a **Armazenamento — valor usado**, uma barra fina e estado da conexão. A barra usa **1 GB apenas como escala de comparação visual**, nunca como cota ou limite real do Telegram. O número representa os arquivos registrados no SQLite local, incluindo lixeira.
 - Modal de exclusão com **um único ícone de alerta centralizado** que gira uma vez durante a abertura e termina parado; texto de advertência abaixo, em contraste discreto. A confirmação e o painel de progresso/cancelamento continuam funcionando.
 - Para atualizar: `git pull origin main` e `Ctrl+Shift+R`. Apenas frontend foi alterado; não exige reiniciar backend.
+
+## Validação de uploads antes de abrir painel
+
+O gerenciador de transferências **só aparece quando um arquivo válido entra no envio**. Arquivos acima do limite experimental de **20 MB por arquivo** são rejeitados antes de entrar na fila: aparece apenas um toast de erro, sem abrir uma janela de upload vazia. Se houver uma seleção mista, os arquivos aceitos seguem para o Telegram e os rejeitados são avisados por toast. O limite permanece em vigor nesta etapa; suporte a arquivos grandes ainda requer implementação e validação em partes.
