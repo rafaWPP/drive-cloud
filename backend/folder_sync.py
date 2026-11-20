@@ -19,13 +19,15 @@ from typing import Literal
 from sync_reconcile import (remote_tree, safe_relative, decision, get_remote_file,
                             install_download, MAX_DOWNLOADS_PER_RUN)
 
-from storage_api import MAX_SIZE, connection, channel_id
+from storage_api import MAX_SIZE, DB_PATH, connection, channel_id
 from catalog_merge import merge_catalog
 from catalog_telegram import MARKER, MAX_SNAPSHOT_BYTES, decode_catalog, send_catalog_snapshot
 
 MAX_SCAN_FILES = 10000
 MAX_UPLOADS_PER_RUN = 3
-IGNORE_DIRS = {"node_modules", ".git", ".venv", "__pycache__", ".cache"}
+IGNORE_DIRS = {"node_modules", ".git", ".venv", "__pycache__", ".cache",
+               ".ssh", ".gnupg", ".config", ".local", "AppData",
+               "Application Data", "System Volume Information", "$RECYCLE.BIN"}
 IGNORED_FILES = {".DS_Store", "Thumbs.db"}
 FORBIDDEN_TOP = {"/", "/proc", "/sys", "/dev", "/etc"}
 
@@ -81,6 +83,8 @@ def source_root(path: str) -> Path:
         raise HTTPException(422, "Selecione uma pasta de documentos, não um diretório do sistema.")
     if root.is_symlink():
         raise HTTPException(422, "Atalhos simbólicos não podem ser sincronizados.")
+    if root.is_relative_to(DB_PATH.parent.resolve()):
+        raise HTTPException(422, "A pasta de dados internos do aplicativo não pode ser sincronizada.")
     return root
 
 
@@ -90,9 +94,9 @@ def scan_folder(root: Path):
     oversized = 0
     try:
         for current, dirs, files in os.walk(root, followlinks=False):
-            dirs[:] = sorted(d for d in dirs if d not in IGNORE_DIRS and not (Path(current) / d).is_symlink())
+            dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d.casefold() not in {n.casefold() for n in IGNORE_DIRS} and not (Path(current) / d).is_symlink())
             for name in sorted(files):
-                if name in IGNORED_FILES or name.endswith((".tmp", ".part", ".swp")):
+                if name.startswith(".") or name in IGNORED_FILES or name.endswith((".tmp", ".part", ".swp")):
                     continue
                 path = Path(current) / name
                 if path.is_symlink():
