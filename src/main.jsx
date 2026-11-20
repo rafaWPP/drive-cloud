@@ -98,24 +98,84 @@ if(!toast)return null;
 const Icon=toast.kind==='error'?X:toast.kind==='info'?Cloud:Check;
 return <div className={'dc-toast '+(closing?'dc-toast-out':'')} role="status" aria-live="polite"><span className={'dc-toast-symbol '+toast.kind}><Icon size={18}/></span><div className="dc-toast-message">{toast.message}</div>{toast.undo&&<button className="dc-toast-undo" onClick={()=>{toast.undo();setClosing(true)}}>Desfazer</button>}<button className="dc-toast-close" title="Fechar notificação" aria-label="Fechar notificação" onClick={()=>setClosing(true)}><X size={17}/></button></div>}
 function DriveVideoPlayer({src,name,onError}){
- const videoRef=useRef(null),shellRef=useRef(null);
+ const videoRef=useRef(null),shellRef=useRef(null),tapRef=useRef(null),skipRef=useRef(null),feedbackTimer=useRef(null),skipTimer=useRef(null);
  const [playing,setPlaying]=useState(false),[waiting,setWaiting]=useState(true);
  const [current,setCurrent]=useState(0),[duration,setDuration]=useState(0);
- const [volume,setVolume]=useState(1),[muted,setMuted]=useState(false),[full,setFull]=useState(false);
+ const [volume,setVolume]=useState(1),[muted,setMuted]=useState(false),[volumeOpen,setVolumeOpen]=useState(false);
+ const [full,setFull]=useState(false),[canPip,setCanPip]=useState(false),[pip,setPip]=useState(false),[quality,setQuality]=useState('');
+ const [skipIndicator,setSkipIndicator]=useState(null),[centerFeedback,setCenterFeedback]=useState(null);
  const stamp=n=>Number.isFinite(n)?Math.floor(n/3600)>0?[Math.floor(n/3600),Math.floor(n%3600/60),Math.floor(n%60)].map(x=>String(x).padStart(2,'0')).join(':'):[Math.floor(n/60),Math.floor(n%60)].map(x=>String(x).padStart(2,'0')).join(':'):'0:00';
- const toggle=()=>{const v=videoRef.current;if(!v)return;if(v.paused)v.play().catch(()=>{});else v.pause()};
- const seek=value=>{const v=videoRef.current;if(v&&Number.isFinite(v.duration))v.currentTime=Number(value)};
- const fullscreen=async()=>{const el=shellRef.current;if(!el)return;try{if(document.fullscreenElement)await document.exitFullscreen();else await el.requestFullscreen()}catch{}};
- useEffect(()=>{const listener=()=>setFull(!!document.fullscreenElement);document.addEventListener('fullscreenchange',listener);return()=>document.removeEventListener('fullscreenchange',listener)},[]);
- return <div ref={shellRef} className="dc-video-player" tabIndex={0} aria-label={'Player de vídeo: '+name} onKeyDown={e=>{if(e.target.tagName==='INPUT'||e.target.tagName==='BUTTON')return;if(e.key===' '||e.key==='k'){e.preventDefault();toggle()}else if(e.key==='ArrowRight'){e.preventDefault();seek(Math.min(duration,current+5))}else if(e.key==='ArrowLeft'){e.preventDefault();seek(Math.max(0,current-5))}}}>
- <video ref={videoRef} src={src} playsInline preload="metadata" onLoadStart={()=>setWaiting(true)} onWaiting={()=>setWaiting(true)} onCanPlay={()=>setWaiting(false)} onPlaying={()=>{setPlaying(true);setWaiting(false)}} onPause={()=>setPlaying(false)} onTimeUpdate={e=>setCurrent(e.currentTarget.currentTime)} onLoadedMetadata={e=>{setDuration(e.currentTarget.duration);setWaiting(false)}} onDurationChange={e=>setDuration(e.currentTarget.duration)} onError={onError} onClick={toggle}/>
- {waiting&&<div className="dc-video-buffer" aria-label="Carregando vídeo"><span className="dc-video-spinner"/></div>}
- {!playing&&!waiting&&<button className="dc-video-big-play" aria-label="Reproduzir vídeo" onClick={toggle}><Play size={28} fill="currentColor"/></button>}
- <div className="dc-video-controls"><input className="dc-video-seek" aria-label="Posição do vídeo" type="range" min="0" max={duration||1} step=".1" value={Math.min(current,duration||1)} onChange={e=>seek(e.target.value)} style={{'--progress':(duration?100*current/duration:0)+'%'}}/>
- <div className="dc-video-control-row"><button aria-label={playing?'Pausar':'Reproduzir'} onClick={toggle}>{playing?<Pause size={19} fill="currentColor"/>:<Play size={19} fill="currentColor"/>}</button><span className="dc-video-timestamp">{stamp(current)} / {stamp(duration)}</span><span className="dc-video-flex"/>
- <button aria-label={muted?'Ativar som':'Silenciar'} onClick={()=>{const v=videoRef.current;if(v){v.muted=!v.muted;setMuted(v.muted)}}}>{muted||volume===0?<VolumeX size={19}/>:<Volume2 size={19}/>}</button>
- <input aria-label="Volume" className="dc-video-volume" type="range" min="0" max="1" step=".05" value={muted?0:volume} onChange={e=>{const n=Number(e.target.value);setVolume(n);setMuted(n===0);if(videoRef.current){videoRef.current.volume=n;videoRef.current.muted=n===0}}}/>
- <button aria-label={full?'Sair da tela cheia':'Tela cheia'} onClick={fullscreen}>{full?<Minimize size={19}/>:<Maximize size={19}/>}</button></div></div>
+ const clearTap=()=>{if(tapRef.current?.timer)clearTimeout(tapRef.current.timer);tapRef.current=null};
+ const flashCenter=kind=>{clearTimeout(feedbackTimer.current);setCenterFeedback(kind);feedbackTimer.current=setTimeout(()=>setCenterFeedback(null),620)};
+ const toggle=()=>{const v=videoRef.current;if(!v)return;if(v.paused){v.play().then(()=>flashCenter('play')).catch(()=>{})}else{v.pause();flashCenter('pause')}};
+ const seek=value=>{const v=videoRef.current;if(v&&Number.isFinite(v.duration)&&v.duration>0){v.currentTime=Math.max(0,Math.min(v.duration,Number(value)))}};
+ const skip=side=>{
+  const v=videoRef.current;
+  if(!v||!Number.isFinite(v.duration)||v.duration<=0)return;
+  const now=Date.now(),last=skipRef.current;
+  const cumulative=last?.side===side&&now-last.at<1350?last.amount+10:10;
+  skipRef.current={side,amount:cumulative,at:now};
+  seek(v.currentTime+(side==='right'?10:-10));
+  setSkipIndicator({side,amount:cumulative});
+  clearTimeout(skipTimer.current);
+  skipTimer.current=setTimeout(()=>setSkipIndicator(null),850);
+ };
+ const handleGesture=e=>{
+  if(e.pointerType==='mouse'&&e.button!==0)return;
+  const rect=e.currentTarget.getBoundingClientRect();
+  const fraction=(e.clientX-rect.left)/rect.width;
+  if(fraction>=.39&&fraction<=.61){clearTap();toggle();return}
+  const side=fraction<.5?'left':'right',now=Date.now();
+  const previous=tapRef.current;
+  if(previous&&previous.side===side&&now-previous.at<350){
+   clearTap();
+   skip(side);
+   return;
+  }
+  clearTap();
+  tapRef.current={side,at:now,timer:setTimeout(()=>{tapRef.current=null;toggle()},350)};
+ };
+ const fullscreen=async()=>{const el=shellRef.current;if(!el)return;try{if(document.fullscreenElement)await document.exitFullscreen();else if(el.requestFullscreen)await el.requestFullscreen()}catch{}};
+ const togglePip=async()=>{const v=videoRef.current;if(!v||!v.requestPictureInPicture)return;try{if(document.pictureInPictureElement)await document.exitPictureInPicture();else await v.requestPictureInPicture()}catch{}};
+ const onMetadata=e=>{const v=e.currentTarget;setDuration(v.duration);setWaiting(false);setQuality(v.videoHeight>=720?'HD':'')};
+ useEffect(()=>{
+  const listener=()=>setFull(!!document.fullscreenElement);
+  document.addEventListener('fullscreenchange',listener);
+  setCanPip(Boolean(document.pictureInPictureEnabled&&videoRef.current?.requestPictureInPicture));
+  const v=videoRef.current;
+  const onEnter=()=>setPip(true),onLeave=()=>setPip(false);
+  v?.addEventListener('enterpictureinpicture',onEnter);
+  v?.addEventListener('leavepictureinpicture',onLeave);
+  return()=>{document.removeEventListener('fullscreenchange',listener);v?.removeEventListener('enterpictureinpicture',onEnter);v?.removeEventListener('leavepictureinpicture',onLeave);clearTap();clearTimeout(skipTimer.current);clearTimeout(feedbackTimer.current)};
+ },[]);
+ return <div ref={shellRef} className="dc-video-player dc-video-player-youtube" tabIndex={0} aria-label={'Player de vídeo: '+name} onKeyDown={e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='BUTTON')return;
+  if(e.key===' '||e.key==='k'){e.preventDefault();toggle()}
+  else if(e.key==='ArrowRight'){e.preventDefault();skip('right')}
+  else if(e.key==='ArrowLeft'){e.preventDefault();skip('left')}
+  else if(e.key==='f'){e.preventDefault();fullscreen()}
+  else if(e.key==='m'){e.preventDefault();const v=videoRef.current;if(v){v.muted=!v.muted;setMuted(v.muted)}}
+ }}>
+  <video ref={videoRef} src={src} playsInline preload="metadata" onLoadStart={()=>setWaiting(true)} onWaiting={()=>setWaiting(true)} onCanPlay={()=>setWaiting(false)} onPlaying={()=>{setPlaying(true);setWaiting(false)}} onPause={()=>setPlaying(false)} onTimeUpdate={e=>setCurrent(e.currentTarget.currentTime)} onLoadedMetadata={onMetadata} onDurationChange={e=>setDuration(e.currentTarget.duration)} onError={onError}/>
+  <div className="dc-video-gesture-layer" aria-label="Toque duas vezes à esquerda para voltar 10 segundos ou à direita para avançar" onPointerUp={handleGesture} onDoubleClick={e=>e.preventDefault()}/>
+  {waiting&&<div className="dc-video-buffer" aria-label="Carregando vídeo"><span className="dc-video-spinner"/></div>}
+  {!playing&&!waiting&&<button type="button" className="dc-video-big-play" aria-label="Reproduzir vídeo" onClick={toggle}><Play size={28} fill="currentColor"/></button>}
+  {centerFeedback&&playing&&<div className="dc-video-center-feedback" aria-hidden="true">{centerFeedback==='pause'?<Pause size={29} fill="currentColor"/>:<Play size={29} fill="currentColor"/>}</div>}
+  {skipIndicator&&<div key={skipIndicator.side+'-'+skipIndicator.amount} className={'dc-video-skip-feedback '+(skipIndicator.side==='left'?'dc-video-skip-left':'dc-video-skip-right')} aria-live="polite"><span>{skipIndicator.side==='left'?'−':'+'}{skipIndicator.amount}s</span></div>}
+  <div className="dc-video-controls">
+   <div className="dc-video-above-progress"><span className="dc-video-timestamp">{stamp(current)} / {stamp(duration)}</span><button type="button" aria-label={full?'Sair da tela cheia':'Tela cheia'} onClick={fullscreen}>{full?<Minimize size={20}/>:<Maximize size={20}/>}</button></div>
+   <input className="dc-video-seek" aria-label="Progresso do vídeo" type="range" min="0" max={duration||1} step=".1" value={Math.min(current,duration||1)} onChange={e=>seek(e.target.value)} style={{'--progress':(duration?100*current/duration:0)+'%'}}/>
+   <div className="dc-video-control-row">
+    <button type="button" aria-label={playing?'Pausar':'Reproduzir'} onClick={toggle}>{playing?<Pause size={20} fill="currentColor"/>:<Play size={20} fill="currentColor"/>}</button>
+    {quality&&<span className="dc-video-quality" title="Qualidade original do arquivo; troca de resolução não disponível">{quality}</span>}
+    {canPip&&<button type="button" aria-label={pip?'Fechar player flutuante':'Abrir player flutuante'} title="Picture-in-Picture" onClick={togglePip}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><rect x="12" y="12" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg></button>}
+    <span className="dc-video-flex"/>
+    <div className={'dc-video-volume-wrap '+(volumeOpen?'is-open':'')}>
+     <input aria-label="Volume" className="dc-video-volume" type="range" min="0" max="1" step=".05" value={muted?0:volume} onChange={e=>{const n=Number(e.target.value);setVolume(n);setMuted(n===0);if(videoRef.current){videoRef.current.volume=n;videoRef.current.muted=n===0}}}/>
+     <button type="button" aria-label={muted||volume===0?'Ativar áudio':'Configurar volume'} aria-expanded={volumeOpen} title="Áudio e volume" onClick={()=>setVolumeOpen(open=>!open)}>{muted||volume===0?<VolumeX size={21}/>:<Volume2 size={21}/>}</button>
+    </div>
+   </div>
+  </div>
  </div>
 }
 function SharedMediaDisplay({src,statusUrl,name,video=false}){
