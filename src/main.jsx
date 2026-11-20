@@ -725,7 +725,9 @@ function DriveFolderTree({nodes,current,onOpen}){
    if(!list||!row)return;
    const bounds=list.getBoundingClientRect(),rect=row.getBoundingClientRect();
    if(rect.top<bounds.top+8)list.scrollTop+=rect.top-bounds.top-8;
-   else if(rect.bottom>bounds.bottom-8)list.scrollTop+=rect.bottom-bounds.bottom+8;
+   else if(rect.bottom>bounds.bottom-20)list.scrollTop+=rect.bottom-bounds.bottom+20;
+   if(rect.left<bounds.left+8)list.scrollLeft+=rect.left-bounds.left-8;
+   else if(rect.right>bounds.right-12)list.scrollLeft+=rect.right-bounds.right+12;
   },300);
   return()=>window.clearTimeout(timer);
  },[current,nodes]);
@@ -735,9 +737,9 @@ function DriveFolderTree({nodes,current,onOpen}){
    const children=folders.some(x=>x.parent===item.id);
    const open=!!expanded[item.id];
    return <div key={item.id} className="dc-tree-branch">
-    <div ref={current===item.id?activeRowRef:null} className={'dc-tree-row '+(current===item.id?'active':'')} style={{paddingLeft:(8+Math.min(depth,4)*11)+'px'}} title={item.name}>
+    <div className={'dc-tree-row '+(current===item.id?'active':'')} style={{paddingLeft:(8+depth*14)+'px'}} title={item.name}>
      <button className="dc-tree-expand" title={children?(open?'Recolher pasta':'Expandir pasta'):'Sem subpastas'} disabled={!children} onClick={()=>setExpanded(prev=>({...prev,[item.id]:!prev[item.id]}))}>{children?(open?<ChevronDown size={14}/>:<ChevronRight size={14}/>):<span/>}</button>
-     <button className="dc-tree-name" title={item.name} onClick={()=>{onOpen(item.id);setExpanded(prev=>({...prev,[item.id]:true}))}}><Folder size={16}/><span>{item.name}</span></button>
+     <button ref={current===item.id?activeRowRef:null} className="dc-tree-name" title={item.name} onClick={()=>{onOpen(item.id);setExpanded(prev=>({...prev,[item.id]:true}))}}><Folder size={16}/><span>{item.name}</span></button>
     </div>
     {children&&<div className={'dc-tree-children '+(open?'expanded':'')}><div className="dc-tree-children-inner">{branch(item.id,depth+1)}</div></div>}
    </div>
