@@ -70,6 +70,12 @@ async def local_only(request: Request, call_next):
             raise HTTPException(status_code=403, detail="Origem não autorizada")
     return await call_next(request)
 
+@app.get("/api/health")
+async def health():
+    """Fast local readiness probe, independent of Telegram network/login."""
+    return {"ready": True}
+
+
 def configured():
     if not API_ID or not API_HASH:
         raise HTTPException(status_code=422, detail="Configure TELEGRAM_API_ID e TELEGRAM_API_HASH em backend/.env")
