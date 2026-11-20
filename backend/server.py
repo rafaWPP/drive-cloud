@@ -131,7 +131,7 @@ def safe_session_status_error(exc):
         if "locked" in message or "busy" in message:
             return {
                 "code": "SESSION_DATABASE_BUSY",
-                "error": "O banco de sessão Telegram está ocupado por outro processo (SESSION_DATABASE_BUSY). "
+                "error": "O banco de sessão Telegram está bloqueado (SESSION_DATABASE_BUSY), possivelmente por outra instância. "
                          "Feche todas as janelas do Drive Cloud e verifique se ficou algum "
                          "processo drive-cloud-backend em execução. Encerre apenas o "
                          "processo antigo, depois abra o aplicativo novamente. "
