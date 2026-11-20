@@ -1286,3 +1286,18 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
  .share-dialog.dc-share-v2{max-height:90vh}
 }
 @media(prefers-reduced-motion:reduce){.drop-zone.dc-drop-v2,.upload-tray.dc-upload-v2{animation:none}.dc-menu-select-trigger,.dc-compact-upload-info .upload-meter>span{transition:none}}
+
+.dc-menu-select-options.dc-select-portal{
+ position:fixed!important;
+ right:auto!important;
+ bottom:auto!important;
+ z-index:30000!important;
+ box-sizing:border-box;
+ overscroll-behavior:contain;
+ padding:5px;
+ scrollbar-width:thin;
+ scrollbar-color:#647184 transparent;
+ box-shadow:0 18px 38px #0009;
+}
+.dc-menu-select-options.dc-select-portal::-webkit-scrollbar{width:6px}
+.dc-menu-select-options.dc-select-portal::-webkit-scrollbar-thumb{background:#647184;border-radius:8px}
