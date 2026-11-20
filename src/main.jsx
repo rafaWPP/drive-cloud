@@ -488,15 +488,26 @@ function ShareDialog({item,onClose,onToast}){
  const modes=[{value:'view',label:'Visualizar e baixar',hint:'Abrir arquivos e navegar nas pastas'},{value:'download',label:'Somente download',hint:'Baixar o arquivo ou ZIP diretamente'},...(embeddable?[{value:'embed',label:'Integração (embed)',hint:'Incorporar mídia em outro sistema'}]:[])];
  const expiryOptions=[{value:'1',label:'1 hora'},{value:'24',label:'24 horas'},{value:'168',label:'7 dias'},{value:'0',label:'Nunca expira',hint:'Até você revogar o link manualmente'}];
  const isPermanent=t=>Number(t)>=253402300799;
+ const isDesktop=!!window.__TAURI_INTERNALS__;
+ // A tauri:// URL is not a shareable internet address. The embedded backend
+ // listens only on loopback; making it public would expose Telegram credentials.
+ const canCreateLocalTestLink=!isDesktop && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(window.location.origin);
+
  async function refreshLinks(){try{const r=await fetch(backendOrigin+'/api/share');if(!r.ok)return;const data=await r.json();setExisting((data.links||[]).filter(x=>x.item_id===item.id&&!x.revoked&&x.expires>Date.now()/1000))}catch{}}
  useEffect(()=>{refreshLinks()},[item.id]);
  async function createLink(){
+  if(!canCreateLocalTestLink){
+   setError('Compartilhamento público indisponível: esta instalação não tem um serviço HTTPS de compartilhamento. Nenhum endereço tauri:// é válido fora do aplicativo.');
+   return;
+  }
   if(busy)return;
   setBusy(true);setError('');
   try{
    const response=await fetch(backendOrigin+'/api/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id:item.id,mode,expires_hours:Number(expires)})});
    const result=await response.json();if(!response.ok)throw Error(result.detail||'Não foi possível criar o link.');
    const route=(mode==='embed'?'/embed/d/':item.kind==='folder'?'/folder/d/':'/file/d/');
+   // Only the browser's actual local HTTP origin can make a localhost
+   // development link. Never export tauri:// or pretend this is public.
    setCreated({...result,url:window.location.origin+route+encodeURIComponent(result.token),selectedMode:mode});
    await refreshLinks();
    onToast?.({kind:'success',message:'Link criado com sucesso.'});
@@ -506,18 +517,20 @@ function ShareDialog({item,onClose,onToast}){
  async function revoke(id){try{const response=await fetch(backendOrigin+'/api/share/'+id,{method:'DELETE'});if(!response.ok)throw Error('Falha ao revogar.');if(created?.id===id)setCreated(null);await refreshLinks();onToast?.({kind:'success',message:'Link revogado.'})}catch(e){setError(e.message)}}
  const iframe=created?.selectedMode==='embed'?'<iframe src="'+created.url+'" width="640" height="360" loading="lazy" allow="fullscreen" style="border:0;border-radius:12px" title="Mídia compartilhada"></iframe>':'';
  return <div className="move-backdrop" role="presentation" onClick={()=>!busy&&onClose()}><section className="move-dialog share-dialog dc-share-v2" role="dialog" aria-modal="true" aria-labelledby="share-dialog-title" onClick={e=>e.stopPropagation()}>
-  <header className="move-dialog-header"><div className="share-dialog-heading"><span className="share-dialog-heading-icon"><Users size={21}/></span><div><h3 id="share-dialog-title">Compartilhar {item.kind==='folder'?'pasta':'arquivo'}</h3><p>Crie um link de acesso ao conteúdo</p></div></div><button type="button" className="move-close" aria-label="Fechar" onClick={onClose}><X size={19}/></button></header>
+  <header className="move-dialog-header"><div className="share-dialog-heading"><span className="share-dialog-heading-icon"><Users size={21}/></span><div><h3 id="share-dialog-title">Compartilhar {item.kind==='folder'?'pasta':'arquivo'}</h3><p>{canCreateLocalTestLink?'Link de teste somente neste computador':'Compartilhamento por link externo ainda não configurado'}</p></div></div><button type="button" className="move-close" aria-label="Fechar" onClick={onClose}><X size={19}/></button></header>
   <div className="share-dialog-body">
    <div className="share-dialog-file"><span className="share-dialog-file-icon">{item.kind==='folder'?<Folder size={22}/>:<File size={22}/>}</span><div><strong title={item.name}>{item.name}</strong><small>{item.kind==='folder'?'Pasta compartilhada':'Arquivo compartilhado'}</small></div></div>
-   <div className="dc-share-field"><label>Tipo de link</label><DriveMenuSelect label="Tipo de link" value={mode} onChange={v=>{setMode(v);setCreated(null)}} options={modes} icon={Eye}/></div>
-   <div className="dc-share-field"><label>Acesso geral</label><DriveMenuSelect label="Acesso geral" value="anyone" onChange={()=>{}} options={[{value:'anyone',label:'Qualquer pessoa com o link',hint:'Acesso pelo endereço compartilhado'},{value:'restricted',label:'Restrito (em desenvolvimento)',hint:'Exige autenticação do destinatário',disabled:true}]} icon={Users}/><small className="dc-share-hint">Este link funciona somente neste computador. Acesso restrito por usuário ainda não está disponível.</small></div>
+   {!canCreateLocalTestLink&&<div className="dc-share-unavailable" role="status"><CircleAlert size={21}/><div><strong>Link público ainda não disponível</strong><p>O Drive Cloud funciona conectado ao Telegram por um serviço local protegido. Para compartilhar com outras pessoas, é necessário um serviço de compartilhamento HTTPS separado e seguro. Não vamos criar um link <code>tauri://localhost</code> que não abre em outros aparelhos.</p><small>Você ainda pode baixar o arquivo e enviá-lo diretamente. Os links antigos podem ser revogados abaixo.</small></div></div>}
+   {canCreateLocalTestLink&&<><div className="dc-share-field"><label>Tipo de link</label><DriveMenuSelect label="Tipo de link" value={mode} onChange={v=>{setMode(v);setCreated(null)}} options={modes} icon={Eye}/></div>
+   <div className="dc-share-field"><label>Acesso geral</label><DriveMenuSelect label="Acesso geral" value="anyone" onChange={()=>{}} options={[{value:'anyone',label:'Somente neste computador',hint:'Link de teste em localhost, sem acesso pela internet'},{value:'restricted',label:'Restrito (em desenvolvimento)',hint:'Exige autenticação do destinatário',disabled:true}]} icon={Users}/><small className="dc-share-hint">Este link funciona somente neste computador. Acesso restrito por usuário ainda não está disponível.</small></div>
    <div className="dc-share-field"><label>O link expira em</label><DriveMenuSelect label="Validade do link" value={expires} onChange={v=>{setExpires(v);setCreated(null)}} options={expiryOptions} icon={Clock3}/><small className="dc-share-hint">{expires==='0'?'O link continuará ativo até ser revogado.':'Você poderá revogar o link antes do prazo.'}</small></div>
    {created&&<div className="share-result"><label><Check size={15}/> Link criado</label><div><input value={created.url} aria-label="Endereço do compartilhamento" readOnly onFocus={e=>e.target.select()}/><button type="button" onClick={()=>copy(created.url)}><Check size={15}/> Copiar</button></div>{iframe&&<div className="share-embed-snippet"><label>Usar este link em outro sistema</label><textarea aria-label="Código de incorporação" readOnly value={iframe} onFocus={e=>e.target.select()}/><button type="button" onClick={()=>copy(iframe)}><Code size={15}/> Copiar código</button></div>}</div>}
+   </>}
    {error&&<div className="public-share-error"><CircleAlert size={16}/>{error}</div>}
    {!!existing.length&&<section className="share-existing"><strong>Links ativos</strong>{existing.map(link=><div key={link.id}><span>{link.mode==='download'?'Download':link.mode==='embed'?'Integração':'Visualização'} · {isPermanent(link.expires)?'Nunca expira':'Até '+new Date(link.expires*1000).toLocaleDateString('pt-BR')}</span><button type="button" onClick={()=>revoke(link.id)}>Revogar</button></div>)}</section>}
-   <div className="share-local-note"><CircleAlert size={16}/> Os links gerados funcionam somente neste computador. Para compartilhar pela internet será necessário um serviço HTTPS seguro.</div>
+   <div className="share-local-note"><CircleAlert size={16}/> Links de teste só funcionam no navegador local enquanto o servidor estiver ligado. Para acesso pela internet, será necessário um serviço HTTPS seguro independente.</div>
   </div>
-  <footer className="move-footer"><button type="button" onClick={onClose}>Concluir</button><button type="button" className="move-confirm" disabled={busy} onClick={createLink}><Plus size={16}/>{busy?'Criando...':'Criar link'}</button></footer>
+  <footer className="move-footer"><button type="button" onClick={onClose}>Concluir</button>{canCreateLocalTestLink&&<button type="button" className="move-confirm" disabled={busy} onClick={createLink}><Plus size={16}/>{busy?'Criando...':'Criar link local de teste'}</button>}</footer>
  </section></div>;
 }
 function DriveCloudLoader({size=58,label='Carregando...'}) {
