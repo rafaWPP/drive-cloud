@@ -19,6 +19,19 @@ from pydantic import BaseModel, Field
 
 DB_PATH = Path(__file__).resolve().parent / ".data" / "files.sqlite3"
 MAX_SIZE = 20 * 1024 * 1024  # Initial bounded MVP, not a large-file backup tool.
+# Transient progress is local to the running backend process.
+UPLOAD_PROGRESS = {}
+
+def update_upload_progress(upload_id, stage, sent=0, total=0):
+    if not upload_id:
+        return
+    UPLOAD_PROGRESS[upload_id] = {"stage": stage, "sent": int(sent),
+                                   "total": int(total), "updated": time.monotonic()}
+    if len(UPLOAD_PROGRESS) > 256:
+        oldest = sorted(UPLOAD_PROGRESS, key=lambda k: UPLOAD_PROGRESS[k]["updated"])
+        for key in oldest[:64]:
+            UPLOAD_PROGRESS.pop(key, None)
+
 Image.MAX_IMAGE_PIXELS = 35_000_000
 THUMBS = DB_PATH.parent / "previews"
 THUMBS.mkdir(parents=True, exist_ok=True)
@@ -108,8 +121,25 @@ def build_router(authorized_account, channel_links, lock):
                            (id_,account,"folder",body.parent,name,int(time.time()*1000)))
             return {"id": id_, "kind": "folder", "name": name}
 
+    @router.get("/upload-progress/{upload_id}")
+    async def upload_progress(upload_id: str):
+        try:
+            uuid.UUID(upload_id)
+        except ValueError:
+            raise HTTPException(422, "Identificador inválido.")
+        status = UPLOAD_PROGRESS.get(upload_id)
+        if not status:
+            return {"stage": "pending", "sent": 0, "total": 0}
+        return {k:v for k,v in status.items() if k != "updated"}
+
     @router.post("/upload")
-    async def upload(file: UploadFile = File(...), parent: str | None = Form(None)):
+    async def upload(file: UploadFile = File(...), parent: str | None = Form(None),
+                     upload_id: str | None = Form(None)):
+        if upload_id is not None:
+            try:
+                uuid.UUID(upload_id)
+            except ValueError:
+                raise HTTPException(422, "Identificador de upload inválido.")
         # This pilot limits files to 20 MiB. Use chunked transfers in a later version.
         async with lock:
             client, account = await authorized_account()
@@ -124,9 +154,18 @@ def build_router(authorized_account, channel_links, lock):
                 raise HTTPException(413, "Limite desta versão: 20 MB por arquivo.")
             buffer = io.BytesIO(data)
             buffer.name = name
+            update_upload_progress(upload_id, "telegram", 0, len(data))
+            def report_progress(sent, total):
+                update_upload_progress(upload_id, "telegram", sent, total)
             try:
-                msg = await client.send_file(cid, buffer, force_document=True, caption="Drive Cloud • arquivo", part_size_kb=512)
+                msg = await client.send_file(
+                    cid, buffer, force_document=True,
+                    caption="Drive Cloud • arquivo", part_size_kb=512,
+                    progress_callback=report_progress
+                )
+                update_upload_progress(upload_id, "catalog", len(data), len(data))
             except Exception as exc:
+                update_upload_progress(upload_id, "failed")
                 raise HTTPException(502, "Falha ao enviar ao Telegram: " + type(exc).__name__) from exc
             id_ = str(uuid.uuid4())
             try:
@@ -139,6 +178,7 @@ def build_router(authorized_account, channel_links, lock):
             except Exception as exc:
                 # The message may exist on Telegram even if catalog persistence fails.
                 raise HTTPException(500, "Arquivo enviado, mas catálogo local não foi gravado. Não reenvie antes de conferir o canal.") from exc
+            update_upload_progress(upload_id, "completed", len(data), len(data))
             return {"id": id_, "kind": "file", "name": name, "size": len(data)}
 
     @router.get("/preview/{file_id}")
