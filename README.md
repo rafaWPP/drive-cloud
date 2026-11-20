@@ -196,3 +196,9 @@ A barra não mostra mais **100%** simplesmente porque o navegador terminou de en
 O endpoint de progresso guarda estado temporário em memória no backend local, sem gravar dados ou credenciais no GitHub. O progresso não é recuperação de upload interrompido nem garante cancelamento remoto de uma transferência iniciada.
 
 **Atualização:** faça `git pull origin main`, reinicie o backend com Uvicorn, mantenha o frontend Vite aberto e pressione `Ctrl+Shift+R` no navegador. O limite piloto continua em 20 MB por arquivo.
+
+## Progresso da exclusão no próprio toast
+
+Depois de confirmar uma operação de exclusão ou envio à lixeira, o Drive Cloud exibe **somente um toast inferior** em vermelho com ícone de lixeira, progresso por quantidade de itens, nome do item atual e botão **Cancelar**. O painel antigo `delete-job` foi retirado da renderização. Quando a operação termina, o toast de progresso desaparece e o toast de sucesso verde informa quantos itens foram processados. Em erro, aparece um toast de erro.
+
+O cancelamento é cooperativo: interrompe **os próximos itens da fila**, mas uma exclusão remota já enviada ao Telegram pode concluir e não pode ser desfeita. Para atualizar apenas o frontend, execute `git pull origin main` e atualize a página com `Ctrl+Shift+R`. Não há mudança de API nesta atualização.
