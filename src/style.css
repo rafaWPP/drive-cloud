@@ -1560,3 +1560,11 @@ main>header .search{flex:1 1 320px;max-width:465px}
 .tg-storage-error p{margin:0;font-size:12px;line-height:1.6;color:#f2cbd0;overflow-wrap:anywhere;user-select:text}
 .tg-storage-error small{font-size:10px;line-height:1.5;color:#c9a8af}
 .dc-onboard-channel-hint{padding:11px 12px;border-radius:8px;background:#29323e;border:1px solid #405267;color:#b8cfe5;font-size:11px;line-height:1.6;overflow-wrap:anywhere;margin:10px 0 0}
+
+/* Desktop startup failure is distinct from a Telegram logout. */
+.dc-desktop-startup{padding:32px 24px;text-align:center;gap:15px}
+.dc-desktop-startup>img{height:62px;width:62px;object-fit:contain}
+.dc-desktop-startup strong{color:#f2f5fa;font-size:18px}
+.dc-desktop-startup p{max-width:550px;color:#e0c2c4;font-size:13px;line-height:1.65;margin:0;overflow-wrap:anywhere;user-select:text}
+.dc-desktop-startup small{max-width:480px;color:#9aa9bc;font-size:11px;line-height:1.6}
+.dc-desktop-startup button{margin-top:6px;border:0;border-radius:9px;background:#347be3;color:#fff;padding:11px 19px;font-size:13px;font-weight:700;cursor:pointer}
