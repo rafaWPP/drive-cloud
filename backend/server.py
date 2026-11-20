@@ -420,6 +420,7 @@ async def shutdown():
         await client.disconnect()
 
 # Rotas locais de arquivos; usam a mesma sessão, vínculo de canal e trava de conta.
+from folder_sync import build_folder_sync_router
 from catalog_telegram import build_catalog_sync_router
 from storage_api import build_router
 from backup_api import build_backup_router, backup_scheduler
@@ -427,6 +428,8 @@ from share_api import build_share_router
 app.include_router(build_router(authorized_account, channel_links, lock))
 from storage_api import connection, channel_id
 app.include_router(build_catalog_sync_router(authorized_account, channel_links, lock, connection, channel_id))
+folder_sync_router, folder_sync_scheduler = build_folder_sync_router(authorized_account, channel_links, lock)
+app.include_router(folder_sync_router)
 app.include_router(build_backup_router(authorized_account, channel_links, lock))
 app.include_router(build_share_router(authorized_account, channel_links, lock))
 
@@ -435,9 +438,17 @@ async def start_catalog_backup_scheduler():
     app.state.catalog_backup_task = asyncio.create_task(
         backup_scheduler(authorized_account, channel_links, lock)
     )
+    app.state.folder_sync_task = asyncio.create_task(folder_sync_scheduler())
 
 @app.on_event("shutdown")
 async def stop_catalog_backup_scheduler():
+    folder_task = getattr(app.state, "folder_sync_task", None)
+    if folder_task:
+        folder_task.cancel()
+        try:
+            await folder_task
+        except asyncio.CancelledError:
+            pass
     task = getattr(app.state, "catalog_backup_task", None)
     if task:
         task.cancel()
