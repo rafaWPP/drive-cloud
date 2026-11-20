@@ -313,6 +313,94 @@ def build_router(authorized_account, channel_links, lock):
                             headers={"Content-Disposition":'attachment; filename="drive-cloud-catalog.json"',
                                      "Cache-Control":"no-store"})
 
+    @router.post("/catalog/import")
+    async def import_catalog(file: UploadFile = File(...), dry_run: bool = Form(True)):
+        """Validate a same-account/channel catalog export; add missing metadata only."""
+        import json
+        limit = 2 * 1024 * 1024
+        raw = await file.read(limit + 1)
+        if len(raw) > limit:
+            raise HTTPException(413, "O catálogo deve ter no máximo 2 MB.")
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeError, ValueError) as exc:
+            raise HTTPException(422, "O arquivo não contém JSON válido.") from exc
+        if not isinstance(payload, dict) or payload.get("format") != "drive-cloud-catalog" or payload.get("version") != 1:
+            raise HTTPException(422, "Formato de catálogo incompatível.")
+        entries = payload.get("items")
+        if not isinstance(entries, list) or len(entries) > 10000:
+            raise HTTPException(422, "Lista inválida ou acima de 10 mil itens.")
+
+        async with lock:
+            _, account = await authorized_account()
+            cid = channel_id(channel_links, account)
+            if payload.get("telegram_account") != account or str(payload.get("channel_id")) != str(cid):
+                raise HTTPException(409, "Este catálogo pertence a outra conta ou canal Telegram.")
+
+            valid = []
+            seen = set()
+            for data in entries:
+                if not isinstance(data, dict):
+                    raise HTTPException(422, "Item inválido no catálogo.")
+                try:
+                    item_id = str(uuid.UUID(data["id"]))
+                    kind = data["kind"]
+                    parent = data.get("parent")
+                    parent = str(uuid.UUID(parent)) if parent is not None else None
+                    name = data["name"]
+                    size = data["size"]
+                    mime = data["mime"]
+                    msg = data.get("message_id")
+                    created = data["created"]
+                    trashed = data.get("trashed", 0)
+                    starred = data.get("starred", 0)
+                except (KeyError, ValueError, TypeError, AttributeError) as exc:
+                    raise HTTPException(422, "Metadados inválidos no catálogo.") from exc
+                if (item_id in seen or kind not in ("file", "folder") or
+                    not isinstance(name, str) or not name.strip() or len(name) > 180 or
+                    not isinstance(size, int) or isinstance(size, bool) or size < 0 or
+                    not isinstance(mime, str) or len(mime) > 160 or
+                    not isinstance(created, int) or isinstance(created, bool) or created < 0 or
+                    trashed not in (0, 1, False, True) or starred not in (0, 1, False, True) or
+                    (kind == "file" and (not isinstance(msg, int) or msg <= 0)) or
+                    (kind == "folder" and msg is not None)):
+                    raise HTTPException(422, "Valores inconsistentes no catálogo.")
+                seen.add(item_id)
+                valid.append((item_id, account, kind, parent, name, size, mime, msg, created, int(trashed), int(starred)))
+
+            mapped = {item[0]: item for item in valid}
+            for item in valid:
+                cursor = item[3]
+                visited = {item[0]}
+                while cursor and cursor in mapped:
+                    if cursor in visited or mapped[cursor][2] != "folder":
+                        raise HTTPException(422, "Estrutura de pastas inválida ou cíclica.")
+                    visited.add(cursor)
+                    cursor = mapped[cursor][3]
+
+            with connection() as db:
+                existing = {row["id"]: row for row in db.execute(
+                    "SELECT id,account,kind FROM nodes").fetchall()}
+                missing = [item for item in valid if item[0] not in existing]
+                for item in valid:
+                    matched = existing.get(item[0])
+                    if matched and (matched["account"] != account or matched["kind"] != item[2]):
+                        raise HTTPException(409, "Conflito com identificador de catálogo já existente.")
+                    parent = item[3]
+                    if parent and parent not in mapped:
+                        found = db.execute("SELECT kind FROM nodes WHERE id=? AND account=?", (parent, account)).fetchone()
+                        if not found or found["kind"] != "folder":
+                            raise HTTPException(422, "O catálogo possui uma pasta de destino inexistente.")
+                if not dry_run and missing:
+                    db.executemany("""INSERT INTO nodes
+                        (id,account,kind,parent,name,size,mime,message_id,created,trashed,starred)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?)""", missing)
+            return {"checked": len(valid), "new_items": len(missing),
+                    "existing_items": len(valid)-len(missing),
+                    "imported": 0 if dry_run else len(missing),
+                    "dry_run": dry_run,
+                    "note": "Somente metadados. Os arquivos devem continuar no canal Telegram."}
+
     @router.delete("/items/{item_id}/permanent")
     async def delete_permanently(item_id: str):
         """Delete Telegram messages AND SQLite records only for items in trash."""
