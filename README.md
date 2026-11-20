@@ -159,3 +159,13 @@ Execute `git pull origin main` e atualize a página com `Ctrl + Shift + R`. Muda
 - Esta atualização é exclusivamente do frontend, sem alteração de arquivos remotos ou do SQLite.
 
 Atualização: `git pull origin main` e `Ctrl+Shift+R`; sem necessidade de reiniciar o backend.
+
+## Exclusão com confirmação e catálogo de segurança
+
+O **Excluir** fora da lixeira pede confirmação e apenas move o item para a lixeira do catálogo, com opção **Desfazer** por alguns segundos. O arquivo ainda existe no canal privado do Telegram.
+
+Na **Lixeira**, o usuário pode **Restaurar** ou **Excluir definitivamente**. Esta última ação exige confirmação adicional e solicita ao Telegram que apague as mensagens do arquivo e dos descendentes da pasta, removendo os registros do SQLite após a chamada remota. **Exclusão definitiva não pode ser desfeita**. Se houver falha de rede, verifique a lixeira e o canal antes de repetir; operações que envolvem múltiplos itens podem ter resultado parcial.
+
+No Meu Drive há um botão com ícone de backup, ao lado de Atualizar, para **Exportar catálogo**. Ele baixa um JSON com os nomes, pastas, mensagens, identificadores e sinalizações do catálogo. O JSON não inclui senha, `api_hash`, sessão ou bytes dos arquivos. É um **snapshot de metadados**, não uma cópia dos arquivos e ainda **não existe importação automática**. Proteja o arquivo exportado, pois expõe nomes e referências dos seus dados.
+
+Após `git pull origin main`, reinicie o backend para habilitar rotas de exportação e exclusão definitiva, e faça `Ctrl+Shift+R` no navegador. Faça um teste com um arquivo descartável antes de apagar arquivos reais.
