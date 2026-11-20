@@ -51,6 +51,24 @@ jobs:
           mkdir -p src-tauri/binaries
           cp build/desktop-sidecar/drive-cloud-backend src-tauri/binaries/drive-cloud-backend-x86_64-unknown-linux-gnu
           chmod 755 src-tauri/binaries/drive-cloud-backend-x86_64-unknown-linux-gnu
+      - name: Testar o executável local empacotado
+        run: |
+          mkdir -p /tmp/drive-cloud-ci-data
+          DRIVE_CLOUD_DATA_DIR=/tmp/drive-cloud-ci-data build/desktop-sidecar/drive-cloud-backend > /tmp/drive-cloud-sidecar.log 2>&1 &
+          SIDECAR_PID=$!
+          trap 'kill "$SIDECAR_PID" 2>/dev/null || true' EXIT
+          READY=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/api/telegram/status > /tmp/drive-cloud-status.json; then READY=1; break; fi
+            if ! kill -0 "$SIDECAR_PID" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [ "$READY" != "1" ]; then
+            cat /tmp/drive-cloud-sidecar.log
+            test ! -f /tmp/drive-cloud-ci-data/backend-startup.log || cat /tmp/drive-cloud-ci-data/backend-startup.log
+            exit 1
+          fi
+          grep -q '"configured":false' /tmp/drive-cloud-status.json
       - name: Gerar ícones a partir da logo do projeto
         run: npx tauri icon public/drive-cloud-logo.svg
       - name: Gerar instalador .deb
