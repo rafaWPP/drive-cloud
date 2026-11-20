@@ -856,6 +856,7 @@ function BackupPages({section,onToast}){
 }
 function SyncPages({section,onToast}){
  const [folders,setFolders]=useState([]),[path,setPath]=useState(''),[preview,setPreview]=useState(null),[busy,setBusy]=useState(false),[running,setRunning]=useState(null),[error,setError]=useState(''),[lastResult,setLastResult]=useState(null);
+ const [remoteRoots,setRemoteRoots]=useState([]),[selectedRoot,setSelectedRoot]=useState(''),[pullPreview,setPullPreview]=useState(null),[pullResult,setPullResult]=useState(null);
  async function request(endpoint,method='GET',payload){
   const response=await fetch(backendOrigin+'/api/sync'+endpoint,{method,headers:payload?{'Content-Type':'application/json'}:undefined,body:payload?JSON.stringify(payload):undefined});
   const data=await response.json().catch(()=>({}));
@@ -863,7 +864,7 @@ function SyncPages({section,onToast}){
   return data;
  }
  async function refresh(){
-  try{const data=await request('/folders');setFolders(data.folders||[])}catch(e){setError(e.message)}
+  try{const [data,roots]=await Promise.all([request('/folders'),request('/remote-roots')]);setFolders(data.folders||[]);setRemoteRoots(roots.roots||[])}catch(e){setError(e.message)}
  }
  useEffect(()=>{refresh()},[]);
  async function browseFolder(){
@@ -884,8 +885,8 @@ function SyncPages({section,onToast}){
   if(!preview)return;
   setBusy(true);setError('');
   try{
-   await request('/folders','POST',{path:preview.path});
-   setPath('');setPreview(null);await refresh();
+   await request('/folders','POST',{path:preview.path,remote_root_id:selectedRoot||null});
+   setPath('');setSelectedRoot('');setPreview(null);await refresh();
    onToast?.({kind:'success',message:'Pasta adicionada. O backup automático começa desativado.'});
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
@@ -899,6 +900,29 @@ function SyncPages({section,onToast}){
    onToast?.({kind:'success',message:response.sent+' arquivo(s) enviado(s) ao Telegram. '+(response.remaining_estimate?'Execute novamente para continuar.':'')});
    await refresh();
   }catch(e){setError(e.message)}finally{setRunning(null)}
+ }
+ async function previewRemote(folder){
+  setRunning(folder.id);setError('');setPullPreview(null);setPullResult(null);
+  try{const result=await request('/folders/'+encodeURIComponent(folder.id)+'/remote/preview','POST');setPullPreview({folder,...result})}
+  catch(e){setError(e.message)}finally{setRunning(null)}
+ }
+ async function pullRemote(folder){
+  setRunning(folder.id);setError('');setPullResult(null);
+  try{
+   const result=await request('/folders/'+encodeURIComponent(folder.id)+'/pull','POST');
+   setPullResult({folder,...result});setPullPreview(null);
+   onToast?.({kind:'success',message:result.downloaded+' arquivos recuperados; '+result.conflicts+' cópias de conflito preservadas.'});
+   await refresh();
+  }catch(e){setError(e.message)}finally{setRunning(null)}
+ }
+ async function setMode(folder,mode){
+  if(mode==='two-way'&&!confirm('Ativar sincronização bidirecional para esta pasta? Arquivos remotos podem ser baixados para o PC, mas não serão sobrescritos: versões diferentes são preservadas. Use primeiro com arquivos de teste.'))return;
+  setBusy(true);setError('');
+  try{
+   await request('/folders/'+encodeURIComponent(folder.id)+'/mode','POST',{mode});
+   await refresh();
+   onToast?.({kind:'info',message:mode==='two-way'?'Modo bidirecional ativado.':'Modo backup ativado.'});
+  }catch(e){setError(e.message)}finally{setBusy(false)}
  }
  async function removeOne(folder){
   if(!confirm('Remover esta pasta do monitoramento? Os arquivos já enviados ao Telegram serão preservados.'))return;
@@ -914,19 +938,27 @@ function SyncPages({section,onToast}){
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
  return <div className="dc-module-page">
-  <div className="dc-module-note"><RefreshCw size={20}/><div><strong>Pastas do computador</strong><p>Backup unidirecional para seu canal privado do Telegram. O aplicativo envia arquivos novos ou alterados, mas nunca apaga arquivos do Telegram por exclusões no computador. Versões anteriores ficam na lixeira do Drive.</p></div></div>
+  <div className="dc-module-note"><RefreshCw size={20}/><div><strong>Pastas do computador</strong><p>Backup e recuperação de arquivos por pasta, com opção de sincronização em duas direções. O Drive Cloud não exclui arquivos do Telegram ao apagar itens no computador e não sobrescreve arquivos locais em caso de conflito.</p></div></div>
   {error&&<div className="public-share-error" role="alert">{error}</div>}
   {section==='sync'&&<div className="dc-module-section dc-local-folder-setup"><h3>Adicionar pasta</h3><p>Escolha uma pasta. Primeiro analisaremos os arquivos e mostraremos o que poderá ser enviado; nada é enviado até você confirmar.</p>
    <div className="dc-folder-path-row"><input aria-label="Pasta do computador" value={path} onChange={e=>{setPath(e.target.value);setPreview(null)}} placeholder="Selecione uma pasta do computador"/><button type="button" disabled={busy} onClick={browseFolder}><Folder size={15}/> Procurar</button><button type="button" disabled={busy||!path.trim()} onClick={inspect}>Analisar</button></div>
+   {remoteRoots.length>0&&<label className="dc-remote-root-selection">Origem do backup
+     <select value={selectedRoot} onChange={e=>setSelectedRoot(e.target.value)}>
+      <option value="">Criar novo backup no Telegram</option>
+      {remoteRoots.map(root=><option key={root.id} value={root.id}>{root.name}</option>)}
+     </select><small>Para recuperar um backup de outro computador, importe antes o catálogo em Backups e selecione aqui a pasta existente.</small>
+    </label>}
    {preview&&<div className="dc-folder-preview"><strong>{preview.files} arquivos • {size(preview.bytes)}</strong><small>{preview.over_limit?preview.over_limit+' arquivo(s) acima de 512 MB serão ignorados.':'Nenhum arquivo acima de 512 MB.'}</small><button className="dc-module-primary" disabled={busy} onClick={register}>Adicionar ao Drive Cloud</button></div>}
   </div>}
   <div className="dc-module-section"><h3>{section==='devices'?'Pastas neste dispositivo':section==='syncActivity'?'Atividade de backup':'Pastas configuradas'}</h3><p>O envio acontece em lotes de até três arquivos; o monitoramento automático verifica alterações a cada dois minutos quando ativado. Pastas de dependências, arquivos temporários e atalhos simbólicos são ignorados.</p>
    <div className="dc-folder-sync-list">{folders.length?folders.map(folder=><div className="dc-folder-sync-item" key={folder.id}><div className="dc-folder-sync-title"><Folder size={19}/><div><strong>{folder.path.split(/[\\/]/).filter(Boolean).at(-1)||folder.path}</strong><small title={folder.path}>{folder.path}</small></div></div>
-    <div className="dc-folder-sync-actions"><span>{folder.enabled?'Backup automático ligado':'Backup automático pausado'}{folder.last_run?' • Última execução: '+new Date(folder.last_run*1000).toLocaleString('pt-BR'):''}</span><button disabled={!!running||busy} onClick={()=>runOne(folder)}>{running===folder.id?'Enviando...':'Sincronizar agora'}</button><label><input type="checkbox" disabled={!!running||busy} checked={!!folder.enabled} onChange={e=>toggleAuto(folder,e.target.checked)}/> Automático</label><button type="button" disabled={!!running||busy} onClick={()=>removeOne(folder)}>Remover da lista</button></div>
+    <div className="dc-folder-sync-actions"><span>{folder.enabled?'Backup automático ligado':'Backup automático pausado'}{folder.last_run?' • Última execução: '+new Date(folder.last_run*1000).toLocaleString('pt-BR'):''}</span><button disabled={!!running||busy} onClick={()=>runOne(folder)}>{running===folder.id?'Enviando...':'Sincronizar agora'}</button><button type="button" disabled={!!running||busy} onClick={()=>previewRemote(folder)}>Recuperar do Telegram</button><label className="dc-sync-mode">Modo <select aria-label={'Modo de sincronização de '+folder.path} disabled={!!running||busy} value={folder.mode||'backup'} onChange={e=>setMode(folder,e.target.value)}><option value="backup">Backup (PC → Telegram)</option><option value="two-way">Duas direções (PC ↔ Telegram)</option></select></label><label><input type="checkbox" disabled={!!running||busy} checked={!!folder.enabled} onChange={e=>toggleAuto(folder,e.target.checked)}/> Automático</label><button type="button" disabled={!!running||busy} onClick={()=>removeOne(folder)}>Remover da lista</button></div>
     {folder.last_error&&<small className="dc-sync-error">{folder.last_error}</small>}</div>):<p className="dc-empty-message">Nenhuma pasta configurada neste dispositivo.</p>}</div>
+   {pullPreview&&<div className="dc-folder-preview"><strong>Recuperação de {pullPreview.folder.path.split(/[\\/]/).filter(Boolean).at(-1)}</strong><p>{pullPreview.pending} arquivo(s) para verificar • até {pullPreview.conflicts_possible} possíveis conflitos • {pullPreview.over_limit} acima do limite.</p><small>O Drive Cloud preserva as versões locais. Arquivos divergentes serão salvos com o sufixo (Telegram-...). Não haverá exclusões.</small><button className="dc-module-primary" onClick={()=>pullRemote(pullPreview.folder)} disabled={!!running||busy||!pullPreview.pending}>Confirmar recuperação</button></div>}
+   {pullResult&&<p className="dc-sync-result">Recuperação: {pullResult.downloaded} baixados, {pullResult.identical} iguais, {pullResult.conflicts} conflitos preservados. {pullResult.remaining_estimate} pendentes estimados.</p>}
    {lastResult&&<p className="dc-sync-result">{lastResult.sent} arquivo(s) enviados da pasta {lastResult.path}. {lastResult.remaining_estimate} pendentes estimados. As exclusões locais não afetam o Telegram.</p>}
   </div>
-  {section==='devices'&&<div className="dc-module-note"><HardDrive size={18}/><div><strong>Outros dispositivos</strong><p>Esta etapa protege as pastas deste computador. A sincronização bidirecional entre Windows, Linux e Android ainda depende de versões e resolução de conflitos.</p></div></div>}
+  {section==='devices'&&<div className="dc-module-note"><HardDrive size={18}/><div><strong>Outros dispositivos</strong><p>A sincronização em duas direções já permite recuperar arquivos do catálogo e guardar cópias de conflitos. Para usar dois computadores, recupere primeiro o catálogo em Backups e vincule a mesma pasta remota. Sincronização contínua de catálogos entre aparelhos ainda está em desenvolvimento.</p></div></div>}
  </div>
 }
 function SettingsPages({section,onToast}){
