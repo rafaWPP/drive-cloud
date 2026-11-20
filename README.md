@@ -233,3 +233,13 @@ Os botões **Nova pasta** do Meu Drive e do explorador **Mover para** usam a API
 Foi eliminada a legenda artificial **"Escala 1 GB*"**. Ela era apenas uma referência visual, não uma cota imposta pelo Telegram. Agora o bloco mostra os **bytes usados registrados no catálogo SQLite**, e a barra apresenta a **distribuição entre arquivos ativos (azul) e arquivos na lixeira (cinza)**. Não representa espaço livre, quota total ou capacidade real da conta Telegram.
 
 Atualize com `git pull origin main` e `Ctrl+Shift+R`. As rotas do backend não mudaram. Caso a criação falhe com erro de conexão/Telegram, confira se o backend local está executando e a conta está conectada.
+
+## Gerenciador de pastas e download ZIP (V11)
+
+A área **Meu Drive** agora apresenta uma árvore de pastas na lateral, com opção de expandir/recolher subpastas, abrir uma pasta e voltar para a raiz. O caminho de navegação também aparece acima da listagem; a seleção e a navegação não fazem upload novamente. O card de pasta não usa mais o cursor de lupa.
+
+**Baixar pasta:** as ações de download de pastas (menu de três pontos, modo lista e seleção) preparam um ZIP com a estrutura de subpastas preservada. A interface mostra o número de itens processados e, quando a API conclui o arquivo, inicia o download automaticamente. O arquivo temporário fica em `backend/.data/zip_exports` e arquivos antigos são removidos na próxima compactação após 30 minutos; não é um serviço de backup permanente. Por segurança e consumo de recursos, o piloto limita cada ZIP a **250 itens e 300 MB de arquivos originais** e aceita no máximo duas compactações concorrentes por backend. Se um arquivo estiver ausente do canal Telegram ou houver nomes duplicados no mesmo caminho, o ZIP falha e informa o motivo; não é entregue um arquivo incompleto. A compactação ainda não pode ser cancelada depois de iniciada. Para baixar um ZIP com arquivos muito grandes, precisaremos de streaming e limites ajustáveis em uma etapa posterior.
+
+O bloco lateral de armazenamento agora separa título e quantidade utilizada em linhas diferentes, evitando sobreposição de texto. A barra continua mostrando a proporção entre os arquivos ativos e os itens na lixeira do catálogo local, não um limite de armazenamento do Telegram.
+
+**Para atualizar:** `git pull origin main`, reinicie o backend `uvicorn server:app --host 127.0.0.1 --port 8000` após ativar a venv, e faça `Ctrl+Shift+R` no navegador. Teste com uma pasta descartável contendo subpastas e arquivos pequenos. O código foi publicado, mas ainda não passou pelos testes executados no computador do usuário.
