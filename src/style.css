@@ -1096,8 +1096,8 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .cloud-thumb-video svg{box-sizing:content-box;padding:14px;background:#2a3e5b;border-radius:50%}
 @media(prefers-reduced-motion:reduce){.dc-video-player-youtube .dc-video-controls{transition:none}}
 
-/* Folder tree: consume the full remaining sidebar height and scroll to the last item.
-   Deep nesting remains readable instead of moving the entire row offscreen. */
+/* Folder navigation: genuine progressive nesting, both scroll directions.
+   The tree uses the remaining sidebar height; storage stays anchored below. */
 .sidebar.sidebar-tree{min-height:0;overflow:hidden}
 .sidebar.sidebar-tree .links{flex-shrink:0}
 .sidebar.sidebar-tree .dc-folder-tree{
@@ -1112,15 +1112,15 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .sidebar.sidebar-tree .dc-tree-root{flex-shrink:0}
 .sidebar.sidebar-tree .dc-tree-list{
  flex:1 1 auto;
+ width:100%;
  min-height:0;
  max-height:none;
- overflow-x:hidden;
+ overflow-x:auto;
  overflow-y:auto;
- overscroll-behavior-y:contain;
- padding:0 1px 16px 0;
+ overscroll-behavior:contain;
+ padding:0 1px 14px 0;
  scrollbar-width:thin;
  scrollbar-color:#51515b transparent;
- scrollbar-gutter:stable;
 }
 .sidebar.sidebar-tree .sidebar-bottom{
  flex-shrink:0;
@@ -1128,25 +1128,38 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 }
 .sidebar.sidebar-tree .dc-tree-branch,
 .sidebar.sidebar-tree .dc-tree-children,
-.sidebar.sidebar-tree .dc-tree-children-inner{min-width:0;max-width:100%}
+.sidebar.sidebar-tree .dc-tree-children-inner{
+ width:max-content;
+ min-width:100%;
+ max-width:none;
+}
 .sidebar.sidebar-tree .dc-tree-row{
  box-sizing:border-box;
- max-width:100%;
- overflow:hidden;
- padding-right:4px;
+ width:max-content;
+ min-width:100%;
+ max-width:none;
+ overflow:visible;
+ padding-right:12px;
 }
 .sidebar.sidebar-tree .dc-tree-expand{width:19px;flex-basis:19px}
-.sidebar.sidebar-tree .dc-tree-name{min-width:0;gap:6px}
+.sidebar.sidebar-tree .dc-tree-name{
+ flex:0 0 auto;
+ min-width:0;
+ width:auto;
+ gap:6px;
+ padding-right:8px;
+}
 .sidebar.sidebar-tree .dc-tree-name svg{width:15px;height:15px;flex-shrink:0}
 .sidebar.sidebar-tree .dc-tree-name span{
  display:block;
- min-width:0;
+ max-width:170px;
  overflow:hidden;
  text-overflow:ellipsis;
  white-space:nowrap;
 }
-.sidebar.sidebar-tree .dc-tree-list::-webkit-scrollbar{width:6px}
+.sidebar.sidebar-tree .dc-tree-list::-webkit-scrollbar{width:7px;height:7px}
 .sidebar.sidebar-tree .dc-tree-list::-webkit-scrollbar-thumb{border-radius:12px;background:#51515b}
+.sidebar.sidebar-tree .dc-tree-list::-webkit-scrollbar-corner{background:transparent}
 @media(max-height:640px){
  .sidebar.sidebar-tree{padding-top:16px;padding-bottom:12px}
  .sidebar.sidebar-tree .sidebar-title{margin-bottom:12px}
