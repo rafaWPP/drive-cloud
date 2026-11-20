@@ -1632,3 +1632,30 @@ main>header .search{flex:1 1 320px;max-width:465px}
  .dc-folder-sync-actions .dc-sync-mode{flex:1 1 100%;width:100%}
  .dc-folder-sync-actions .dc-sync-mode .dc-menu-select{width:100%;max-width:none}
 }
+
+
+/* Google Drive-style mapping between a local folder and a real Drive folder. */
+.dc-folder-connection{display:grid;grid-template-columns:minmax(0,1fr) 64px minmax(0,1fr);align-items:stretch;gap:12px;margin-top:6px}
+.dc-sync-local-side,.dc-sync-drive-side{display:flex;flex-direction:column;gap:11px;padding:15px;border:1px solid #424750;border-radius:11px;background:#282b31;min-width:0}
+.dc-sync-side-heading{display:flex;align-items:center;gap:9px;color:#aacaf5}
+.dc-sync-side-heading strong{font-size:12px;color:#ecf1f8}
+.dc-sync-link-line{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#83aff1;font-size:10px;font-weight:700}
+.dc-sync-local-side .dc-folder-path-row{align-items:stretch}
+.dc-sync-local-side .dc-folder-path-row input{flex-basis:100%;min-width:0}
+.dc-sync-local-side .dc-folder-path-row button{flex:1 1 auto}
+.dc-sync-drive-side>.dc-menu-select{min-width:0;width:100%}
+.dc-sync-drive-side .dc-menu-select-trigger{width:100%;min-height:39px;background:#343b47;border:1px solid #566376;color:#eff4fb}
+.dc-sync-drive-side>small{font-size:11px;line-height:1.55;color:#aebbd0}
+.dc-new-remote-folder-name{display:flex;flex-direction:column;gap:7px;font-size:11px;color:#c5d3e5}
+.dc-new-remote-folder-name>input{width:100%;min-height:39px;background:#1c2028;border:1px solid #525d6b;border-radius:8px;color:#f0f5fd;padding:9px 11px;outline:none;font-size:12px}
+.dc-new-remote-folder-name>input:focus{border-color:#528ddd}
+.dc-sync-setup-options{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin:5px 0}
+.dc-sync-setup-mode{display:flex;flex-direction:column;gap:7px;flex:0 1 300px;font-size:12px;font-weight:650;color:#e3e9f1}
+.dc-sync-setup-mode .dc-menu-select{width:100%}
+.dc-sync-setup-mode .dc-menu-select-trigger{width:100%;background:#353c46;border:1px solid #515e70}
+.dc-sync-auto-label{display:flex;align-items:center;gap:8px;min-height:39px;color:#d0dceb;font-size:11px}
+.dc-sync-auto-label input{accent-color:#4787e9}
+.dc-sync-mapped-destination{color:#aacdfb!important;font-weight:650}
+.dc-sync-mapped-destination.is-missing{color:#f3aeb6!important}
+@media(max-width:860px){.dc-folder-connection{grid-template-columns:1fr}.dc-sync-link-line{flex-direction:row}.dc-sync-local-side .dc-folder-path-row input{flex-basis:210px}}
+@media(max-width:500px){.dc-sync-setup-mode{flex:1 1 100%}.dc-sync-auto-label{min-height:auto}}
