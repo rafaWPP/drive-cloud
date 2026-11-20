@@ -111,3 +111,13 @@ A grade e a lista usam miniaturas de imagens recuperadas do canal. Ao clicar num
 O painel de uploads oferece botão de fechar e uma ação para reabri-lo. O progresso porcentual continua representando o envio do navegador ao backend local, **não** o estágio interno de envio ao Telegram.
 
 **Atualização obrigatória do backend:** após `git pull`, execute `pip install -r requirements.txt` dentro do ambiente virtual para instalar Pillow e o plugin JPEG XL. Reinicie o Uvicorn. Esta versão não foi testada diretamente na máquina do usuário.
+
+## Ajustes do seletor e carregamento (V3)
+
+- O indicador de miniaturas usa três bolinhas sequenciais em vez de spinner circular.
+- A barra de ações de arquivos selecionados ocupa uma faixa de altura constante acima da tabela/grade. A seleção apenas exibe ou oculta as ações, sem alterar a posição da listagem.
+- Checkboxes personalizados em grafite com marcação azul, estados hover/focus e comportamento de selecionar todos.
+- Botões padronizados por função: primário azul, secundário grafite, seleção azul e ações destrutivas em vermelho discreto.
+- Referência de navegação: ações contextuais demonstradas pelo usuário em gravação da interface do Dropbox. Esta atualização não altera nem apaga os dados salvos.
+
+Para aplicar: `git pull origin main` e `Ctrl+Shift+R` na página. Não é necessário reiniciar o backend para estas alterações de interface.
