@@ -169,3 +169,12 @@ Na **Lixeira**, o usuário pode **Restaurar** ou **Excluir definitivamente**. Es
 No Meu Drive há um botão com ícone de backup, ao lado de Atualizar, para **Exportar catálogo**. Ele baixa um JSON com os nomes, pastas, mensagens, identificadores e sinalizações do catálogo. O JSON não inclui senha, `api_hash`, sessão ou bytes dos arquivos. É um **snapshot de metadados**, não uma cópia dos arquivos e ainda **não existe importação automática**. Proteja o arquivo exportado, pois expõe nomes e referências dos seus dados.
 
 Após `git pull origin main`, reinicie o backend para habilitar rotas de exportação e exclusão definitiva, e faça `Ctrl+Shift+R` no navegador. Faça um teste com um arquivo descartável antes de apagar arquivos reais.
+
+## Exclusão com progresso e armazenamento usado (V7)
+
+- O modal de confirmação agora abre com animação curta e fundo escurecido.
+- Após confirmar uma exclusão, aparece um painel inferior com número de itens processados, barra de progresso e botão **Cancelar**. O sistema processa um item de cada vez e o cancelamento interrompe a fila **antes do próximo item**. Uma operação já enviada ao Telegram não pode ser desfeita nem interrompida com garantia, especialmente se o item for uma pasta com arquivos descendentes. O painel indica quantos itens já foram concluídos.
+- A barra lateral mostra quanto espaço os **arquivos registrados no catálogo Drive Cloud** ocupam, quantidade de arquivos e tamanho dos itens na lixeira. Esses números vêm do SQLite local e incluem arquivos movidos à lixeira; **não são medição de armazenamento total da conta Telegram nem quota livre**.
+- O backend passa a oferecer `GET /api/cloud/usage`; reinicie o Uvicorn depois de atualizar o código.
+
+**Teste seguro:** use arquivos descartáveis e uma exclusão em lote para verificar o cancelamento; não use arquivos importantes para testar exclusão definitiva.
