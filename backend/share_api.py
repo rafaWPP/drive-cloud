@@ -101,7 +101,7 @@ def schema(db):
 class ShareIn(BaseModel):
     item_id: str
     mode: Literal["download","view","embed"] = "view"
-    expires_hours: Literal[1,24,168] = 24
+    expires_hours: Literal[0,1,24,168] = 24
 
 def build_share_router(authorized_account, channel_links, lock):
     router=APIRouter()
@@ -190,7 +190,7 @@ def build_share_router(authorized_account, channel_links, lock):
                 if not row: raise HTTPException(404,"Arquivo ou pasta não encontrada.")
                 token=secrets.token_urlsafe(32)
                 share_id=str(uuid.uuid4())
-                expires=int(time.time())+body.expires_hours*3600
+                expires=(253402300799 if body.expires_hours==0 else int(time.time())+body.expires_hours*3600)
                 db.execute("""INSERT INTO share_links(id,owner,item_id,token_hash,mode,created,expires)
                     VALUES (?,?,?,?,?,?,?)""",(share_id,account,body.item_id,
                     hashlib.sha256(token.encode()).hexdigest(),body.mode,int(time.time()),expires))
