@@ -20,4 +20,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile Python backend
-        run: python -m py_compile backend/server.py backend/storage_api.py backend/backup_api.py backend/share_api.py
+        run: python -m py_compile backend/server.py backend/storage_api.py backend/backup_api.py backend/share_api.py backend/media_ranges.py
+      - name: Test video byte-range handling
+        run: PYTHONPATH=backend python -m unittest discover -s backend/tests -p 'test_*.py' -v
