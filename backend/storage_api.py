@@ -350,6 +350,31 @@ def build_router(authorized_account, channel_links, lock):
                             headers={"Cache-Control":"no-store"},
                             background=BackgroundTask(lambda: Path(job["path"]).unlink(missing_ok=True)))
 
+    @router.get("/media-status/{file_id}")
+    async def video_preview_status(file_id: str):
+        try:
+            uuid.UUID(file_id)
+        except (ValueError, TypeError):
+            raise HTTPException(422, "Identificador inválido.")
+        async with lock:
+            client, account = await authorized_account()
+            cid = channel_id(channel_links, account)
+            with connection() as db:
+                row = db.execute(
+                    "SELECT * FROM nodes WHERE id=? AND account=? AND kind='file' AND trashed=0",
+                    (file_id, account)
+                ).fetchone()
+            if not row:
+                raise HTTPException(404, "Vídeo não encontrado no catálogo.")
+            if not row["name"].lower().endswith((".mp4", ".m4v", ".webm")):
+                raise HTTPException(415, "Este formato não tem prévia de vídeo.")
+            if int(row["size"]) > MAX_SIZE:
+                raise HTTPException(413, "Vídeo acima do limite de prévia local.")
+            msg = await client.get_messages(cid, ids=row["message_id"])
+            if not msg or not msg.media:
+                raise HTTPException(404, "Vídeo não encontrado no Telegram.")
+        return {"ready": True, "name": row["name"]}
+
     @router.get("/media/{file_id}")
     async def stream_video_preview(file_id: str, request: Request):
         """Authenticated local preview with byte ranges; never an attachment download."""
