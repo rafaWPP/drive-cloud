@@ -13,6 +13,7 @@ function IconFile({item,large=false}){const n=large?56:26;if(item.kind==='folder
 function TelegramSettings({onToast}){
 const [status,setStatus]=useState(null),[phone,setPhone]=useState(''),[code,setCode]=useState(''),[password,setPassword]=useState(''),[step,setStep]=useState('qr-choice'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[qrImage,setQrImage]=useState('');
 const [storage,setStorage]=useState(null),[storageBusy,setStorageBusy]=useState(false),[storageError,setStorageError]=useState('');
+const [apiId,setApiId]=useState(''),[apiHash,setApiHash]=useState(''),[savingApi,setSavingApi]=useState(false),[apiError,setApiError]=useState(''),[showApiHash,setShowApiHash]=useState(false);
 const endpoint=backendOrigin;
 async function call(path,data){const response=await fetch(endpoint+path,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},...(data!==undefined?{body:JSON.stringify(data)}:{})});const result=await response.json();if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Falha na conexão');return result}
 async function refresh(){try{const r=await call('/api/telegram/status');setStatus(r);setStep(r.connected?'connected':'qr-choice')}catch{setStatus({offline:true,connected:false})}}
@@ -27,8 +28,33 @@ finally{if(!cancelled)setStorageBusy(false)}
 return()=>{cancelled=true};
 },[step,status?.connected,status?.id]);
 useEffect(()=>{if(step!=='qr')return;let stopped=false;const timer=setInterval(async()=>{try{const r=await call('/api/telegram/qr/status');if(stopped)return;if(r.step==='connected'){setStatus({...r,configured:true});setStep('connected')}else if(r.step==='password')setStep('qr-password');else if(r.step==='expired'||r.step==='error'){setStep('qr-expired');if(r.detail)setError(r.detail)}}catch(e){if(!stopped)setError(e.message)}},1400);return()=>{stopped=true;clearInterval(timer)}},[step]);
+async function saveTelegramApi(event){
+ event.preventDefault();
+ if(!/^\\d+$/.test(apiId.trim())||!Number.isSafeInteger(Number(apiId))||Number(apiId)<1){setApiError('Informe um API ID numérico válido.');return}
+ if(!/^[a-fA-F0-9]{32}$/.test(apiHash.trim())){setApiError('O API Hash precisa conter 32 caracteres hexadecimais.');return}
+ setSavingApi(true);setApiError('');
+ try{
+  await call('/api/telegram/credentials',{api_id:Number(apiId.trim()),api_hash:apiHash.trim()});
+  setApiId('');setApiHash('');setShowApiHash(false);
+  await refresh();
+  onToast?.({kind:'success',message:'Credenciais Telegram salvas apenas neste dispositivo.'});
+ }catch(err){setApiError(err.message)}finally{setSavingApi(false)}
+}
 async function perform(path,data){setBusy(true);setError('');try{const r=await call('/api/telegram/'+path,data);if(r.image){setQrImage(r.image);setStep('qr')}else if(r.step)setStep(r.step);if(r.connected){setStatus({...r,configured:true});setPassword('');setCode('');onToast?.({kind:'success',message:'Telegram conectado com sucesso'})}else if(path==='logout'||path==='disconnect'){setStorage(null);setStorageError('');setQrImage('');await refresh();onToast?.({kind:'info',message:path==='logout'?'Sessão do Telegram encerrada':'Conexão encerrada'})}}catch(e){setError(e.message);onToast?.({kind:'error',message:e.message,duration:6500})}finally{setBusy(false)}}
 return <section className="telegram-panel"><div className="telegram-header"><div className="tg-header-icon"><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/></div><div><h2>{step==='connected'?'Conta conectada':'Conectar Telegram'}</h2><p>{step==='connected'?'Sua conta autoriza o armazenamento privado do Drive Cloud.':'Autorize a conta pelo QR Code do Telegram.'}</p></div><span className={status?.connected?'tg-connection-tag active':'tg-connection-tag'}>{status?.connected?'Conectado':'Desconectado'}</span></div>
+{status&&!status.offline&&!status.configured&&<div className="tg-api-setup">
+ <div className="tg-api-alert"><CircleAlert size={20}/><div><strong>Configure seu acesso à API do Telegram</strong><p>Para conectar sua conta, crie gratuitamente suas credenciais pessoais no portal oficial do Telegram. O Drive Cloud não utiliza as credenciais do desenvolvedor.</p><a href="https://my.telegram.org/apps" target="_blank" rel="noopener noreferrer">Abrir site oficial do Telegram ↗</a></div></div>
+ <details className="tg-api-instructions"><summary>Como obter meu API ID e API Hash?</summary><ol><li>Acesse <strong>my.telegram.org</strong> e entre com o número da sua conta Telegram.</li><li>Selecione <strong>API development tools</strong>.</li><li>Se ainda não tiver um aplicativo cadastrado, preencha o nome, nome curto e demais dados solicitados e clique em <strong>Create application</strong>.</li><li>Copie <strong>App api_id</strong> e <strong>App api_hash</strong> para os campos abaixo.</li></ol><p>Não compartilhe o API Hash nem códigos de login. O Telegram pode permitir apenas um cadastro de API por número.</p></details>
+ <form className="tg-api-form" onSubmit={saveTelegramApi}>
+  <label htmlFor="dc-api-id">API ID</label>
+  <input id="dc-api-id" type="text" inputMode="numeric" autoComplete="off" required value={apiId} onChange={event=>setApiId(event.target.value)} placeholder="Ex.: 12345678"/>
+  <label htmlFor="dc-api-hash">API Hash</label>
+  <div className="tg-api-hash-row"><input id="dc-api-hash" type={showApiHash?'text':'password'} autoComplete="off" spellCheck={false} required value={apiHash} onChange={event=>setApiHash(event.target.value)} placeholder="Cole seu App api_hash"/><button type="button" onClick={()=>setShowApiHash(!showApiHash)} aria-label={showApiHash?'Ocultar API Hash':'Mostrar API Hash'}>{showApiHash?'Ocultar':'Mostrar'}</button></div>
+  {apiError&&<p className="tg-api-error" role="alert">{apiError}</p>}
+  <button type="submit" disabled={savingApi||!apiId.trim()||!apiHash.trim()}>{savingApi?'Salvando...':'Salvar credenciais e continuar'}</button>
+  <small>As credenciais ficam armazenadas localmente neste dispositivo, não são enviadas ao servidor do Drive Cloud. O API Hash é um segredo: evite compartilhá-lo.</small>
+ </form>
+ </div>}
 {status?.offline?<div className="tg-warning">Não foi possível conectar ao serviço local do Drive Cloud. Verifique se outra instância está aberta ou se a porta 8000 está ocupada. O aplicativo tentará conectar automaticamente; se continuar, consulte o diagnóstico de inicialização.</div>:status&&!status.configured?<div className="tg-warning">A conexão local está ativa, mas o Telegram ainda precisa das credenciais de API nesta versão experimental. Não é necessário iniciar Python manualmente.</div>:step==='connected'?<div className="tg-connected-card">
 <div className="tg-account-line"><div className="tg-account-avatar">{(status?.name||'T').slice(0,1).toUpperCase()}{status?.connected&&<img src={backendOrigin+'/api/telegram/avatar?account='+encodeURIComponent(status.id||'')} alt="" onError={event=>{event.currentTarget.style.display='none'}}/>}</div><div><strong>{status?.name||'Telegram'}</strong><small>{status?.username?'@'+status.username:'Perfil conectado ao Drive Cloud'}</small></div><span className="tg-account-online"><Check size={15}/> Ativa</span></div>
 <div className="tg-channel-line"><div className="tg-channel-icon"><Folder size={20}/></div><div><strong>{storageBusy?'Verificando canal privado...':storage?.ready?storage.title:'Canal privado não configurado'}</strong><small>{storage?.ready?'Canal privado conectado e verificado.':storageError||'Configure um canal para armazenar seus arquivos.'}</small></div>{storage?.ready&&<span className="tg-channel-ok"><Check size={17}/></span>}</div>
