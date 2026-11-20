@@ -1004,6 +1004,7 @@ useEffect(()=>{
 
 
 return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.dataTransfer?.types?.includes('Files'))setDrag(true)}} onDragOver={e=>e.preventDefault()} onDragLeave={e=>{const b=e.currentTarget.getBoundingClientRect();if(e.clientX<=b.left||e.clientX>=b.right||e.clientY<=b.top||e.clientY>=b.bottom)setDrag(false)}} onDrop={e=>{e.preventDefault();setDrag(false);if(!window.__TAURI_INTERNALS__&&e.dataTransfer?.files?.length)addFiles(e.dataTransfer.files)}}>
+{nativeDropBusy&&<div className="dc-native-drop-progress" role="status"><RefreshCw size={17} className="dc-spin"/> Enviando arquivos arrastados ao Telegram. Aguarde a confirmação.</div>}
 {pendingResumable.length>0&&<div className="dc-resume-banner"><div className="dc-resume-heading"><RefreshCw size={17}/><strong>Uploads pendentes neste computador</strong><small>{pendingResumable.length} arquivo(s)</small></div>
  <p>Para retomar um envio pausado, selecione novamente o mesmo arquivo na mesma pasta. Arquivos com envio incerto ao Telegram não serão reenviados automaticamente.</p>
  {pendingResumable.slice(0,5).map(item=><div className="dc-resume-item" key={item.id}><span><strong title={item.name}>{item.name}</strong><small>{item.state==='staging'?Math.round(100*item.offset/Math.max(1,item.size))+'% recebido no conector':'Verificação do Telegram pendente'}</small></span>
