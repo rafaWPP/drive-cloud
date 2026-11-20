@@ -294,3 +294,13 @@ O player personalizado dos links `?share=` e `?embed=` permite **toque/clique du
 A barra de controle usa azul do Drive Cloud: **tempo à esquerda e tela cheia à direita acima do progresso**; abaixo, **Reproduzir/Pausar**, informação HD apenas quando o arquivo original tiver pelo menos 720p, **Picture-in-Picture quando suportado pelo navegador**, e **áudio/volume como último controle**. A indicação HD não é um seletor de transcodificação, pois esta versão reproduz o arquivo original. O player também permite atalhos: `Espaço`/`K` para pausar, `←`/`→` para saltar 10s, `F` para tela cheia e `M` para mudo quando o player estiver focado.
 
 As solicitações de vídeo ainda dependem da conexão local com Telegram. Teste em PC e celular, pois navegadores variam no suporte a PiP e nos gestos de toque.
+
+## Player e compartilhamento (ajustes V16)
+
+- **Um link por compartilhamento:** o modal apresenta um único endereço copiável. A opção **Integração** continua oferecendo um *código iframe* que usa **o mesmo endereço**, sem mostrar um segundo campo de "link direto de mídia". Links já criados permanecem válidos até expirarem ou serem revogados.
+- **Vídeos dentro do Meu Drive:** clique na miniatura ou no nome para abrir a prévia com o mesmo player personalizado das pastas compartilhadas. Baixar o vídeo exige clicar explicitamente em **Baixar**. O player local usa `GET /api/cloud/media/{id}` com autenticação Telegram e suporte a solicitações por intervalo de bytes; `/api/cloud/media-status/{id}` informa falhas de prévia. O limite local continua sendo o limite atual de 20 MB por arquivo.
+- **Controles inteligentes:** ao reproduzir, os controles desaparecem após aproximadamente 2,6 segundos sem interação e voltam com o mouse, toque ou teclado. Quando pausado, carregando ou com menu de volume aberto, permanecem acessíveis. O comportamento respeita navegação por teclado.
+- **Barra de progresso fluida:** a posição visual da timeline é atualizada com `requestAnimationFrame` a partir de `video.currentTime`, em vez de avançar somente a cada evento `timeupdate` do navegador. O tempo exibido pode atualizar em intervalos, mas o traço avança suavemente sem inventar progresso.
+- **Cache e limites:** o cache efêmero em RAM da API de compartilhamento pode reduzir solicitações repetidas ao Telegram. A primeira abertura continua dependendo da conexão e da sessão Telegram; a implementação ainda não realiza streaming direto de arquivos enormes.
+
+Para receber a mudança: `git pull origin main`; reinicie o backend Python porque foi adicionada uma rota; recarregue o frontend com `Ctrl+Shift+R`. Valide localmente com um arquivo MP4 ou WebM pequeno e um link de compartilhamento novo.
