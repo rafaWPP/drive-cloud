@@ -45,6 +45,9 @@ jobs:
           assert.match(source, /let backendOrigin='http:\/\/127\.0\.0\.1:8000';/);
           assert.doesNotMatch(source, /let backendOrigin=backendOrigin/);
           assert.match(source, /backendOrigin = await invoke\('backend_origin'\)/);
+          assert.match(source, /!\/\^\\d\+\$\//, 'API ID validator must accept decimal digits');
+          assert.doesNotMatch(source, /!\/\^\\\\d\+\$\//, 'API ID validator must not match literal backslash');
+          assert.match(source, /await openUrl\("https:\/\/my\.telegram\.org\/apps"\)/);
           console.log('Desktop frontend origin initialization OK');
           NODE
       - name: Validar sintaxe do backend
