@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 use tauri_plugin_shell::{process::CommandChild, ShellExt};
 
-struct Backend(Mutex<CommandChild>);
+struct Backend(Mutex<Option<CommandChild>>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,7 +18,7 @@ pub fn run() {
                 .sidecar("drive-cloud-backend")?
                 .env("DRIVE_CLOUD_DATA_DIR", data_dir.to_string_lossy().to_string());
             let (_events, child) = command.spawn()?;
-            app.manage(Backend(Mutex::new(child)));
+            app.manage(Backend(Mutex::new(Some(child))));
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -27,8 +27,10 @@ pub fn run() {
     app.run(|handle, event| {
         if let tauri::RunEvent::Exit = event {
             if let Some(backend) = handle.try_state::<Backend>() {
-                if let Ok(mut child) = backend.0.lock() {
-                    let _ = child.kill();
+                if let Ok(mut guard) = backend.0.lock() {
+                    if let Some(child) = guard.take() {
+                        let _ = child.kill();
+                    }
                 }
             }
         }
