@@ -793,6 +793,7 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
 }
 function BackupPages({section,onToast}){
  const [status,setStatus]=useState(null),[history,setHistory]=useState([]),[loading,setLoading]=useState(false),[frequency,setFrequency]=useState('off'),[error,setError]=useState('');
+ const [remoteSnapshot,setRemoteSnapshot]=useState(null),[remoteBusy,setRemoteBusy]=useState(false),[remoteError,setRemoteError]=useState('');
  const base=backendOrigin+'/api/backup';
  async function req(path,method='GET',body){
   const r=await fetch(base+path,{method,...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
@@ -802,8 +803,33 @@ function BackupPages({section,onToast}){
  useEffect(()=>{refresh()},[]);
  async function snapshot(){setLoading(true);try{const result=await req('/run','POST');await refresh();onToast?.({kind:'success',message:'Catálogo salvo: '+result.item_count+' registros.'})}catch(e){setError(e.message)}finally{setLoading(false)}}
  async function schedule(value){setLoading(true);try{await req('/schedule','POST',{frequency:value});await refresh();onToast?.({kind:'success',message:value==='off'?'Agendamento desativado':'Agendamento de catálogo salvo'})}catch(e){setError(e.message)}finally{setLoading(false)}}
+ async function fetchRemoteInfo(){
+  setRemoteBusy(true);setRemoteError('');
+  try{
+   const response=await fetch(backendOrigin+'/api/cloud/catalog/telegram/latest');
+   if(response.status===404){setRemoteSnapshot(null);return}
+   const data=await response.json();
+   if(!response.ok)throw Error(data.detail||'Falha ao localizar catálogo no Telegram');
+   setRemoteSnapshot(data);
+  }catch(e){setRemoteError(e.message)}finally{setRemoteBusy(false)}
+ }
+ async function saveRemoteSnapshot(){
+  setRemoteBusy(true);setRemoteError('');
+  try{
+   const response=await fetch(backendOrigin+'/api/cloud/catalog/telegram/snapshot',{method:'POST'});
+   const data=await response.json();
+   if(!response.ok)throw Error(data.detail||'Falha ao salvar catálogo no Telegram');
+   await fetchRemoteInfo();
+   onToast?.({kind:'success',message:'Cópia da organização salva no seu Telegram.'});
+  }catch(e){setRemoteError(e.message)}finally{setRemoteBusy(false)}
+ }
  return <div className="dc-module-page"><div className="dc-module-note"><DatabaseBackup size={19}/><div><strong>Backup do catálogo</strong><p>Estas cópias guardam a organização, as pastas e as referências aos arquivos do Telegram. Não são cópias dos arquivos. Para guardar arquivos offline, baixe as pastas em ZIP.</p></div></div>
  {error&&<div className="public-share-error">{error}</div>}
+ {(section==='backups'||section==='backupHistory')&&<div className="dc-module-section"><div><h3>Catálogo no Telegram</h3><p>Salve no seu canal privado uma cópia da organização das pastas e das referências dos arquivos. Esta cópia não substitui arquivos locais nem ativa sincronização automática.</p></div>
+ <div className="dc-schedule-controls"><button className="dc-module-primary" disabled={remoteBusy} onClick={saveRemoteSnapshot}><DatabaseBackup size={17}/>{remoteBusy?'Aguarde...':'Salvar catálogo no Telegram'}</button><button disabled={remoteBusy} onClick={fetchRemoteInfo}>Verificar cópia no Telegram</button>{remoteSnapshot&&<p>Última cópia: {remoteSnapshot.items} itens • {remoteSnapshot.exported_at?new Date(remoteSnapshot.exported_at).toLocaleString('pt-BR'):'data indisponível'}. <a href={backendOrigin+'/api/cloud/catalog/telegram/download'} download="drive-cloud-telegram-catalog.json">Baixar JSON</a></p>}{remoteError&&<p className="public-share-error">{remoteError}</p>}</div>
+ <small>Restaurar ou mesclar automaticamente ainda não está disponível. Guarde cópias dos arquivos importantes.</small>
+ </div>}
+
  {section==='backups'&&<div className="dc-dashboard-grid"><div className="dc-module-card"><div className="dc-module-card-top"><DatabaseBackup size={20}/><span>Último backup</span></div><strong>{status?.last_backup?new Date(status.last_backup.created*1000).toLocaleString('pt-BR'):'Nenhum backup ainda'}</strong><small>{status?.last_backup?status.last_backup.item_count+' registros protegidos':'Crie o primeiro snapshot local do catálogo.'}</small></div><div className="dc-module-card"><div className="dc-module-card-top"><Clock3 size={20}/><span>Agendamento</span></div><strong>{frequency==='daily'?'Diário':frequency==='weekly'?'Semanal':'Desativado'}</strong><small>{status?.next_run?'Próxima execução: '+new Date(status.next_run*1000).toLocaleString('pt-BR'):'Executa enquanto o backend local estiver ligado.'}</small></div><div className="dc-module-card"><div className="dc-module-card-top"><List size={20}/><span>Histórico</span></div><strong>{history.length} snapshots</strong><small>Últimas cópias do catálogo neste computador.</small></div></div>}
  {(section==='backups'||section==='backupSchedule')&&<div className="dc-module-section"><div><h3>Backup do catálogo</h3><p>Faça uma cópia agora ou programe snapshots automáticos.</p></div><button className="dc-module-primary" disabled={loading} onClick={snapshot}><DatabaseBackup size={17}/>{loading?'Processando...':'Criar backup agora'}</button><div className="dc-schedule-controls"><label htmlFor="backup-frequency">Frequência</label><select className="dc-native-select" id="backup-frequency" disabled={loading||!status} value={frequency} onChange={e=>schedule(e.target.value)}><option value="off">Desativado</option><option value="daily">Diariamente</option><option value="weekly">Semanalmente</option></select><small>O computador e o backend precisam permanecer ligados para executar no horário programado.</small></div></div>}
  {(section==='backups'||section==='backupHistory')&&<div className="dc-module-section"><div><h3>Histórico de backups</h3><p>Baixe o JSON para guardar uma cópia fora do computador.</p></div><div className="dc-history-list">{history.length?history.map(x=><div className="dc-history-row" key={x.id}><DatabaseBackup size={19}/><div><strong>{new Date(x.created*1000).toLocaleString('pt-BR')}</strong><small>{x.item_count} registros • {size(x.bytes)} • {x.source==='scheduled'?'Automático':'Manual'}</small></div><a href={base+'/history/'+encodeURIComponent(x.id)+'/download'} title="Baixar snapshot"><Download size={17}/> Baixar</a></div>):<p className="dc-empty-message">Ainda não existem cópias do catálogo.</p>}</div></div>}</div>
