@@ -972,3 +972,25 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .dc-initial-splash .dc-cloud-outline{stroke-width:4.8;stroke:#4a4b53}
 .dc-initial-splash .dc-cloud-running{stroke-width:5.2;stroke:#398bff;stroke-dasharray:34 214;filter:drop-shadow(0 0 2px #398bff55)}
 @media(prefers-reduced-motion:reduce){.dc-initial-splash .dc-cloud-running{stroke-dasharray:82 166}}
+
+/* V15 — branded, calm initial loading instead of outlined cartoon cloud */
+.dc-initial-splash{background:#1b1b1d;z-index:99999}
+.dc-brand-loader{position:relative;width:152px;height:152px;display:grid;place-items:center;isolation:isolate}
+.dc-brand-loader img{width:86px;height:86px;object-fit:contain;filter:drop-shadow(0 6px 18px #0004);animation:dc-brand-appear .48s ease-out both}
+.dc-brand-loader-ring{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
+.dc-brand-ring-track,.dc-brand-ring-active{fill:none;stroke-width:2;transform-origin:50% 50%;stroke-linecap:round}
+.dc-brand-ring-track{stroke:#3b3c42}
+.dc-brand-ring-active{stroke:#3888ff;stroke-width:3;stroke-dasharray:60 267;animation:dc-brand-orbit 2.1s cubic-bezier(.4,.1,.6,.9) infinite;filter:drop-shadow(0 0 3px #3584f155)}
+@keyframes dc-brand-orbit{to{stroke-dashoffset:-327}}
+@keyframes dc-brand-appear{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:scale(1)}}
+/* Consistent small controls throughout settings, backup schedules and sharing */
+.dc-select-wrap{height:37px;min-width:135px;display:flex;align-items:center;position:relative;background:#353539;border-radius:9px;transition:background .15s}
+.dc-select-wrap:hover{background:#414146}
+.dc-select-wrap select{appearance:none;-webkit-appearance:none;border:0!important;background:transparent!important;border-radius:9px;padding:0 31px 0 12px;height:100%;width:100%;color:#ebebf0;font-size:12px;font-weight:650;cursor:pointer;outline:0}
+.dc-select-wrap>svg{pointer-events:none;position:absolute;right:10px;color:#aaaab4}
+.dc-select-wrap:focus-within{outline:2px solid #4d86d9;outline-offset:1px}
+.dc-native-select,.dc-schedule-controls select,.share-dialog-body select{appearance:none;-webkit-appearance:none;background-color:#353539!important;border:0!important;border-radius:9px!important;color:#f1f1f4!important;cursor:pointer;padding:0 35px 0 12px!important;font-weight:600;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23aeb0ba' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;background-position:right 11px center!important;background-repeat:no-repeat!important;box-shadow:none!important}
+.dc-native-select:focus-visible,.dc-schedule-controls select:focus-visible,.share-dialog-body select:focus-visible{outline:2px solid #528de7;outline-offset:2px}
+.dc-native-select option,.dc-select-wrap option{background:#28282d;color:#f3f3f5}
+.dc-less-motion .dc-brand-ring-active{animation:none;stroke-dasharray:90 237}
+@media(prefers-reduced-motion:reduce){.dc-brand-loader img,.dc-brand-ring-active{animation:none}}
