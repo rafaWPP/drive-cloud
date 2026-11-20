@@ -81,7 +81,8 @@ function CloudThumbnail({item,compact=false}){
    return()=>{live=false};
  },[item.id,item.message_id,item.kind,item.name]);
  if(item.kind==='folder')return <div className="cloud-thumb-folder"><Folder size={compact?25:78} fill="#96bcf1" color="#b1d0ff" strokeWidth={1.2}/></div>;
- if(!isCloudImage(item)||result.failed)return <div className="cloud-thumb-fallback"><IconFile item={item} large={!compact}/></div>;
+ if(!isCloudImage(item))return <div className="cloud-thumb-fallback"><IconFile item={item} large={!compact}/></div>;
+ if(result.failed)return <div className="cloud-thumb-fallback cloud-thumb-retry"><IconFile item={item} large={!compact}/><button className="cloud-preview-retry" title="Tentar carregar miniatura novamente" aria-label={'Recarregar miniatura de '+item.name} onClick={event=>{event.stopPropagation();cloudPreviewCache.delete(item.id+':'+(item.message_id??''));setResult({url:null,failed:false});cachedCloudPreview(item).then(url=>setResult({url,failed:false})).catch(()=>setResult({url:null,failed:true}))}}><RefreshCw size={compact?12:16}/></button></div>;
  return <div className="cloud-thumb-photo">{!result.url&&<span className="thumb-dots" aria-label="Carregando prévia"><i/><i/><i/></span>}{result.url&&<img src={result.url} alt={item.name}/>}</div>
 }
 function DriveToast({toast,onDismiss}){const [closing,setClosing]=useState(false);
