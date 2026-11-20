@@ -275,3 +275,14 @@ A janela **Compartilhar link** agora apresenta o item, cartões para escolher en
 **Segurança e limites:** continua exclusivamente em localhost. Compartilhar uma URL localhost com outra pessoa não permite acesso de outro computador. Não exponha o backend principal por túnel, encaminhamento de portas ou proxy; ele controla a sessão do Telegram. Downloads e prévias exigem a sessão local do proprietário. Atualize com `git pull origin main` e reinicie o backend Python, pois foi acrescentado o endpoint de prévia compartilhada.
 
 Verificação automática compila o frontend e verifica sintaxe do backend; testes ponta a ponta com Telegram e ZIP ainda dependem do ambiente local.
+
+## Preferências, navegação por URL e recuperação de mídia (V15)
+
+- O carregamento inicial agora utiliza a **logo oficial do Drive Cloud**, com um arco azul discreto ao redor, sem a antiga nuvem apenas contornada. O carregamento inicial termina quando o backend responde, incluindo erros, para não bloquear a tela indefinidamente.
+- A visualização **Lista/Grade** é armazenada em `localStorage` e também pode ser escolhida em **Configurações > Preferências**. Alterações aplicam-se à listagem existente, mesmo após atualizar o navegador.
+- A URL interna guarda a página e a pasta: `?page=cloudFiles&folder=<UUID>`. A aplicação recupera essas informações ao atualizar e respeita Voltar/Avançar. Links de compartilhamento `?share=` e `?embed=` continuam separados dessa navegação.
+- Os selects de visualização, agendamento e compartilhamento seguem o mesmo estilo grafite sem bordas coloridas.
+- Mídia compartilhada: a API passa a permitir requisições `Range` para vídeo, converte JPEG XL/BMP/TIFF para JPEG de prévia quando o decodificador suporta, e expõe diagnóstico limitado à árvore do link em `/api/public/share/{token}/media-status`. A página de compartilhamento/integração oferece mensagens de erro e botão para tentar a prévia novamente; miniaturas com erro apresentam ícone de substituição.
+- Persistem os limites locais da implementação: em links de teste, até 50 MB para mídias suportadas e vídeos reproduzíveis pelo navegador. Links `localhost` **não são públicos na internet**. Não exponha o backend administrativo via proxy.
+
+Atualize `git pull origin main`, **reinicie o backend** e recarregue a página. Teste um compartilhamento novo com PNG/JPEG e MP4 em modo Visualização e Embed. Se houver falha, anote o **código HTTP e a mensagem** exibidos em mídia/console para investigação no PC local.
