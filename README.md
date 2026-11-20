@@ -130,3 +130,11 @@ Para aplicar: `git pull origin main` e `Ctrl+Shift+R` na página. Não é necess
 - O backend existente continua aplicando as alterações no catálogo SQLite; renomear/mover pastas não muda as mensagens originais do canal Telegram.
 
 Para aplicar, execute `git pull origin main` na raiz do projeto e atualize o navegador com `Ctrl+Shift+R`. Esta atualização afeta o frontend; não precisa reiniciar o backend.
+
+## Início conectado ao Telegram
+
+A **Visão geral**, **Recentes** e **Favoritos** agora consultam o mesmo catálogo SQLite da área **Meu Drive** e não mais os arquivos antigos do IndexedDB. A visão geral mostra arquivos recentes, pastas e contagens; Recentes mostra arquivos em ordem de inclusão; Favoritos mostra itens marcados com estrela. A estrela no menu de três pontos ou nas ações da lista salva a preferência no banco local. Uma busca simples está disponível nessas telas.
+
+A atualização cria automaticamente a coluna `starred` no banco SQLite existente quando o backend reinicia, sem apagar os arquivos. O histórico anterior do Telegram que não está no catálogo local **não é importado automaticamente**.
+
+Atualize com `git pull origin main`, **reinicie o backend** (`uvicorn server:app --host 127.0.0.1 --port 8000` após ativar `.venv`), e atualize a página com `Ctrl+Shift+R`.
