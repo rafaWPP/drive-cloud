@@ -5,6 +5,7 @@ import{Play,Pause,Volume2,VolumeX,Maximize,Minimize,Cloud,Home,Folder,Image,Data
 import{all,save,read,erase}from'./storage';
 import './style.css';
 import {invoke} from '@tauri-apps/api/core';
+import {getCurrentWebviewWindow} from '@tauri-apps/api/webviewWindow';
 import {openUrl} from '@tauri-apps/plugin-opener';
 import {open as openNativeDialog} from '@tauri-apps/plugin-dialog';
 let backendOrigin='http://127.0.0.1:8000';
@@ -942,7 +943,54 @@ const forbiddenMoveFolder=id=>{
 };
 const availableMoveFolders=nodes.filter(x=>x.kind==='folder'&&!x.trashed&&(x.parent||'')===moveDestination&&!forbiddenMoveFolder(x.id)).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
 
-return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.dataTransfer?.types?.includes('Files'))setDrag(true)}} onDragOver={e=>e.preventDefault()} onDragLeave={e=>{const b=e.currentTarget.getBoundingClientRect();if(e.clientX<=b.left||e.clientX>=b.right||e.clientY<=b.top||e.clientY>=b.bottom)setDrag(false)}} onDrop={e=>{e.preventDefault();setDrag(false);if(e.dataTransfer?.files?.length)addFiles(e.dataTransfer.files)}}>
+const [nativeDropBusy,setNativeDropBusy]=useState(false);
+async function uploadNativeDrop(paths){
+ if(!paths?.length||mode==='trash')return;
+ if(busy||nativeDropBusy){
+  onToast?.({kind:'info',message:'Aguarde o envio atual terminar antes de arrastar outros arquivos.'});
+  return;
+ }
+ setNativeDropBusy(true);
+ setDrag(false);
+ onToast?.({kind:'info',message:'Preparando '+paths.length+' arquivo(s) arrastado(s) para envio...'});
+ try{
+  const results=await invoke('upload_dropped_files',{paths,parent:folder||null});
+  const success=results.filter(item=>item.ok);
+  const failures=results.filter(item=>!item.ok);
+  if(success.length)onToast?.({kind:'success',message:success.length+' arquivo(s) enviado(s) pelo arrastar e soltar.'});
+  if(failures.length){
+   const sample=failures.slice(0,2).map(item=>item.name+': '+item.detail).join('; ');
+   setError('Falha em '+failures.length+' arquivo(s): '+sample);
+   onToast?.({kind:'error',message:sample,duration:9000});
+  }
+  await reload();
+ }catch(e){
+  const message=typeof e==='string'?e:e?.message||String(e);
+  setError(message);
+  onToast?.({kind:'error',message:'Falha ao arrastar arquivo: '+message,duration:9000});
+ }finally{setNativeDropBusy(false);setDrag(false)}
+}
+useEffect(()=>{
+ if(!window.__TAURI_INTERNALS__)return;
+ let alive=true,release=null;
+ getCurrentWebviewWindow().onDragDropEvent(event=>{
+  if(!alive)return;
+  const payload=event.payload;
+  if(payload.type==='enter'&&mode!=='trash')setDrag(true);
+  if(payload.type==='leave')setDrag(false);
+  if(payload.type==='drop'){
+   setDrag(false);
+   if(mode!=='trash'&&payload.paths?.length)uploadNativeDrop(payload.paths);
+  }
+ }).then(unlisten=>{
+  if(alive)release=unlisten;
+  else unlisten();
+ }).catch(e=>{if(alive)onToast?.({kind:'error',message:'Arrastar arquivos indisponível: '+String(e)})});
+ return()=>{alive=false;if(release)release();setDrag(false)};
+},[folder,mode,busy,nativeDropBusy]);
+
+
+return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.dataTransfer?.types?.includes('Files'))setDrag(true)}} onDragOver={e=>e.preventDefault()} onDragLeave={e=>{const b=e.currentTarget.getBoundingClientRect();if(e.clientX<=b.left||e.clientX>=b.right||e.clientY<=b.top||e.clientY>=b.bottom)setDrag(false)}} onDrop={e=>{e.preventDefault();setDrag(false);if(!window.__TAURI_INTERNALS__&&e.dataTransfer?.files?.length)addFiles(e.dataTransfer.files)}}>
 {pendingResumable.length>0&&<div className="dc-resume-banner"><div className="dc-resume-heading"><RefreshCw size={17}/><strong>Uploads pendentes neste computador</strong><small>{pendingResumable.length} arquivo(s)</small></div>
  <p>Para retomar um envio pausado, selecione novamente o mesmo arquivo na mesma pasta. Arquivos com envio incerto ao Telegram não serão reenviados automaticamente.</p>
  {pendingResumable.slice(0,5).map(item=><div className="dc-resume-item" key={item.id}><span><strong title={item.name}>{item.name}</strong><small>{item.state==='staging'?Math.round(100*item.offset/Math.max(1,item.size))+'% recebido no conector':'Verificação do Telegram pendente'}</small></span>
