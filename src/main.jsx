@@ -126,10 +126,75 @@ function addFiles(inputFiles){
  setJobs(j=>[...j,...entries]);setPanel(true);
  runQueue(entries);
 }
-async function runQueue(entries){setBusy(true);for(const entry of entries){if(cancelAll.current){setJob(entry.id,{status:'cancelled'});continue}
-if(entry.file.size>20*1024*1024){setJob(entry.id,{status:'failed',detail:'Limite de 20 MB'});onToast?.({kind:'error',message:'Limite de 20 MB excedido: '+entry.name});continue}
-setJob(entry.id,{status:'uploading'});setTrayVisible(true);try{await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();active.current=xhr;xhr.open('POST',base+'/upload');xhr.upload.onprogress=e=>{if(e.lengthComputable)setJob(entry.id,{progress:Math.round(e.loaded/e.total*100),detail:e.loaded===e.total?'Aguardando confirmação do Telegram...':'Transferindo para o backend local...'})};xhr.upload.onload=()=>setJob(entry.id,{progress:100,detail:'Processando no Telegram...'});xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)resolve();else{let detail='Erro '+xhr.status;try{detail=JSON.parse(xhr.responseText).detail||detail}catch{}reject(Error(detail))}};xhr.onerror=()=>reject(Error('Falha de rede'));xhr.onabort=()=>reject(Error('Cancelado'));const body=new FormData();body.append('file',entry.file);if(folder)body.append('parent',folder);xhr.send(body)}) ;setJob(entry.id,{status:'completed',progress:100,detail:'Salvo no Telegram'});onToast?.({kind:'success',message:'Arquivo enviado: '+entry.name})}catch(e){setJob(entry.id,{status:cancelAll.current?'cancelled':'failed',detail:e.message});if(!cancelAll.current)onToast?.({kind:'error',message:'Falha no envio de '+entry.name+': '+e.message,duration:6000})}finally{active.current=null;await reload()}}
-setBusy(false);if(uploader.current)uploader.current.value=''}
+async function runQueue(entries){
+ setBusy(true);
+ for(const entry of entries){
+  if(cancelAll.current){setJob(entry.id,{status:'cancelled'});continue}
+  setJob(entry.id,{status:'uploading',progress:0,detail:'Preparando envio...'});
+  setTrayVisible(true);
+  let pollTimer=null, polling=false, finished=false;
+  try{
+   await new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    active.current=xhr;
+    xhr.open('POST',base+'/upload');
+    const beginPolling=()=>{
+      if(pollTimer)return;
+      pollTimer=setInterval(async()=>{
+       if(polling||finished)return;
+       polling=true;
+       try{
+        const response=await fetch(base+'/upload-progress/'+encodeURIComponent(entry.id),{cache:'no-store'});
+        if(!response.ok)return;
+        const status=await response.json();
+        if(finished)return;
+        if(status.stage==='telegram'&&status.total>0){
+          const uploaded=Math.min(1,Math.max(0,status.sent/status.total));
+          setJob(entry.id,{progress:Math.min(95,Math.round(10+uploaded*85)),detail:'Enviando ao Telegram...'});
+        }else if(status.stage==='catalog'){
+          setJob(entry.id,{progress:95,detail:'Confirmando arquivo e salvando catálogo...'});
+        }
+       }catch{}finally{polling=false}
+      },350);
+    };
+    xhr.upload.onprogress=e=>{
+      if(e.lengthComputable){
+       setJob(entry.id,{progress:Math.min(10,Math.round((e.loaded/e.total)*10)),detail:'Transferindo para o backend local...'});
+      }
+    };
+    xhr.upload.onload=()=>{
+      setJob(entry.id,{progress:10,detail:'Aguardando envio ao Telegram...'});
+      beginPolling();
+    };
+    xhr.onload=()=>{
+      if(xhr.status>=200&&xhr.status<300)resolve();
+      else{let detail='Erro '+xhr.status;try{detail=JSON.parse(xhr.responseText).detail||detail}catch{}reject(Error(detail))}
+    };
+    xhr.onerror=()=>reject(Error('Falha de rede'));
+    xhr.onabort=()=>reject(Error('Solicitação interrompida'));
+    const body=new FormData();
+    body.append('file',entry.file);
+    body.append('upload_id',entry.id);
+    if(folder)body.append('parent',folder);
+    xhr.send(body);
+   });
+   finished=true;
+   setJob(entry.id,{status:'completed',progress:100,detail:'Arquivo confirmado no Telegram'});
+   onToast?.({kind:'success',message:'Arquivo enviado: '+entry.name});
+  }catch(e){
+   finished=true;
+   setJob(entry.id,{status:cancelAll.current?'cancelled':'failed',detail:e.message});
+   if(!cancelAll.current)onToast?.({kind:'error',message:'Falha no envio de '+entry.name+': '+e.message,duration:6000});
+  }finally{
+   finished=true;
+   if(pollTimer)clearInterval(pollTimer);
+   active.current=null;
+   await reload();
+  }
+ }
+ setBusy(false);
+ if(uploader.current)uploader.current.value='';
+}
 function stopUploads(){cancelAll.current=true;active.current?.abort();setJobs(j=>j.map(x=>x.status==='queued'?{...x,status:'cancelled'}:x))}
 async function newFolder(){const name=prompt('Nome da pasta:');if(!name?.trim())return;try{await request('/folders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim(),parent:folder})});await reload();setNotice('Pasta criada')}catch(e){setError(e.message)}}
 async function download(item){try{setError('');const r=await request('/download/'+encodeURIComponent(item.id));const blob=await r.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=item.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);onToast?.({kind:'success',message:'Download iniciado: '+item.name})}catch(e){setError(e.message)}}
