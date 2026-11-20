@@ -314,3 +314,12 @@ A navegação de pastas compartilhadas usa uma consulta recursiva limitada à á
 **Vídeo:** a API agora usa `Telethon.iter_download(offset=...)` e respostas HTTP `206 Partial Content` em blocos de até 2 MB, sem obrigar o backend a baixar os 50 MB antes do primeiro quadro. A primeira reprodução ainda depende da conexão com o Telegram, do codec e do posicionamento dos metadados do vídeo. Não há transcodificação automática; MP4/WebM precisam conter codecs compatíveis com o navegador. O limite de 50 MB para mídia compartilhada no teste local permanece.
 
 Para testar: `git pull origin main`, reinicie o backend Python (essencial para novas rotas/credenciais de reprodução), atualize a página com Ctrl+Shift+R e abra novamente um link compartilhado de teste. Links antigos do Drive continuam válidos até expirar, mas URLs antigas que apontam **diretamente** à API de mídia deixam de funcionar sem o ticket da página. Nunca exponha o backend de testes do Telegram à internet.
+
+## Layout de compartilhamento e uploads (V18)
+
+- Arrastar arquivos sobre **Meu Drive** exibe uma sobreposição escura com destino destacado em azul; ao soltar os arquivos, o painel de transferências abre em formato compacto.
+- Enquanto envia: o painel mostra nome, estado real da API e porcentagem. Após o backend/Telegram confirmar, o painel exibe um ✓ verde. Pode ser minimizado/expandido; o X fecha o painel, não cancela os uploads. O botão **Cancelar** interrompe transferências pendentes.
+- A janela de compartilhamento usa menus personalizados para **tipo de link** (Visualizar e baixar, Download, Integração para mídia), **acesso geral** e **validade**, com scroll estilizado. A opção **Restrito** está visível porém desabilitada porque ainda não há autenticação de destinatários; não devemos oferecer uma restrição falsa.
+- **Nunca expira** salva no backend uma data sentinela no ano 9999; continua revogável e exige cuidado para não deixar informações sensíveis acessíveis indefinidamente. Links antigos continuam com as validades originais.
+- Novos links utilizam rotas mais legíveis: `/file/d/<token>`, `/folder/d/<token>`, `/embed/d/<token>`. URLs antigas em `/?share=`/`?embed=` ainda funcionam. O servidor frontend precisa ter fallback para `index.html` ao usar essas rotas em produção; o Vite local já usa fallback SPA.
+- **Atenção:** a versão atual é somente para localhost. Uma URL `http://127.0.0.1:5173/file/d/...` não é acessível de outro computador e **não pode ser compartilhada publicamente** sem uma infraestrutura HTTPS e autenticação administrativa separada.
