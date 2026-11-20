@@ -6,10 +6,13 @@ import json
 import os
 import re
 import sqlite3
+import time
 from pathlib import Path
 from telethon.tl.functions.channels import CreateChannelRequest, EditPhotoRequest
 from telethon.tl.types import Channel, InputChatUploadedPhoto, ChatPhotoEmpty
 from channel_brand import channel_avatar_jpeg
+from storage_recovery import archive_channel_metadata, existing_catalog_counts
+from typing import Literal
 
 import qrcode
 from dotenv import load_dotenv
@@ -491,6 +494,125 @@ async def ensure_storage():
                 500, detail="Falha inesperada ao preparar o canal (" + type(exc).__name__ + "). "
                             "Seu vínculo não foi apagado. Informe este tipo de erro ao suporte.",
             ) from exc
+
+
+class RecoverStorageRequest(BaseModel):
+    action: Literal["create", "link"]
+    expected_channel_id: str = Field(min_length=1, max_length=32)
+    channel_id: str | None = Field(default=None, max_length=32)
+    confirmed: bool = False
+
+
+def is_missing_channel_error(error):
+    """Never allow recovery for temporary errors or a reachable public channel."""
+    return (isinstance(error, HTTPException) and error.status_code == 409
+            and isinstance(error.detail, str)
+            and error.detail.startswith("O canal privado já está vinculado, mas não foi encontrado"))
+
+
+async def missing_channel_recovery_context(client, account):
+    links = channel_links()
+    previous = links.get(account)
+    if not previous:
+        raise HTTPException(409, "Não existe vínculo anterior; use a configuração normal.")
+    try:
+        recorded = int(previous["channel_id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(409, "O vínculo anterior é inválido. Preserve o arquivo de configuração.") from exc
+    if recorded <= 0:
+        raise HTTPException(409, "O vínculo anterior possui identificador inválido.")
+    try:
+        await linked_storage_channel(client, previous)
+    except HTTPException as exc:
+        if not is_missing_channel_error(exc):
+            raise
+    else:
+        raise HTTPException(409, "O canal antigo está acessível novamente. Nenhuma substituição foi feita.")
+
+    # Do not create a duplicate if a user-owned, same-name private channel
+    # is discoverable after a previous interrupted Telegram creation.
+    matches = await locate_storage_channels(client)
+    with connection() as db:
+        counts = existing_catalog_counts(db, account)
+    return links, previous, str(recorded), matches, counts
+
+
+@app.get("/api/telegram/storage/recovery/options")
+async def recovery_options():
+    async with lock:
+        client, account = await authorized_account()
+        links, old_entry, old_id, channels, counts = await missing_channel_recovery_context(client, account)
+        return {
+            "eligible": True, "expected_channel_id": old_id,
+            "candidates": [
+                {"channel_id": str(channel.id), "title": channel.title}
+                for channel in channels[:20]
+            ],
+            "too_many_candidates": len(channels) > 20,
+            **counts,
+            "message": "O canal antigo não está disponível nesta conta. Criar outro canal "
+                       "não restaura as mensagens ou arquivos excluídos do Telegram. "
+                       "O catálogo local anterior será arquivado sem excluir registros."
+        }
+
+
+@app.post("/api/telegram/storage/recovery")
+async def recover_storage(body: RecoverStorageRequest):
+    if not body.confirmed:
+        raise HTTPException(422, "Confirme que compreende que o novo canal não restaura arquivos excluídos.")
+    async with lock:
+        client, account = await authorized_account()
+        links, previous, old_id, candidates, counts = await missing_channel_recovery_context(client, account)
+        if body.expected_channel_id != old_id:
+            raise HTTPException(409, "O canal vinculado mudou durante a recuperação. Atualize as opções.")
+        if body.action == "create":
+            if candidates:
+                raise HTTPException(
+                    409, "Já existe outro canal privado Drive Cloud Storage na conta. "
+                         "Selecione-o para evitar duplicação, ou revise a conta Telegram."
+                )
+            try:
+                result = await client(CreateChannelRequest(
+                    title=CHANNEL_TITLE, about=CHANNEL_MARKER,
+                    broadcast=True, megagroup=False,
+                ))
+            except errors.FloodWaitError as exc:
+                raise HTTPException(429, f"Telegram pediu uma pausa de {exc.seconds} segundos.") from exc
+            except errors.RPCError as exc:
+                raise HTTPException(502, "Telegram não permitiu criar o canal (" + type(exc).__name__ + ").") from exc
+            channel = next((item for item in result.chats if isinstance(item, Channel)), None)
+            if not channel or not channel.broadcast or channel_has_public_username(channel):
+                raise HTTPException(502, "O Telegram não confirmou a criação de um canal privado.")
+            created = True
+        else:
+            wanted = body.channel_id
+            channel = next((c for c in candidates if str(c.id) == wanted), None)
+            if channel is None:
+                raise HTTPException(409, "O canal escolhido não está mais entre os canais privados encontrados.")
+            created = False
+
+        # Never reuse old message IDs against the new channel. Preserve every
+        # previous node, sync folder, backup, and share reference in a separate
+        # local archive account scope. The new channel starts with an empty view.
+        with connection() as db:
+            archive = archive_channel_metadata(db, account, old_id, str(channel.id))
+
+        updated = dict(previous)
+        updated["channel_id"] = str(channel.id)
+        history = list(updated.get("previous_channels") or [])
+        history.append({
+            "channel_id": old_id,
+            "archived_account": archive["archived_account"],
+            "created": int(time.time()),
+        })
+        updated["previous_channels"] = history
+        links[account] = updated
+        save_channel_links(links)
+        logo_applied = await assign_drive_channel_logo(client, channel)
+        return {**channel_info(channel, created=created), "recovered": True,
+                "previous_catalog_archived": archive["node_count"],
+                "previous_sync_folders_archived": archive["folder_sync_count"],
+                "logo_applied": logo_applied}
 
 
 @app.post("/api/telegram/qr/start")
