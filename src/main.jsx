@@ -1,5 +1,6 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import{createRoot}from'react-dom/client';
+import{createPortal}from'react-dom';
 import{Play,Pause,Volume2,VolumeX,Maximize,Minimize,Cloud,Home,Folder,Image,DatabaseBackup,Clock3,Star,Users,RefreshCw,Trash2,Settings,Search,Plus,Upload,FolderPlus,Grid2X2,List,ChevronRight,HardDrive,WifiOff,FileText,FileArchive,File,Video,Download,MoreHorizontal,Code,X,ArrowLeft,Pencil,MoveRight,Eye,RotateCcw,Check,ChevronDown,CircleAlert}from'lucide-react';
 import{all,save,read,erase}from'./storage';
 import './style.css';
@@ -286,19 +287,35 @@ function PublicShareView({token}){
 }
 
 function DriveMenuSelect({value,onChange,options,label,icon:Icon,disabled=false}){
- const [open,setOpen]=useState(false),root=useRef(null);
- useEffect(()=>{if(!open)return;const hide=e=>{if(!root.current?.contains(e.target))setOpen(false)};const key=e=>{if(e.key==='Escape')setOpen(false)};document.addEventListener('pointerdown',hide);document.addEventListener('keydown',key);return()=>{document.removeEventListener('pointerdown',hide);document.removeEventListener('keydown',key)}},[open]);
+ const [open,setOpen]=useState(false),[placement,setPlacement]=useState(null),root=useRef(null),menu=useRef(null);
+ const place=()=>{const rect=root.current?.getBoundingClientRect();if(!rect)return;
+  const listHeight=Math.min(224,options.length*56+10);
+  const above=rect.top,below=window.innerHeight-rect.bottom;
+  const upwards=below<listHeight+14&&above>below;
+  setPlacement({left:rect.left,top:upwards?Math.max(8,rect.top-listHeight-5):rect.bottom+5,
+   width:rect.width,maxHeight:Math.min(listHeight,upwards?Math.max(100,above-15):Math.max(100,below-15))});
+ };
+ useEffect(()=>{if(!open)return;place();
+  const hide=e=>{if(!root.current?.contains(e.target)&&!menu.current?.contains(e.target))setOpen(false)};
+  const key=e=>{if(e.key==='Escape')setOpen(false)};
+  const recalc=()=>place();
+  document.addEventListener('pointerdown',hide);
+  document.addEventListener('keydown',key);
+  window.addEventListener('scroll',recalc,true);window.addEventListener('resize',recalc);
+  return()=>{document.removeEventListener('pointerdown',hide);document.removeEventListener('keydown',key);
+   window.removeEventListener('scroll',recalc,true);window.removeEventListener('resize',recalc)}
+ },[open,options.length]);
  const active=options.find(x=>x.value===value)||options[0];
  return <div className={'dc-menu-select'+(open?' is-open':'')} ref={root}>
   <button type="button" disabled={disabled} className="dc-menu-select-trigger" aria-label={label} aria-haspopup="listbox" aria-expanded={open} onClick={()=>setOpen(x=>!x)}>
    {Icon&&<Icon size={17}/>}<span className="dc-menu-select-caption">{active?.label}</span><ChevronDown size={17} className="dc-menu-select-arrow"/>
   </button>
-  {open&&<div role="listbox" aria-label={label} className="dc-menu-select-options">
+  {open&&placement&&createPortal(<div ref={menu} role="listbox" aria-label={label} className="dc-menu-select-options dc-select-portal" style={placement}>
    {options.map(option=><button type="button" key={option.value} disabled={option.disabled} role="option" aria-selected={value===option.value} className={'dc-menu-select-option'+(value===option.value?' selected':'')} onClick={()=>{onChange(option.value);setOpen(false)}}>
     <span className="dc-menu-select-check">{value===option.value&&<Check size={16}/>}</span><span><strong>{option.label}</strong>{option.hint&&<small>{option.hint}</small>}</span>
    </button>)}
-  </div>}
- </div>
+  </div>,document.body)}
+ </div>;
 }
 function ShareDialog({item,onClose,onToast}){
  const [mode,setMode]=useState(item.kind==='folder'?'view':'download'),[expires,setExpires]=useState('168'),[busy,setBusy]=useState(false),[created,setCreated]=useState(null),[existing,setExisting]=useState([]),[error,setError]=useState('');
