@@ -343,3 +343,17 @@ html,body,#root{background:var(--drive-bg)}
 @keyframes dc-toast-out{from{opacity:1;transform:translate(-50%,0)}to{opacity:0;transform:translate(-50%,28px)}}
 @media(max-width:650px){.dc-toast{bottom:14px;gap:8px}.dc-toast-message{font-size:11px}.selection-zone{height:86px}}
 @media(prefers-reduced-motion:reduce){.dc-toast,.dc-toast-out{animation:none}}
+
+/* Confirmations: reversible trash vs irreversible Telegram deletion */
+.dc-confirm-backdrop{position:fixed;inset:0;z-index:260;display:grid;place-items:center;padding:18px;background:#070708c9}
+.dc-confirm-dialog{width:min(420px,100%);padding:26px;background:#28282b;border:1px solid #47474b;border-radius:15px;box-shadow:0 25px 80px #000b;color:#f0f0f1}
+.dc-confirm-icon{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:#493035;color:#f5a3a7;margin-bottom:18px}
+.dc-confirm-dialog h3{font-size:18px;margin:0 0 10px;font-weight:700;letter-spacing:-.2px}
+.dc-confirm-dialog p{font-size:12px;line-height:1.65;color:#b8b8bc;margin:0 0 23px}
+.dc-confirm-buttons{display:flex;justify-content:flex-end;gap:9px}
+.dc-confirm-buttons button{height:36px;padding:0 15px;border-radius:8px;border:0;background:#3b3b3e;color:#efeff0;font-size:12px;font-weight:650}
+.dc-confirm-buttons button:hover:not(:disabled){background:#4a4a4e}
+.dc-confirm-buttons .dc-confirm-danger{background:#cf4d51;color:#fff}
+.dc-confirm-buttons .dc-confirm-danger:hover:not(:disabled){background:#df5a5e}
+.cloud-controls>button[title="Exportar catálogo para backup"]{width:32px;padding:0;justify-content:center}
+@media(max-width:600px){.dc-confirm-dialog{padding:20px}.dc-confirm-buttons button{flex:1}}
