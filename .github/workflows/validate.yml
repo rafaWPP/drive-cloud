@@ -20,4 +20,4 @@ jobs:
         with:
           python-version: '3.12'
       - name: Compile Python backend
-        run: python -m py_compile backend/server.py backend/storage_api.py
+        run: python -m py_compile backend/server.py backend/storage_api.py backend/backup_api.py backend/share_api.py
