@@ -703,6 +703,8 @@ function SettingsPages({section,onToast}){
 }
 function DriveFolderTree({nodes,current,onOpen}){
  const [expanded,setExpanded]=useState({});
+ const listRef=useRef(null);
+ const activeRowRef=useRef(null);
  useEffect(()=>{
   if(!current)return;
   const toExpand={};
@@ -714,13 +716,26 @@ function DriveFolderTree({nodes,current,onOpen}){
   setExpanded(previous=>({...previous,...toExpand}));
  },[current,nodes]);
  const folders=nodes.filter(x=>x.kind==='folder'&&!x.trashed);
+ useEffect(()=>{
+  // The selected folder may sit at the end of a long, animated tree.
+  // Keep it visible without scrolling the entire page or stealing focus.
+  if(!current)return;
+  const timer=window.setTimeout(()=>{
+   const list=listRef.current,row=activeRowRef.current;
+   if(!list||!row)return;
+   const bounds=list.getBoundingClientRect(),rect=row.getBoundingClientRect();
+   if(rect.top<bounds.top+8)list.scrollTop+=rect.top-bounds.top-8;
+   else if(rect.bottom>bounds.bottom-8)list.scrollTop+=rect.bottom-bounds.bottom+8;
+  },300);
+  return()=>window.clearTimeout(timer);
+ },[current,nodes]);
  function branch(parent,depth){
   if(depth>22)return null;
   return folders.filter(x=>(x.parent||null)===parent).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map(item=>{
    const children=folders.some(x=>x.parent===item.id);
    const open=!!expanded[item.id];
    return <div key={item.id} className="dc-tree-branch">
-    <div className={'dc-tree-row '+(current===item.id?'active':'')} style={{paddingLeft:(8+depth*14)+'px'}}>
+    <div ref={current===item.id?activeRowRef:null} className={'dc-tree-row '+(current===item.id?'active':'')} style={{paddingLeft:(8+Math.min(depth,4)*11)+'px'}} title={item.name}>
      <button className="dc-tree-expand" title={children?(open?'Recolher pasta':'Expandir pasta'):'Sem subpastas'} disabled={!children} onClick={()=>setExpanded(prev=>({...prev,[item.id]:!prev[item.id]}))}>{children?(open?<ChevronDown size={14}/>:<ChevronRight size={14}/>):<span/>}</button>
      <button className="dc-tree-name" title={item.name} onClick={()=>{onOpen(item.id);setExpanded(prev=>({...prev,[item.id]:true}))}}><Folder size={16}/><span>{item.name}</span></button>
     </div>
@@ -730,7 +745,7 @@ function DriveFolderTree({nodes,current,onOpen}){
  }
  return <div className="dc-folder-tree"><div className="dc-folder-tree-heading">Pastas <span>{folders.length}</span></div>
  <button className={'dc-tree-root '+(current===null?'active':'')} onClick={()=>onOpen(null)}><Folder size={16}/><span>Raiz do Meu Drive</span></button>
- <div className="dc-tree-list">{branch(null,0)}</div></div>
+ <div className="dc-tree-list" ref={listRef}>{branch(null,0)}</div></div>
 }
 const DRIVE_PAGES=new Set(['home','recent','starred','cloudFiles','trash','backups','backupHistory','backupSchedule','sync','devices','syncActivity','settings','telegram','security','preferences']);
 function readDriveLocation(){
@@ -788,7 +803,7 @@ const sections=Object.values(menus).flat();
 const label=sections.find(s=>s[0]===section)?.[1]||'Arquivos';
 const bytes=items.filter(i=>i.kind==='file'&&!i.trashed).reduce((n,i)=>n+(i.size||0),0);
 return <div className="shell"><aside className="rail"><div className="logo" title="Drive Cloud"><img src="/drive-cloud-logo.svg" alt="Drive Cloud"/></div>{primary.map(([a,name,Icon])=><button key={a} title={name} aria-label={name} className={area===a?'rail-on':''} onClick={()=>goArea(a)}><Icon size={21}/></button>)}</aside>
-<aside className={'sidebar '+(mobile?'show':'')}><div className="sidebar-title">{primary.find(p=>p[0]===area)?.[1]||'Meu espaço'}<button className="mobile-x" onClick={()=>setMobile(false)}><X size={19}/></button></div><div className="links">{menus[area].map(([id,name,Icon])=><button key={id} className={section===id?'active':''} onClick={()=>nav(id)}><Icon size={18}/>{name}</button>)}</div>{area==='files'&&<DriveFolderTree nodes={cloudTree} current={cloudFolder} onOpen={id=>{nav('cloudFiles',id)}}/>}<div className="sidebar-bottom"><div className="dc-compact-storage">
+<aside className={'sidebar '+(mobile?'show':'')+(area==='files'?' sidebar-tree':'')}><div className="sidebar-title">{primary.find(p=>p[0]===area)?.[1]||'Meu espaço'}<button className="mobile-x" onClick={()=>setMobile(false)}><X size={19}/></button></div><div className="links">{menus[area].map(([id,name,Icon])=><button key={id} className={section===id?'active':''} onClick={()=>nav(id)}><Icon size={18}/>{name}</button>)}</div>{area==='files'&&<DriveFolderTree nodes={cloudTree} current={cloudFolder} onOpen={id=>{nav('cloudFiles',id)}}/>}<div className="sidebar-bottom"><div className="dc-compact-storage">
 <div className="dc-usage-heading"><HardDrive size={16}/><span>Armazenamento</span></div>
 <div className="dc-usage-value">{driveUsage?size(driveUsage.total_bytes):'—'} <small>utilizados no Drive / <span title="O Telegram não informa uma cota de armazenamento para esta integração.">Sem cota informada</span></small></div>
 <div className="dc-usage-breakdown"><span><i className="active"/> Arquivos {driveUsage?size(driveUsage.active_bytes||0):'—'}</span><span><i className="trash"/> Lixeira {driveUsage?size(driveUsage.trash_bytes||0):'—'}</span></div>
