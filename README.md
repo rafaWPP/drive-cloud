@@ -138,3 +138,13 @@ A **Visão geral**, **Recentes** e **Favoritos** agora consultam o mesmo catálo
 A atualização cria automaticamente a coluna `starred` no banco SQLite existente quando o backend reinicia, sem apagar os arquivos. O histórico anterior do Telegram que não está no catálogo local **não é importado automaticamente**.
 
 Atualize com `git pull origin main`, **reinicie o backend** (`uvicorn server:app --host 127.0.0.1 --port 8000` após ativar `.venv`), e atualize a página com `Ctrl+Shift+R`.
+
+## Interface V5: Home limpa, busca única e miniaturas
+
+- A barra de ações do **Meu Drive** usa controles grafite finos, sem bordas marcadas, mantendo a cor azul discreta para seleção.
+- A **Visão geral** não mostra mais o card grande de estatísticas. Ela exibe seções compactas de Recentes e Favoritos com prévias.
+- Removida a busca duplicada dentro da área de arquivos. **Somente a busca do cabeçalho** filtra os resultados nas telas de Meu Drive, Visão geral, Recentes e Favoritos. A busca inclui pastas e arquivos do catálogo Telegram e pode localizar itens fora da pasta atual.
+- As miniaturas agora encerram seu indicador ao carregar, ao falhar, ou após **15 segundos**. Em falhas ou tempo excedido, aparece o ícone padrão. Isso evita carregamento visual infinito, mas não corrige possíveis lentidões de download ou conversão no backend.
+- Não há migração ou exclusão de dados locais e do Telegram nesta atualização.
+
+Execute `git pull origin main` e atualize a página com `Ctrl + Shift + R`. Mudanças somente no frontend; o backend pode continuar ligado.
