@@ -14,6 +14,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from typing import Literal
+
+from sync_reconcile import (remote_tree, safe_relative, decision, get_remote_file,
+                            install_download, MAX_DOWNLOADS_PER_RUN)
 
 from storage_api import MAX_SIZE, connection, channel_id
 
@@ -26,10 +30,15 @@ FORBIDDEN_TOP = {"/", "/proc", "/sys", "/dev", "/etc"}
 
 class FolderRequest(BaseModel):
     path: str = Field(min_length=2, max_length=4096)
+    remote_root_id: str | None = None
 
 
 class AutoRequest(BaseModel):
     enabled: bool
+
+
+class SyncModeRequest(BaseModel):
+    mode: Literal["backup", "two-way"]
 
 
 def ensure_schema(db: sqlite3.Connection):
@@ -42,6 +51,13 @@ def ensure_schema(db: sqlite3.Connection):
         folder_id TEXT NOT NULL, rel_path TEXT NOT NULL,
         node_id TEXT NOT NULL, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
         PRIMARY KEY(folder_id,rel_path))""")
+    cols = {item[1] for item in db.execute("PRAGMA table_info(sync_folders)")}
+    if "mode" not in cols:
+        db.execute("ALTER TABLE sync_folders ADD COLUMN mode TEXT NOT NULL DEFAULT 'backup'")
+    db.execute("""CREATE TABLE IF NOT EXISTS sync_remote_seen(
+        folder_id TEXT NOT NULL, rel_path TEXT NOT NULL,
+        node_id TEXT NOT NULL, outcome TEXT NOT NULL, created INTEGER NOT NULL,
+        PRIMARY KEY(folder_id,rel_path,node_id))""")
     db.execute("CREATE INDEX IF NOT EXISTS sync_folders_account ON sync_folders(account)")
 
 
@@ -128,6 +144,19 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
         return {"path": str(root), "files": len(files), "bytes": sum(x[1] for x in files),
                 "over_limit": oversized, "max_file_bytes": MAX_SIZE}
 
+    @router.get("/remote-roots")
+    async def remote_roots():
+        """Only active top-level backup roots from the authenticated account."""
+        async with lock:
+            _, account = await authorized_account()
+            with connection() as db:
+                roots = db.execute(
+                    "SELECT id,name,created FROM nodes WHERE account=? AND parent IS NULL "
+                    "AND kind='folder' AND trashed=0 AND name LIKE 'Backup • %' ORDER BY created DESC",
+                    (account,),
+                ).fetchall()
+            return {"roots": [dict(root) for root in roots]}
+
     @router.get("/folders")
     async def list_folders():
         async with lock:
@@ -135,7 +164,7 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
             with connection() as db:
                 ensure_schema(db)
                 rows = db.execute(
-                    "SELECT id,path,enabled,last_run,last_error FROM sync_folders "
+                     "SELECT id,path,enabled,last_run,last_error,mode,root_node FROM sync_folders "
                     "WHERE account=? ORDER BY path", (account,)).fetchall()
             return {"folders": [dict(row) for row in rows]}
 
@@ -151,14 +180,28 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                                       (account, str(root))).fetchone()
                 if existing:
                     return {"id": existing["id"], "already_exists": True}
-                # Preserve existing Drive organization: use a dedicated backup root.
                 timestamp = int(time.time() * 1000)
-                node = str(uuid.uuid4())
                 folder_id = str(uuid.uuid4())
-                db.execute(
-                    "INSERT INTO nodes (id,account,kind,parent,name,created) VALUES (?,?,?,?,?,?)",
-                    (node, account, "folder", None, "Backup • " + root.name[:160], timestamp),
-                )
+                if body.remote_root_id:
+                    try:
+                        requested_id = str(uuid.UUID(body.remote_root_id))
+                    except (TypeError, ValueError, AttributeError) as exc:
+                        raise HTTPException(422, "Pasta remota inválida.") from exc
+                    found = db.execute(
+                        "SELECT id,name FROM nodes WHERE id=? AND account=? AND kind='folder' "
+                        "AND parent IS NULL AND trashed=0",
+                        (requested_id, account),
+                    ).fetchone()
+                    if not found or not found["name"].startswith("Backup • "):
+                        raise HTTPException(409, "Pasta remota não pertence a este Drive.")
+                    node = found["id"]
+                else:
+                    # Creating a new backup must never modify another root.
+                    node = str(uuid.uuid4())
+                    db.execute(
+                        "INSERT INTO nodes (id,account,kind,parent,name,created) VALUES (?,?,?,?,?,?)",
+                        (node, account, "folder", None, "Backup • " + root.name[:160], timestamp),
+                    )
                 db.execute(
                     "INSERT INTO sync_folders (id,account,path,root_node) VALUES (?,?,?,?)",
                     (folder_id, account, str(root), node),
@@ -265,6 +308,118 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
     async def run_sync(folder_id: str):
         return await perform_sync(folder_id)
 
+    async def perform_pull(folder_id: str, dry_run: bool = False):
+        """Reconcile active Telegram versions without overwriting PC files."""
+        if folder_id in active_runs:
+            raise HTTPException(409, "Esta pasta já está sendo sincronizada.")
+        active_runs.add(folder_id)
+        try:
+            async with lock:
+                client, account = await authorized_account()
+                channel = channel_id(channel_links, account)
+                with connection() as db:
+                    ensure_schema(db)
+                    folder = db.execute("SELECT * FROM sync_folders WHERE id=? AND account=?",
+                                        (folder_id, account)).fetchone()
+                    if not folder:
+                        raise HTTPException(404, "Pasta de sincronização não encontrada.")
+                    root = source_root(folder["path"])
+                    remote = remote_tree(db, account, folder["root_node"])
+                    tracked = {
+                        r["rel_path"]: r["node_id"] for r in db.execute(
+                            "SELECT rel_path,node_id FROM sync_entries WHERE folder_id=?", (folder_id,)
+                        )
+                    }
+                    seen = {
+                        (r["rel_path"], r["node_id"]) for r in db.execute(
+                            "SELECT rel_path,node_id FROM sync_remote_seen WHERE folder_id=?", (folder_id,)
+                        )
+                    }
+                actions = []
+                over_limit = 0
+                for rel, item in sorted(remote.items()):
+                    if item["size"] > MAX_SIZE:
+                        over_limit += 1
+                        continue
+                    destination = safe_relative(root, tuple(rel.split("/")))
+                    classification = decision(destination, item["id"], tracked.get(rel))
+                    if classification == "unsafe":
+                        raise HTTPException(409, "Caminho local inacessível: " + rel)
+                    if classification == "known" or (rel, item["id"]) in seen:
+                        continue
+                    actions.append((rel, item, destination))
+                if dry_run:
+                    return {
+                        "pending": len(actions),
+                        "conflicts_possible": sum(1 for _, _, dest in actions if dest.exists()),
+                        "over_limit": over_limit,
+                        "batch_limit": MAX_DOWNLOADS_PER_RUN,
+                        "files_preserved": True,
+                    }
+                results = {"downloaded": 0, "identical": 0, "conflicts": 0, "over_limit": over_limit}
+                for rel, item, destination in actions[:MAX_DOWNLOADS_PER_RUN]:
+                    temp = None
+                    try:
+                        temp = await get_remote_file(client, channel, item)
+                        outcome, installed = await asyncio.to_thread(
+                            install_download, temp, destination, root, item["id"]
+                        )
+                    except HTTPException:
+                        raise
+                    except Exception as exc:
+                        raise HTTPException(502, "Falha ao recuperar arquivo do Telegram: " + type(exc).__name__) from exc
+                    finally:
+                        if temp is not None:
+                            temp.unlink(missing_ok=True)
+                    if outcome == "downloaded":
+                        results["downloaded"] += 1
+                    elif outcome == "identical":
+                        results["identical"] += 1
+                    else:
+                        results["conflicts"] += 1
+                    with connection() as db:
+                        ensure_schema(db)
+                        db.execute(
+                            "INSERT OR IGNORE INTO sync_remote_seen"
+                            "(folder_id,rel_path,node_id,outcome,created) VALUES (?,?,?,?,?)",
+                            (folder_id, rel, item["id"], outcome, int(time.time())),
+                        )
+                        if outcome in ("downloaded", "identical"):
+                            stat = installed.stat()
+                            db.execute(
+                                "INSERT INTO sync_entries(folder_id,rel_path,node_id,size,mtime_ns)"
+                                " VALUES (?,?,?,?,?) ON CONFLICT(folder_id,rel_path) DO UPDATE SET "
+                                "node_id=excluded.node_id,size=excluded.size,mtime_ns=excluded.mtime_ns",
+                                (folder_id, rel, item["id"], stat.st_size, stat.st_mtime_ns),
+                            )
+                results["remaining_estimate"] = max(0, len(actions) - MAX_DOWNLOADS_PER_RUN)
+                return results
+        finally:
+            active_runs.discard(folder_id)
+
+    @router.post("/folders/{folder_id}/remote/preview")
+    async def preview_remote(folder_id: str):
+        return await perform_pull(folder_id, dry_run=True)
+
+    @router.post("/folders/{folder_id}/pull")
+    async def pull_remote(folder_id: str):
+        return await perform_pull(folder_id)
+
+    @router.post("/folders/{folder_id}/mode")
+    async def set_mode(folder_id: str, body: SyncModeRequest):
+        """Two-way mode is an explicit opt-in, never enabled by migration."""
+        async with lock:
+            _, account = await authorized_account()
+            with connection() as db:
+                ensure_schema(db)
+                cursor = db.execute(
+                    "UPDATE sync_folders SET mode=? WHERE id=? AND account=?",
+                    (body.mode, folder_id, account),
+                )
+                if not cursor.rowcount:
+                    raise HTTPException(404, "Pasta de sincronização não encontrada.")
+        return {"mode": body.mode}
+
     @router.post("/folders/{folder_id}/automatic")
     async def set_automatic(folder_id: str, body: AutoRequest):
         async with lock:
@@ -292,6 +447,7 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                 ).fetchone()
                 if not match:
                     raise HTTPException(404, "Pasta de sincronização não encontrada.")
+                db.execute("DELETE FROM sync_remote_seen WHERE folder_id=?", (folder_id,))
                 db.execute("DELETE FROM sync_entries WHERE folder_id=?", (folder_id,))
                 db.execute("DELETE FROM sync_folders WHERE id=? AND account=?",
                            (folder_id, account))
@@ -310,6 +466,16 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                             "SELECT id FROM sync_folders WHERE account=? AND enabled=1", (account,))]
                 for folder_id in ids:
                     try:
+                        async with lock:
+                            _, current_account = await authorized_account()
+                            with connection() as db:
+                                ensure_schema(db)
+                                current = db.execute(
+                                    "SELECT mode FROM sync_folders WHERE id=? AND account=?",
+                                    (folder_id, current_account),
+                                ).fetchone()
+                        if current and current["mode"] == "two-way":
+                            await perform_pull(folder_id)
                         await perform_sync(folder_id)
                     except (HTTPException, OSError):
                         continue  # A missing/unmounted directory never triggers remote deletion.
