@@ -483,7 +483,7 @@ return <div className="shell"><aside className="rail"><div className="logo"><Clo
 <div className="dc-compact-meter" title="Divisão entre arquivos ativos e lixeira, não é uma cota de espaço." aria-label="Distribuição entre arquivos ativos e lixeira"><span style={{width:driveUsage?.total_bytes?100*(driveUsage.active_bytes||0)/driveUsage.total_bytes+'%':'0%'}}/><span className="dc-trash-share" style={{width:driveUsage?.total_bytes?100*(driveUsage.trash_bytes||0)/driveUsage.total_bytes+'%':'0%'}}/></div>
 <div className="dc-usage-breakdown"><span><i className="active"/> Ativos {driveUsage?size(driveUsage.active_bytes||0):'—'}</span><span><i className="trash"/> Lixeira {driveUsage?size(driveUsage.trash_bytes||0):'—'}</span></div>
 <div className="dc-usage-status"><i className={telegramConnected?'connected':'disconnected'}/>{telegramConnected?'Telegram conectado':'Telegram desconectado'}</div>
-</div></div></div></aside>
+</div></div></aside>
 <main><header><button className="mobile-toggle" onClick={()=>setMobile(!mobile)}>☰</button><button className="new" title="Criar pasta no Meu Drive" onClick={()=>{nav('cloudFiles');setCreateFolderToken(n=>n+1)}}><Plus size={18}/> Novo</button><div className="search"><Search size={18}/><input placeholder="Buscar arquivos e pastas..." value={query} onChange={e=>setQuery(e.target.value)}/></div><span className="status"><i/> Modo local</span><span className="avatar">DC</span></header>
 <div className="content"><div className="heading"><div><h1>{trail.length&&section==='files'?trail.at(-1).name:label}</h1>{!driveSections.includes(section)&&<p>{area==='backups'?'Seus backups em um só lugar.':area==='sync'?'Gerencie a sincronização entre dispositivos.':'Personalize seu Drive Cloud.'}</p>}</div>}</div>
 }
