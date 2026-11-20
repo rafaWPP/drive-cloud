@@ -35,6 +35,17 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
       - name: Instalar dependências do frontend
         run: npm install
+      - name: Verificar inicialização do frontend desktop
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          const source = readFileSync('src/main.jsx', 'utf8');
+          assert.match(source, /let backendOrigin='http:\/\/127\.0\.0\.1:8000';/);
+          assert.doesNotMatch(source, /let backendOrigin=backendOrigin/);
+          assert.match(source, /backendOrigin = await invoke\('backend_origin'\)/);
+          console.log('Desktop frontend origin initialization OK');
+          NODE
       - name: Validar sintaxe do backend
         run: python -m compileall -q backend
       - name: Empacotar o backend Telegram (sem Python no computador do cliente)
