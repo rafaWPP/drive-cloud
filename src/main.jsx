@@ -18,16 +18,23 @@ const [status,setStatus]=useState(null),[phone,setPhone]=useState(''),[code,setC
 const [storage,setStorage]=useState(null),[storageBusy,setStorageBusy]=useState(false),[storageError,setStorageError]=useState('');
 const [apiId,setApiId]=useState(''),[apiHash,setApiHash]=useState(''),[savingApi,setSavingApi]=useState(false),[apiError,setApiError]=useState(''),[showApiHash,setShowApiHash]=useState(false);
 const endpoint=backendOrigin;
-async function call(path,data){const response=await fetch(endpoint+path,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},...(data!==undefined?{body:JSON.stringify(data)}:{})});const result=await response.json();if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Falha na conexão');return result}
-async function refresh(){try{const r=await call('/api/telegram/status');setStatus(r);setStep(r.connected?'connected':'qr-choice')}catch{setStatus({offline:true,connected:false})}}
-useEffect(()=>{let active=true;let attempts=0;let timer;async function check(){if(!active)return;try{const result=await call('/api/telegram/status');if(!active)return;setStatus(result);setStep(result.connected?'connected':'qr-choice')}catch{if(!active)return;setStatus({offline:true,connected:false});if(++attempts<20)timer=setTimeout(check,1500)}}check();return()=>{active=false;clearTimeout(timer)}},[]);
+async function call(path,data){
+ const response=await fetch(endpoint+path,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},...(data!==undefined?{body:JSON.stringify(data)}:{})});
+ const result=await response.json().catch(()=>null);
+ if(!response.ok)throw Error(typeof result?.detail==='string'?result.detail:'Erro HTTP '+response.status+' ao acessar o Telegram.');
+ if(!result)throw Error('Resposta inválida do conector local (HTTP '+response.status+').');
+ return result;
+}
+async function refresh(){try{const r=await call('/api/telegram/status');if(r.error){setStatus({...r,offline:true});return}setStatus(r);setStep(r.connected?'connected':'qr-choice')}catch(e){setStatus({offline:true,detail:e.message,connected:false})}}
+useEffect(()=>{let active=true;let attempts=0;let timer;async function check(){if(!active)return;try{const result=await call('/api/telegram/status');if(!active)return;if(result.error){setStatus({...result,offline:true});if(++attempts<20)timer=setTimeout(check,1500);return}setStatus(result);setStep(result.connected?'connected':'qr-choice')}catch(e){if(!active)return;setStatus({offline:true,detail:e.message,connected:false});if(++attempts<20)timer=setTimeout(check,1500)}}check();return()=>{active=false;clearTimeout(timer)}},[]);
 useEffect(()=>{if(step!=='connected'||!status?.connected){setStorage(null);return}let cancelled=false;
 (async()=>{setStorageBusy(true);setStorageError('');try{
   // This existing endpoint reuses the registered private channel, or creates
   // one automatically on the first successful Telegram login.
   const result=await call('/api/telegram/storage/ensure',{});
+  if(!result.ready)throw Error(result.detail||'O canal privado não foi confirmado pelo Telegram.');
   if(!cancelled)setStorage(result);
-}catch(e){if(!cancelled)setStorageError(e.message)}
+}catch(e){if(!cancelled){setStorageError(e.message);onToast?.({kind:'error',message:'Canal privado: '+e.message,duration:9000})}}
 finally{if(!cancelled)setStorageBusy(false)}
 })();
 return()=>{cancelled=true};
@@ -68,10 +75,11 @@ return <section className={'telegram-panel'+(onboarding?' dc-ob-telegram-panel':
   <small>As credenciais ficam armazenadas localmente neste dispositivo, não são enviadas ao servidor do Drive Cloud. O API Hash é um segredo: evite compartilhá-lo.</small>
  </form>
  </div>}
-{status?.offline?<div className="tg-warning">Não foi possível acessar o conector local do Drive Cloud. Feche outras janelas do aplicativo e abra novamente. Se continuar, consulte o diagnóstico de inicialização do backend.</div>:status&&!status.configured?<div className="tg-warning">Para conectar o Telegram, configure suas credenciais de API abaixo. Não é necessário iniciar Python manualmente.</div>:step==='connected'?<div className="tg-connected-card">
+{status?.offline?<div className="tg-warning" role="alert">Não foi possível verificar sua conexão com o Telegram. {status.detail||status.error||'O conector pode estar temporariamente indisponível.'} <button type="button" className="tg-back" onClick={refresh}>Tentar novamente</button></div>:status&&!status.configured?<div className="tg-warning">Para conectar o Telegram, configure suas credenciais de API abaixo. Não é necessário iniciar Python manualmente.</div>:step==='connected'?<div className="tg-connected-card">
 <div className="tg-account-line"><div className="tg-account-avatar">{(status?.name||'T').slice(0,1).toUpperCase()}{status?.connected&&<img src={backendOrigin+'/api/telegram/avatar?account='+encodeURIComponent(status.id||'')} alt="" onError={event=>{event.currentTarget.style.display='none'}}/>}</div><div><strong>{status?.name||'Telegram'}</strong><small>{status?.username?'@'+status.username:'Perfil conectado ao Drive Cloud'}</small></div><span className="tg-account-online"><Check size={15}/> Ativa</span></div>
-<div className="tg-channel-line"><div className="tg-channel-icon"><Folder size={20}/></div><div><strong>{storageBusy?'Verificando canal privado...':storage?.ready?storage.title:'Canal privado não configurado'}</strong><small>{storage?.ready?'Canal privado conectado e verificado.':storageError||'Configure um canal para armazenar seus arquivos.'}</small></div>{storage?.ready&&<span className="tg-channel-ok"><Check size={17}/></span>}</div>
-{!storage?.ready&&!storageBusy&&<button className="tg-setup-button" disabled={storageBusy} onClick={async()=>{setStorageBusy(true);setStorageError('');try{setStorage(await call('/api/telegram/storage/ensure',{}))}catch(e){setStorageError(e.message)}finally{setStorageBusy(false)}}}>Preparar canal de armazenamento</button>}
+<div className="tg-channel-line"><div className="tg-channel-icon"><Folder size={20}/></div><div><strong>{storageBusy?'Verificando canal privado...':storage?.ready?storage.title:'Canal privado não configurado'}</strong><small>{storage?.ready?'Canal privado conectado e verificado.':storageBusy?'Procurando um canal existente e verificando acesso...':storageError?'Não foi possível preparar o canal. Veja os detalhes abaixo.':'Vamos localizar ou criar o canal privado automaticamente.'}</small></div>{storage?.ready&&<span className="tg-channel-ok"><Check size={17}/></span>}</div>
+{storageError&&<div className="tg-storage-error" role="alert"><CircleAlert size={19}/><div><strong>Falha ao preparar ou verificar o canal</strong><p>{storageError}</p><small>A conexão com a conta não será encerrada e nenhum arquivo ou canal será apagado.</small></div></div>}
+{!storage?.ready&&!storageBusy&&<button className="tg-setup-button" disabled={storageBusy} onClick={async()=>{setStorageBusy(true);setStorageError('');try{const result=await call('/api/telegram/storage/ensure',{});if(!result.ready)throw Error(result.detail||'O Telegram não confirmou o canal.');setStorage(result)}catch(e){setStorageError(e.message);onToast?.({kind:'error',message:'Canal privado: '+e.message,duration:9000})}finally{setStorageBusy(false)}}}>{storageError?'Tentar preparar canal novamente':'Preparar canal de armazenamento'}</button>}
 <div className="tg-connected-actions"><button disabled={busy} onClick={()=>perform('disconnect',{})}>Desconectar backend</button><button disabled={busy} onClick={()=>{if(confirm('Revogar a sessão do Telegram neste computador?'))perform('logout',{})}}>Sair do Telegram</button></div></div>:status?.configured?<div className="tg-form">
 {step==='qr-choice'?<><p className="tg-note">No celular: Telegram → Configurações → Dispositivos → Conectar dispositivo.</p><button disabled={busy||!status?.configured} onClick={()=>perform('qr/start',{})}>Gerar QR Code</button><button className="tg-back" onClick={()=>setStep('phone')}>Entrar com telefone</button></>:null}
 {step==='qr'?<><div className="tg-qr"><img src={qrImage} alt="QR Code temporário para conectar sua conta do Telegram"/></div><p className="tg-note">Abra o Telegram no celular, entre em Dispositivos e escaneie o código. Aguardando autorização...</p><button className="tg-back" onClick={()=>perform('qr/start',{})}>Gerar novo QR Code</button><button className="tg-back" onClick={()=>setStep('phone')}>Usar telefone</button></>:null}
@@ -85,7 +93,7 @@ return <section className={'telegram-panel'+(onboarding?' dc-ob-telegram-panel':
 }
 
 
-function TelegramOnboarding({stage,onReady,onToast}){
+function TelegramOnboarding({stage,detail,onReady,onToast}){
  const active=stage==='credentials'?0:stage==='account'?1:2;
  const labels=['Credenciais','Conta Telegram','Canal privado'];
  return <div className="dc-onboard-screen">
@@ -108,10 +116,10 @@ function TelegramOnboarding({stage,onReady,onToast}){
    <main className="dc-onboard-action">
     <div className="dc-onboard-title">
      <small>PASSO {active+1} DE 3</small>
-     <h2>{stage==='offline'?'Conector indisponível':active===0?'Prepare seu acesso':active===1?'Conecte sua conta':'Preparando seu espaço'}</h2>
-     <p>{stage==='offline'?'O Drive Cloud não conseguiu verificar a conexão local. Não vamos abrir seu Drive sem confirmar a conta Telegram.':active===0?'Informe suas credenciais pessoais da API do Telegram. Elas serão salvas apenas neste dispositivo.':active===1?'Use o QR Code do aplicativo Telegram ou seu número de telefone.': 'Vamos vincular ou criar seu canal privado automaticamente, com a logo do Drive Cloud e sem duplicar arquivos.'}</p>
+     <h2>{stage==='offline'?'Conector indisponível':stage==='telegram-error'?'Falha ao verificar sua conta':active===0?'Prepare seu acesso':active===1?'Conecte sua conta':'Preparando seu espaço'}</h2>
+     <p>{stage==='offline'||stage==='telegram-error'?'Não conseguimos confirmar a conexão agora. Isso não significa que sua conta foi desconectada.':active===0?'Informe suas credenciais pessoais da API do Telegram. Elas serão salvas apenas neste dispositivo.':active===1?'Use o QR Code do aplicativo Telegram ou seu número de telefone.': 'Vamos vincular ou criar seu canal privado automaticamente, com a logo do Drive Cloud e sem duplicar arquivos.'}</p>
     </div>
-    {stage==='offline'?<div className="dc-onboard-offline"><CircleAlert size={20}/><strong>Não foi possível conectar ao serviço local</strong><p>Verifique se o conector do Drive Cloud está funcionando. Você pode tentar novamente sem perder sua configuração.</p><button type="button" onClick={onReady}>Tentar novamente</button></div>:<TelegramSettings key={stage} onboarding onReady={onReady} onToast={onToast}/>}
+    {stage==='offline'||stage==='telegram-error'?<div className="dc-onboard-offline" role="alert"><CircleAlert size={20}/><strong>{stage==='telegram-error'?'Não foi possível verificar a sessão Telegram':'Não foi possível conectar ao serviço local'}</strong><p>{detail||'Verifique a conexão e tente novamente. Sua configuração foi preservada.'}</p><button type="button" onClick={onReady}>Tentar novamente</button></div>:<><TelegramSettings key={stage} onboarding onReady={onReady} onToast={onToast}/>{stage==='storage'&&detail&&<p className="dc-onboard-channel-hint" role="status">{detail}</p>}</>}}
    </main>
   </div>
  </div>;
@@ -1242,8 +1250,13 @@ const refresh=async()=>setItems(await all());
 async function refreshTelegram(){
  try{
   const response=await fetch(backendOrigin+'/api/telegram/status',{cache:'no-store'});
-  if(!response.ok)throw Error('Telegram indisponível');
+  if(!response.ok)throw Error('Conector Telegram: HTTP '+response.status);
   const status=await response.json();
+  if(status.error){
+   setConnectionGate({checking:false,ready:false,stage:'telegram-error',error:status.error});
+   setDriveUsage(null);
+   return;
+  }
   setTelegramConnected(!!status.connected);
   setTelegramAccountId(status.connected&&status.id?String(status.id):null);
   if(!status.configured){
@@ -1257,17 +1270,22 @@ async function refreshTelegram(){
    return;
   }
   const linked=await fetch(backendOrigin+'/api/telegram/storage/status',{cache:'no-store'});
-  if(!linked.ok)throw Error('Não foi possível verificar o canal Telegram');
-  const storageInfo=await linked.json();
-  setConnectionGate({checking:false,ready:!!storageInfo.ready,stage:'storage'});
+  const storageInfo=await linked.json().catch(()=>({}));
+  if(!linked.ok){
+   setConnectionGate({checking:false,ready:false,stage:'storage',error:storageInfo.detail||'Falha HTTP '+linked.status+' ao verificar o canal privado.'});
+   setDriveUsage(null);
+   return;
+  }
+  setConnectionGate({checking:false,ready:!!storageInfo.ready,stage:'storage',error:storageInfo.detail||''});
   if(storageInfo.ready){
    const usage=await fetch(backendOrigin+'/api/cloud/usage');
    if(usage.ok)setDriveUsage(await usage.json());
   }else setDriveUsage(null);
- }catch{
-  // Fail closed: never show Drive when the session or channel cannot be verified.
-  setConnectionGate({checking:false,ready:false,stage:'offline'});
-  setTelegramConnected(false);setTelegramAccountId(null);setDriveUsage(null);
+ }catch(e){
+  // A temporary verification failure is not the same as logging out.
+  // Keep the Drive locked, but do not silently turn it into a login prompt.
+  setConnectionGate({checking:false,ready:false,stage:'offline',error:e?.message||'Conector indisponível'});
+  setDriveUsage(null);
  }
 }
 useEffect(()=>{refresh().catch(e=>setNotice('Falha ao abrir o armazenamento: '+e.message));
@@ -1302,7 +1320,7 @@ const sections=Object.values(menus).flat();
 const label=sections.find(s=>s[0]===section)?.[1]||'Arquivos';
 const bytes=items.filter(i=>i.kind==='file'&&!i.trashed).reduce((n,i)=>n+(i.size||0),0);
 if(connectionGate.checking)return <div className="dc-onboard-loading" role="status" aria-label="Verificando conexão Telegram"><DriveBrandLoader/><span>Verificando sua conexão...</span></div>;
-if(!connectionGate.ready)return <><TelegramOnboarding stage={connectionGate.stage} onReady={refreshTelegram} onToast={showToast}/><DriveToast toast={toast} onDismiss={()=>setToast(null)}/></>;
+if(!connectionGate.ready)return <><TelegramOnboarding stage={connectionGate.stage} detail={connectionGate.error} onReady={refreshTelegram} onToast={showToast}/><DriveToast toast={toast} onDismiss={()=>setToast(null)}/></>;
 return <div className="shell"><aside className="rail"><div className="logo" title="Drive Cloud"><img src="/drive-cloud-logo.svg?v=20261120b" alt="Drive Cloud"/></div>{primary.map(([a,name,Icon])=><button key={a} title={name} aria-label={name} className={area===a?'rail-on':''} onClick={()=>goArea(a)}><Icon size={21}/></button>)}</aside>
 <aside className={'sidebar '+(mobile?'show':'')+(area==='files'?' sidebar-tree':'')}><div className="sidebar-title">{primary.find(p=>p[0]===area)?.[1]||'Meu espaço'}<button className="mobile-x" onClick={()=>setMobile(false)}><X size={19}/></button></div><div className="links">{menus[area].map(([id,name,Icon])=><button key={id} className={section===id?'active':''} onClick={()=>nav(id)}><Icon size={18}/>{name}</button>)}</div>{area==='files'&&<DriveFolderTree nodes={cloudTree} current={cloudFolder} onOpen={id=>{nav('cloudFiles',id)}}/>}<div className="sidebar-bottom"><div className="dc-compact-storage">
 <div className="dc-usage-heading"><HardDrive size={16}/><span>Armazenamento</span></div>
