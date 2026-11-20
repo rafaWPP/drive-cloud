@@ -19,7 +19,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install Python dependencies for catalog tests
+        run: python -m pip install 'fastapi>=0.115,<1'
       - name: Compile Python backend
-        run: python -m py_compile backend/server.py backend/storage_api.py backend/backup_api.py backend/share_api.py backend/media_ranges.py
+        run: python -m py_compile backend/server.py backend/storage_api.py backend/backup_api.py backend/share_api.py backend/media_ranges.py backend/catalog_telegram.py
       - name: Test video byte-range handling
         run: PYTHONPATH=backend python -m unittest discover -s backend/tests -p 'test_*.py' -v
