@@ -85,7 +85,7 @@ class TwoWaySyncSafetyTests(unittest.TestCase):
         result, path = install_download(remote, destination, self.root, str(uuid.uuid4()))
         self.assertEqual(result, "identical")
         self.assertEqual(path, destination)
-        self.assertEqual(list(self.root.iterdir()), [remote, destination])
+        self.assertEqual(set(self.root.iterdir()), {remote, destination})
 
     def test_local_directories_are_never_replaced(self):
         directory = self.root / "report.txt"
