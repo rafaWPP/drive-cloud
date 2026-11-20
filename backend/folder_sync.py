@@ -279,6 +279,24 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                     raise HTTPException(404, "Pasta de sincronização não encontrada.")
             return {"enabled": body.enabled}
 
+    @router.delete("/folders/{folder_id}")
+    async def detach_folder(folder_id: str):
+        """Stop monitoring this directory without deleting any Telegram content."""
+        async with lock:
+            _, account = await authorized_account()
+            with connection() as db:
+                ensure_schema(db)
+                match = db.execute(
+                    "SELECT id FROM sync_folders WHERE id=? AND account=?",
+                    (folder_id, account),
+                ).fetchone()
+                if not match:
+                    raise HTTPException(404, "Pasta de sincronização não encontrada.")
+                db.execute("DELETE FROM sync_entries WHERE folder_id=?", (folder_id,))
+                db.execute("DELETE FROM sync_folders WHERE id=? AND account=?",
+                           (folder_id, account))
+            return {"removed": True, "telegram_files_preserved": True}
+
     async def scheduler():
         # Initial delay avoids unexpected uploads just after launch.
         while True:
