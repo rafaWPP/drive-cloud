@@ -5,7 +5,7 @@ import{Play,Pause,Volume2,VolumeX,Maximize,Minimize,Cloud,Home,Folder,Image,Data
 import{all,save,read,erase}from'./storage';
 import './style.css';
 import {invoke} from '@tauri-apps/api/core';
-let backendOrigin=backendOrigin+'';
+let backendOrigin='http://127.0.0.1:8000';
 const uid=()=>crypto.randomUUID();
 const size=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
 const date=n=>new Date(n).toLocaleDateString('pt-BR');
@@ -13,7 +13,7 @@ function IconFile({item,large=false}){const n=large?56:26;if(item.kind==='folder
 function TelegramSettings({onToast}){
 const [status,setStatus]=useState(null),[phone,setPhone]=useState(''),[code,setCode]=useState(''),[password,setPassword]=useState(''),[step,setStep]=useState('qr-choice'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[qrImage,setQrImage]=useState('');
 const [storage,setStorage]=useState(null),[storageBusy,setStorageBusy]=useState(false),[storageError,setStorageError]=useState('');
-const endpoint=backendOrigin+'';
+const endpoint=backendOrigin;
 async function call(path,data){const response=await fetch(endpoint+path,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},...(data!==undefined?{body:JSON.stringify(data)}:{})});const result=await response.json();if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Falha na conexão');return result}
 async function refresh(){try{const r=await call('/api/telegram/status');setStatus(r);setStep(r.connected?'connected':'qr-choice')}catch{setStatus({offline:true,connected:false})}}
 useEffect(()=>{let active=true;let attempts=0;let timer;async function check(){if(!active)return;try{const result=await call('/api/telegram/status');if(!active)return;setStatus(result);setStep(result.connected?'connected':'qr-choice')}catch{if(!active)return;setStatus({offline:true,connected:false});if(++attempts<20)timer=setTimeout(check,1500)}}check();return()=>{active=false;clearTimeout(timer)}},[]);
