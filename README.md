@@ -121,3 +121,12 @@ O painel de uploads oferece botão de fechar e uma ação para reabri-lo. O prog
 - Referência de navegação: ações contextuais demonstradas pelo usuário em gravação da interface do Dropbox. Esta atualização não altera nem apaga os dados salvos.
 
 Para aplicar: `git pull origin main` e `Ctrl+Shift+R` na página. Não é necessário reiniciar o backend para estas alterações de interface.
+
+## Menus de arquivo e movimentação (UI V4)
+
+- Menu de três pontos no modo grade: gatilho alinhado no canto superior direito, opções com ícones e divisórias, ação destrutiva discreta em vermelho.
+- Modo lista: novos ícones de **Renomear** (lápis) e **Mover** (seta de movimento), com área clicável maior e texto explicativo no hover.
+- Mover arquivo(s): em vez de solicitar ID técnico da pasta, abre uma janela para selecionar a pasta de destino.
+- O backend existente continua aplicando as alterações no catálogo SQLite; renomear/mover pastas não muda as mensagens originais do canal Telegram.
+
+Para aplicar, execute `git pull origin main` na raiz do projeto e atualize o navegador com `Ctrl+Shift+R`. Esta atualização afeta o frontend; não precisa reiniciar o backend.
