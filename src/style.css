@@ -1441,3 +1441,6 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 /* Header profile: Telegram photo when available, DC fallback otherwise. */
 main>header .avatar{position:relative;overflow:hidden;flex-shrink:0}
 main>header .avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;background:#38383a}
+
+.tg-api-alert .tg-api-open-link{display:inline-flex;align-items:center;background:#337adc;color:#fff;border:0;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:650;cursor:pointer;text-align:left}
+.tg-api-alert .tg-api-open-link:hover{background:#468be9}
