@@ -15,7 +15,7 @@ from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
 import pillow_jxl  # Register JPEG XL decoder for previews
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import Response, FileResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
@@ -349,6 +349,66 @@ def build_router(authorized_account, channel_links, lock):
         return FileResponse(job["path"],media_type="application/zip",filename=job["name"],
                             headers={"Cache-Control":"no-store"},
                             background=BackgroundTask(lambda: Path(job["path"]).unlink(missing_ok=True)))
+
+    @router.get("/media/{file_id}")
+    async def stream_video_preview(file_id: str, request: Request):
+        """Authenticated local preview with byte ranges; never an attachment download."""
+        import re
+        try:
+            uuid.UUID(file_id)
+        except (ValueError, TypeError):
+            raise HTTPException(422, "Identificador inválido.")
+        async with lock:
+            client, account = await authorized_account()
+            cid = channel_id(channel_links, account)
+            with connection() as db:
+                item = db.execute(
+                    "SELECT * FROM nodes WHERE id=? AND account=? AND kind='file' AND trashed=0",
+                    (file_id, account)
+                ).fetchone()
+            if not item:
+                raise HTTPException(404, "Vídeo não encontrado.")
+            extension = item["name"].lower().rsplit(".", 1)[-1]
+            video_types = {"mp4": "video/mp4", "webm": "video/webm", "m4v": "video/mp4"}
+            mime = video_types.get(extension)
+            if mime is None:
+                raise HTTPException(415, "Formato de vídeo não suportado na prévia.")
+            if int(item["size"]) > MAX_SIZE:
+                raise HTTPException(413, "Vídeo ultrapassa o limite de prévia local.")
+            # The RAM cache also serves media in scoped sharing pages.
+            from share_api import cached_media_get, cached_media_put
+            cache_key = (account, cid, item["message_id"], str(item["id"]))
+            data = cached_media_get(cache_key)
+            if data is None:
+                msg = await client.get_messages(cid, ids=item["message_id"])
+                if not msg or not msg.media:
+                    raise HTTPException(404, "Vídeo ausente no canal Telegram.")
+                data = await client.download_media(msg, file=bytes)
+                if data is None:
+                    raise HTTPException(502, "Não foi possível recuperar o vídeo.")
+                if len(data) > MAX_SIZE:
+                    raise HTTPException(413, "Prévia local maior que o limite permitido.")
+                cached_media_put(cache_key, data)
+        total = len(data)
+        headers = {"Cache-Control":"private, no-store",
+                   "X-Content-Type-Options":"nosniff",
+                   "Accept-Ranges":"bytes"}
+        byte_range = request.headers.get("range")
+        if byte_range:
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", byte_range.strip())
+            if not match or not any(match.groups()):
+                raise HTTPException(416, "Intervalo inválido.", headers={"Content-Range":f"bytes */{total}"})
+            if match.group(1):
+                start = int(match.group(1))
+                end = int(match.group(2)) if match.group(2) else total - 1
+            else:
+                suffix = int(match.group(2))
+                start, end = max(0, total - suffix), total - 1
+            if total == 0 or start >= total or end < start or end >= total:
+                raise HTTPException(416, "Intervalo fora do vídeo.", headers={"Content-Range":f"bytes */{total}"})
+            headers["Content-Range"] = f"bytes {start}-{end}/{total}"
+            return Response(data[start:end + 1], status_code=206, media_type=mime, headers=headers)
+        return Response(data, media_type=mime, headers=headers)
 
     @router.get("/download/{file_id}")
     async def download(file_id: str):
