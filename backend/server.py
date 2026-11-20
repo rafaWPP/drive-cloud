@@ -236,7 +236,8 @@ async def assign_drive_channel_logo(client, channel):
     """
     if not getattr(channel, "creator", False):
         return False
-    if not isinstance(getattr(channel, "photo", None), ChatPhotoEmpty):
+    current_photo = getattr(channel, "photo", None)
+    if current_photo is not None and not isinstance(current_photo, ChatPhotoEmpty):
         return False
     try:
         photo_bytes = io.BytesIO(channel_avatar_jpeg())
