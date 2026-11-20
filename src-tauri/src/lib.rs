@@ -17,6 +17,7 @@ fn backend_origin(state: tauri::State<'_, Backend>) -> String {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![backend_origin])
         .setup(|app| {
             let data_dir = app.path().app_local_data_dir()?;
