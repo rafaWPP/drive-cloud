@@ -206,4 +206,37 @@ mod tests {
         assert_eq!(fs::read(&destination).unwrap(), b"must stay untouched");
         fs::remove_file(destination).unwrap();
     }
+    #[test]
+    fn streams_http_response_to_disk_with_correct_size() {
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request);
+            stream.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello",
+            ).unwrap();
+        });
+        let filename = format!(
+            "drive-cloud-integration-{}-{}.bin",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        );
+        let target = std::env::temp_dir().join(filename);
+        let result = save_stream(
+            &format!("http://127.0.0.1:{port}"),
+            "11111111-2222-3333-4444-555555555555",
+            5,
+            &target,
+        );
+        server.join().unwrap();
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(fs::read(&target).unwrap(), b"hello");
+        fs::remove_file(target).unwrap();
+    }
+
 }
