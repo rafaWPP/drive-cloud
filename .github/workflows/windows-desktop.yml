@@ -76,6 +76,8 @@ jobs:
           }
       - name: Gerar ícones Windows
         run: npx tauri icon public/drive-cloud-logo.svg
+      - name: Verificar proteção de downloads nativos
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
       - name: Gerar instalador NSIS (.exe)
         run: npx tauri build --bundles nsis
       - name: Disponibilizar instalador Windows
