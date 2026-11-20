@@ -357,3 +357,45 @@ html,body,#root{background:var(--drive-bg)}
 .dc-confirm-buttons .dc-confirm-danger:hover:not(:disabled){background:#df5a5e}
 .cloud-controls>button[title="Exportar catálogo para backup"]{width:32px;padding:0;justify-content:center}
 @media(max-width:600px){.dc-confirm-dialog{padding:20px}.dc-confirm-buttons button{flex:1}}
+
+/* V7: Dialog entrance, deletion progress and meaningful Telegram usage */
+.dc-confirm-backdrop{animation:dc-backdrop-enter .2s ease-out both;backdrop-filter:blur(3px)}
+.dc-confirm-dialog{width:min(450px,100%);border:1px solid #424247;background:#252528;border-radius:17px;padding:28px;animation:dc-dialog-enter .28s cubic-bezier(.18,.86,.23,1) both;transform-origin:center bottom}
+.dc-confirm-dialog h3{font-size:19px;letter-spacing:-.35px}
+.dc-confirm-dialog p{font-size:12px;color:#c0c0c5;line-height:1.75}
+.dc-confirm-icon{width:46px;height:46px;border-radius:13px;background:#473034;color:#ef9a9f}
+.dc-confirm-buttons{gap:9px}
+.dc-confirm-buttons button{height:36px;font-weight:600}
+@keyframes dc-backdrop-enter{from{opacity:0}to{opacity:1}}
+@keyframes dc-dialog-enter{from{opacity:0;transform:translateY(20px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+.delete-job{position:fixed;bottom:22px;right:24px;z-index:220;width:min(420px,calc(100vw - 35px));border:1px solid #48484d;background:#262629;border-radius:14px;box-shadow:0 18px 55px #000a;padding:16px;animation:dc-tray-enter .24s ease-out both}
+@keyframes dc-tray-enter{from{opacity:0;transform:translateY(25px)}to{opacity:1;transform:translateY(0)}}
+.delete-job-header{display:flex;align-items:center;gap:11px}
+.delete-job-icon{display:grid;place-items:center;height:36px;width:36px;flex-shrink:0;border-radius:10px;background:#463034;color:#f0a2a5}
+.delete-job-label{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.delete-job-label b{font-size:12px;color:#f1f1f2;font-weight:700}
+.delete-job-label small{font-size:11px;color:#a8a8af}
+.delete-job-header>button{border:0;background:#39393c;border-radius:8px;color:#eee;font-size:11px;font-weight:650;padding:9px 11px;flex-shrink:0}
+.delete-job-header>button:hover{background:#4a4a4d}
+.delete-job-header>button:disabled{opacity:.55}
+.delete-job-header .delete-job-close{height:30px;width:30px;display:grid;place-items:center;padding:0}
+.delete-job-track{margin:15px 0 7px;height:5px;background:#48484b;overflow:hidden;border-radius:10px}
+.delete-job-track>span{display:block;height:100%;background:#4c97e9;border-radius:10px;transition:width .24s ease}
+.delete-job>p{font-size:11px;color:#d1d1d4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:9px 0}
+.delete-job>small{display:block;font-size:10px;line-height:1.55;color:#9c9ca2;margin-top:9px}
+.dc-storage-summary{border-radius:12px;background:#252527;border:1px solid #36363a;padding:13px;margin:0 1px 4px;min-width:0}
+.dc-storage-top{display:flex;align-items:center;gap:10px}
+.dc-storage-top .dc-account-icon{height:34px;width:34px;flex-shrink:0;border-radius:9px}
+.dc-storage-top>div:nth-child(2){display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.dc-storage-top strong{font-size:11px;color:#ebebee;white-space:nowrap}
+.dc-storage-top span{font-size:10px;color:#a8a8ad}
+.dc-storage-top>i{height:7px;width:7px;border-radius:50%;flex-shrink:0}
+.dc-storage-top>i.online{background:#43bd87}
+.dc-storage-top>i.offline{background:#ddad6b}
+.dc-storage-number{font-weight:750;font-size:20px;margin:19px 0 10px;letter-spacing:-.5px;white-space:nowrap}
+.dc-storage-number small{font-weight:500;font-size:10px;color:#99999e;letter-spacing:0;display:block;margin-top:4px}
+.dc-storage-details{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid #39393d;padding-top:10px;font-size:10px;color:#bdbdc1}
+.dc-storage-details span:last-child{text-align:right}
+.dc-storage-summary>p{margin:10px 0 0;color:#85858a;font-size:9px;line-height:1.55}
+@media(prefers-reduced-motion:reduce){.dc-confirm-backdrop,.dc-confirm-dialog,.delete-job{animation:none}}
+@media(max-width:680px){.delete-job{bottom:12px;right:12px}.dc-confirm-dialog{padding:22px}}
