@@ -1031,3 +1031,42 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .dc-embedded-media .dc-video-player{height:100vh;max-height:100vh;aspect-ratio:auto;border-radius:0}
 @media(max-width:510px){.dc-video-player{min-height:180px}.dc-video-controls{padding:15px 8px 7px}.dc-video-volume{width:42px}.dc-video-control-row{gap:4px}.dc-video-timestamp{font-size:10px}.dc-video-big-play{width:54px;height:54px}}
 @media(prefers-reduced-motion:reduce){.dc-video-spinner{animation:none}.dc-video-big-play{transition:none}}
+
+/* Drive Cloud player v2: familiar YouTube gestures, minimal graphite and brand blue */
+.dc-video-player-youtube .dc-video-gesture-layer{position:absolute;inset:0;z-index:1;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+.dc-video-player-youtube .dc-video-big-play{z-index:3}
+.dc-video-player-youtube .dc-video-buffer{z-index:2}
+.dc-video-player-youtube .dc-video-controls{z-index:4;gap:10px;padding:48px 19px 13px;background:linear-gradient(to top,rgba(0,0,0,.87),rgba(0,0,0,.32) 58%,transparent);pointer-events:none}
+.dc-video-player-youtube .dc-video-controls button,.dc-video-player-youtube .dc-video-controls input{pointer-events:auto}
+.dc-video-player-youtube .dc-video-above-progress{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:28px}
+.dc-video-player-youtube .dc-video-above-progress button{border:0;background:transparent;display:grid;place-items:center;color:#f8f8fa;width:33px;height:32px;border-radius:8px;cursor:pointer}
+.dc-video-player-youtube .dc-video-above-progress button:hover{background:rgba(255,255,255,.15)}
+.dc-video-player-youtube .dc-video-timestamp{font-size:12px;letter-spacing:.1px;color:#f4f4f7}
+.dc-video-player-youtube .dc-video-seek{height:4px;border-radius:8px;background:linear-gradient(to right,#3988f5 var(--progress,0%),#a9abb385 var(--progress,0%));accent-color:#3988f5;outline:none}
+.dc-video-player-youtube .dc-video-seek::-webkit-slider-thumb{height:13px;width:13px;background:#3988f5;border:2px solid #f9fbff;border-radius:50%;box-shadow:0 0 0 2px #0005}
+.dc-video-player-youtube .dc-video-seek::-moz-range-thumb{height:10px;width:10px;background:#3988f5;border:2px solid #f9fbff;border-radius:50%}
+.dc-video-player-youtube .dc-video-control-row{gap:9px;min-height:34px}
+.dc-video-player-youtube .dc-video-control-row>button{width:35px;height:35px}
+.dc-video-player-youtube .dc-video-control-row .dc-video-quality{font-size:10px;font-weight:800;line-height:1;border:1.5px solid #f2f5fa;border-radius:4px;color:#fff;padding:3px 4px;letter-spacing:.2px;user-select:none}
+.dc-video-player-youtube .dc-video-volume-wrap{display:flex;align-items:center;gap:7px;margin-left:auto;position:relative;pointer-events:auto}
+.dc-video-player-youtube .dc-video-volume-wrap button{width:35px;height:35px;border:0;border-radius:7px;display:grid;place-items:center;color:#f8f8fa;background:transparent;cursor:pointer;flex-shrink:0}
+.dc-video-player-youtube .dc-video-volume-wrap button:hover{background:#ffffff25}
+.dc-video-player-youtube .dc-video-volume{width:0;opacity:0;appearance:auto;min-width:0;margin:0;transition:width .2s ease,opacity .2s ease;accent-color:#3988f5;pointer-events:none}
+.dc-video-player-youtube .dc-video-volume-wrap.is-open .dc-video-volume,.dc-video-player-youtube .dc-video-volume-wrap:hover .dc-video-volume,.dc-video-player-youtube .dc-video-volume-wrap:focus-within .dc-video-volume{width:77px;opacity:1;pointer-events:auto}
+.dc-video-player-youtube .dc-video-center-feedback{position:absolute;top:45%;left:50%;transform:translate(-50%,-50%);height:76px;width:76px;display:grid;place-items:center;color:#fff;background:#050910a8;border-radius:100%;z-index:2;pointer-events:none;animation:dc-player-feedback .6s ease-out both}
+@keyframes dc-player-feedback{0%{opacity:0;transform:translate(-50%,-50%) scale(.85)}22%{opacity:1;transform:translate(-50%,-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.1)}}
+.dc-video-player-youtube .dc-video-skip-feedback{position:absolute;top:39%;z-index:3;pointer-events:none;display:flex;align-items:center;justify-content:center;min-width:95px;height:95px;background:#0b152799;border-radius:50%;color:#fff;font-size:19px;font-weight:800;letter-spacing:.1px;animation:dc-video-skip-appear .8s cubic-bezier(.22,1,.3,1) both}
+.dc-video-player-youtube .dc-video-skip-left{left:13%}
+.dc-video-player-youtube .dc-video-skip-right{right:13%}
+@keyframes dc-video-skip-appear{0%{opacity:0;transform:scale(.68)}20%{opacity:1;transform:scale(1)}70%{opacity:1}100%{opacity:0;transform:scale(1.12)}}
+.dc-video-player-youtube:fullscreen{height:100%;max-height:none}
+@media(max-width:520px){
+ .dc-video-player-youtube .dc-video-controls{padding:38px 9px 7px;gap:7px}
+ .dc-video-player-youtube .dc-video-control-row{gap:5px}
+ .dc-video-player-youtube .dc-video-skip-feedback{min-width:68px;height:68px;font-size:15px;top:33%}
+ .dc-video-player-youtube .dc-video-skip-left{left:8%}
+ .dc-video-player-youtube .dc-video-skip-right{right:8%}
+ .dc-video-player-youtube .dc-video-center-feedback{width:58px;height:58px}
+ .dc-video-player-youtube .dc-video-volume-wrap.is-open .dc-video-volume,.dc-video-player-youtube .dc-video-volume-wrap:hover .dc-video-volume,.dc-video-player-youtube .dc-video-volume-wrap:focus-within .dc-video-volume{width:54px}
+}
+@media(prefers-reduced-motion:reduce){.dc-video-player-youtube .dc-video-center-feedback,.dc-video-player-youtube .dc-video-skip-feedback{animation:none;opacity:1}.dc-video-player-youtube .dc-video-volume{transition:none}}
