@@ -38,6 +38,17 @@ class FolderSyncSafetyTests(unittest.TestCase):
         self.assertEqual([x[0] for x in files], ["photo.jpg"])
         self.assertEqual(oversized, 0)
 
+    def test_hidden_credentials_not_scanned_by_default(self):
+        (self.root / ".env").write_text("SECRET=do-not-upload")
+        (self.root / ".ssh").mkdir()
+        (self.root / ".ssh" / "id_rsa").write_text("private")
+        (self.root / "AppData").mkdir()
+        (self.root / "AppData" / "token.json").write_text("secret")
+        (self.root / "visible.txt").write_text("safe")
+        files, oversized = scan_folder(self.root)
+        self.assertEqual([name for name, _, _ in files], ["visible.txt"])
+        self.assertEqual(oversized, 0)
+
     def test_oversized_files_skipped(self):
         path = self.root / "huge.bin"
         with path.open("wb") as stream:
