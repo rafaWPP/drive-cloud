@@ -94,7 +94,7 @@ if(!toast)return null;
 const Icon=toast.kind==='error'?X:toast.kind==='info'?Cloud:Check;
 return <div className={'dc-toast '+(closing?'dc-toast-out':'')} role="status" aria-live="polite"><span className={'dc-toast-symbol '+toast.kind}><Icon size={18}/></span><div className="dc-toast-message">{toast.message}</div>{toast.undo&&<button className="dc-toast-undo" onClick={()=>{toast.undo();setClosing(true)}}>Desfazer</button>}<button className="dc-toast-close" title="Fechar notificação" aria-label="Fechar notificação" onClick={()=>setClosing(true)}><X size={17}/></button></div>}
 function CloudFiles({mode='files',globalSearch='',onToast,onDeletionProgress}){
-const [preview,setPreview]=useState(null),[previewError,setPreviewError]=useState(false),[trayVisible,setTrayVisible]=useState(true),[nodes,setNodes]=useState([]),[folder,setFolder]=useState(null),[layout,setLayout]=useState('list'),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selected,setSelected]=useState([]),[menu,setMenu]=useState(null),[moveTargets,setMoveTargets]=useState(null),[moveDestination,setMoveDestination]=useState(''),[drag,setDrag]=useState(false),[jobs,setJobs]=useState([]),[panel,setPanel]=useState(false),[tab,setTab]=useState('all'),[deleteConfirm,setDeleteConfirm]=useState(null),[deleteJob,setDeleteJob]=useState(null),[catalogCheck,setCatalogCheck]=useState(null),[catalogBusy,setCatalogBusy]=useState(false);
+const [preview,setPreview]=useState(null),[previewError,setPreviewError]=useState(false),[trayVisible,setTrayVisible]=useState(true),[nodes,setNodes]=useState([]),[folder,setFolder]=useState(null),[layout,setLayout]=useState('list'),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selected,setSelected]=useState([]),[menu,setMenu]=useState(null),[moveTargets,setMoveTargets]=useState(null),[moveDestination,setMoveDestination]=useState(''),[moveNewFolder,setMoveNewFolder]=useState(false),[moveFolderName,setMoveFolderName]=useState(''),[drag,setDrag]=useState(false),[jobs,setJobs]=useState([]),[panel,setPanel]=useState(false),[tab,setTab]=useState('all'),[deleteConfirm,setDeleteConfirm]=useState(null),[deleteJob,setDeleteJob]=useState(null),[catalogCheck,setCatalogCheck]=useState(null),[catalogBusy,setCatalogBusy]=useState(false);
 const uploader=useRef(null),catalogPicker=useRef(null),active=useRef(null),cancelAll=useRef(false),cancelDeletion=useRef(false);
 useEffect(()=>{onDeletionProgress?.(deleteJob?{...deleteJob,cancel:stopDeletion}:null)},[deleteJob]);
 const trash=mode==='trash';
@@ -206,7 +206,7 @@ async function open(item){if(item.kind==='folder'){setFolder(item.id);setSelecte
 async function patch(item,data){const r=await request('/items/'+encodeURIComponent(item.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});await r.json()}
 async function action(kind,targets){setMenu(null);if(!targets.length)return;try{if(kind==='download'){for(const item of targets.filter(x=>x.kind==='file'))await download(item);return}
 if(kind==='rename'){const name=prompt('Novo nome:',targets[0].name);if(!name?.trim())return;await patch(targets[0],{name:name.trim()})}
-if(kind==='move'){setMoveTargets(targets);setMoveDestination('');return}
+if(kind==='move'){setMoveTargets(targets);setMoveDestination('');setMoveNewFolder(false);setMoveFolderName('');return}
 if(kind==='trash'||kind==='permanent'){setDeleteConfirm({kind,targets});return}
 if(kind==='trash'||kind==='restore'){for(const item of targets)await patch(item,{trashed:kind==='trash'?true:false})}
 if(kind==='favorite'){for(const item of targets)await patch(item,{starred:!item.starred})}
@@ -261,12 +261,54 @@ async function restoreCatalog(){
  }catch(e){setError(e.message)}
  finally{setCatalogBusy(false)}
 }
+async function createMoveFolder(){
+ const name=moveFolderName.trim();
+ if(!name||busy)return;
+ setBusy(true);
+ try{
+  const response=await request('/folders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,parent:moveDestination||null})});
+  const created=await response.json();
+  await reload();
+  setMoveNewFolder(false);
+  setMoveFolderName('');
+  setMoveDestination(created.id);
+  onToast?.({kind:'success',message:'Pasta criada: '+name});
+ }catch(e){setError(e.message)}finally{setBusy(false)}
+}
+function goMoveParent(){
+ if(!moveDestination)return;
+ const item=nodes.find(x=>x.id===moveDestination);
+ setMoveDestination(item?.parent||'');
+ setMoveNewFolder(false);
+ setMoveFolderName('');
+}
 async function confirmMove(){if(!moveTargets)return;setBusy(true);setError('');try{for(const item of moveTargets)await patch(item,{parent:moveDestination||null});await reload();setSelected([]);setMoveTargets(null);setNotice('Arquivo(s) movido(s)')}catch(e){setError(e.message)}finally{setBusy(false)}}
 function toggle(id){setSelected(old=>old.includes(id)?old.filter(x=>x!==id):[...old,id])}
 const completed=jobs.filter(x=>x.status==='completed').length;
 const failures=jobs.filter(x=>x.status==='failed').length;
 const uploadingNow=jobs.filter(x=>x.status==='uploading'||x.status==='queued').length;
 const filteredJobs=jobs.filter(x=>tab==='all'||(tab==='completed'&&x.status==='completed')||(tab==='failed'&&['failed','cancelled'].includes(x.status))||(tab==='pending'&&['queued','uploading'].includes(x.status)));
+const moveBreadcrumbs=[];let moveCurrent=moveDestination;
+for(let depth=0;moveCurrent&&depth<40;depth++){
+ const item=nodes.find(x=>x.id===moveCurrent&&x.kind==='folder');
+ if(!item)break;
+ moveBreadcrumbs.unshift(item);
+ moveCurrent=item.parent;
+}
+const forbiddenMoveFolder=id=>{
+ if(!moveTargets)return false;
+ if(moveTargets.some(t=>t.id===id))return true;
+ let cursor=id;
+ for(let depth=0;cursor&&depth<40;depth++){
+  const parent=nodes.find(n=>n.id===cursor)?.parent;
+  if(!parent)break;
+  if(moveTargets.some(t=>t.id===parent))return true;
+  cursor=parent;
+ }
+ return false;
+};
+const availableMoveFolders=nodes.filter(x=>x.kind==='folder'&&!x.trashed&&(x.parent||'')===moveDestination&&!forbiddenMoveFolder(x.id)).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+
 return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.dataTransfer?.types?.includes('Files'))setDrag(true)}} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();setDrag(false);if(e.dataTransfer?.files?.length)addFiles(e.dataTransfer.files)}}>
 {mode==='home'&&!queryText&&<div className="home-sections">
 <section><div className="home-section-title"><Clock3 size={17}/><h3>Recentes</h3><span>Últimos arquivos enviados</span></div><div className="home-quick-list">{homeRecent.length?homeRecent.map(item=><button key={item.id} onClick={()=>open(item)}><span className="home-quick-thumb"><CloudThumbnail item={item} compact/></span><span className="home-quick-name">{item.name}</span><small>{date(item.created)}</small></button>):<p>Seus arquivos recentes aparecerão aqui.</p>}</div></section>
@@ -287,7 +329,32 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
 <div className="upload-foot"><span>*Progresso do navegador até o backend; o Telegram confirma ao final.</span>{!busy&&<button onClick={()=>{setJobs([]);setTrayVisible(false)}}>Limpar histórico</button>}</div></>}</div>}
 {deleteConfirm&&<div className="dc-confirm-backdrop" role="presentation" onClick={()=>!busy&&setDeleteConfirm(null)}><div className="dc-confirm-dialog" role="alertdialog" aria-modal="true" aria-label="Confirmar exclusão" onClick={e=>e.stopPropagation()}><span className="dc-confirm-icon"><CircleAlert size={65} strokeWidth={1.9}/></span><h3>{deleteConfirm.kind==='permanent'?'Excluir definitivamente?':'Mover para a lixeira?'}</h3><div className={deleteConfirm.kind==='permanent'?'dc-confirm-warning':'dc-confirm-note'}><CircleAlert size={17}/><p>{deleteConfirm.kind==='permanent'?`Esta ação não pode ser desfeita. ${deleteConfirm.targets.length} item(ns) serão apagados do Telegram, incluindo arquivos dentro das pastas.`:`${deleteConfirm.targets.length} item(ns) serão movidos para a lixeira e poderão ser restaurados depois.`}</p></div><div className="dc-confirm-buttons"><button disabled={busy} onClick={()=>setDeleteConfirm(null)}>Cancelar</button><button className="dc-confirm-danger" disabled={busy} onClick={confirmDeletion}>{busy?'Excluindo...':deleteConfirm.kind==='permanent'?'Excluir para sempre':'Mover para lixeira'}</button></div></div></div>}
 {catalogCheck&&<div className="move-backdrop" role="presentation" onClick={()=>!catalogBusy&&setCatalogCheck(null)}><div className="move-dialog" role="dialog" aria-modal="true" aria-label="Restaurar catálogo de arquivos" onClick={e=>e.stopPropagation()}><div className="move-dialog-header"><div><h3>Restaurar catálogo</h3><p title={catalogCheck.file.name}>{catalogCheck.file.name}</p></div><button className="move-close" title="Fechar" disabled={catalogBusy} onClick={()=>setCatalogCheck(null)}><X size={19}/></button></div><div className="catalog-review"><div><strong>{catalogCheck.result.checked}</strong><span>Registros verificados</span></div><div><strong>{catalogCheck.result.new_items}</strong><span>Para recuperar</span></div><div><strong>{catalogCheck.result.existing_items}</strong><span>Já existentes</span></div></div><p className="catalog-notice">A conta e o canal Telegram foram conferidos. Somente registros ausentes serão adicionados ao catálogo local. Esta operação não recupera arquivos excluídos do Telegram e não sobrescreve registros atuais.</p><div className="move-footer"><button disabled={catalogBusy} onClick={()=>setCatalogCheck(null)}>Cancelar</button><button className="move-confirm" disabled={catalogBusy||!catalogCheck.result.new_items} onClick={restoreCatalog}><DatabaseBackup size={16}/>{catalogBusy?'Restaurando...':'Restaurar registros'}</button></div></div></div>}
-{moveTargets&&<div className="move-backdrop" role="presentation" onClick={()=>setMoveTargets(null)}><div className="move-dialog" role="dialog" aria-modal="true" aria-label="Mover arquivos" onClick={e=>e.stopPropagation()}><div className="move-dialog-header"><div><h3>Mover para</h3><p>{moveTargets.length} item(ns) selecionado(s)</p></div><button className="move-close" title="Fechar" onClick={()=>setMoveTargets(null)}><X size={19}/></button></div><div className="move-list"><button className={moveDestination===''?'active':''} onClick={()=>setMoveDestination('')}><Home size={18}/><span>Meu Drive (raiz)</span>{moveDestination===''&&<Check size={17}/>}</button>{nodes.filter(x=>x.kind==='folder'&&!x.trashed&&!moveTargets.some(t=>t.id===x.id)&&!moveTargets.some(t=>{let p=x.parent;for(let n=0;n<40&&p;n++){if(p===t.id)return true;p=nodes.find(k=>k.id===p)?.parent}return false})).map(x=><button key={x.id} className={moveDestination===x.id?'active':''} onClick={()=>setMoveDestination(x.id)}><Folder size={18}/><span>{x.name}</span>{moveDestination===x.id&&<Check size={17}/>}</button>)}</div><div className="move-footer"><button onClick={()=>setMoveTargets(null)}>Cancelar</button><button className="move-confirm" disabled={busy} onClick={confirmMove}><MoveRight size={16}/> {busy?'Movendo...':'Mover aqui'}</button></div></div></div>}
+{moveTargets&&<div className="move-backdrop" role="presentation" onClick={()=>{if(!busy)setMoveTargets(null)}}>
+<div className="move-dialog file-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="move-manager-title" onClick={e=>e.stopPropagation()}>
+<div className="move-dialog-header">
+<div><h3 id="move-manager-title">Mover para</h3><p>{moveTargets.length===1?moveTargets[0].name:moveTargets.length+' itens selecionados'}</p></div>
+<button className="move-close" title="Fechar" aria-label="Fechar" disabled={busy} onClick={()=>setMoveTargets(null)}><X size={19}/></button>
+</div>
+<div className="move-browser-top">
+<button className="move-up" title="Voltar à pasta anterior" aria-label="Voltar à pasta anterior" disabled={!moveDestination||busy} onClick={goMoveParent}><ArrowLeft size={18}/></button>
+<div className="move-path" aria-label="Caminho da pasta">
+<button onClick={()=>{setMoveDestination('');setMoveNewFolder(false)}} title="Meu Drive">Meu Drive</button>
+{moveBreadcrumbs.map(p=><React.Fragment key={p.id}><ChevronRight size={14}/><button onClick={()=>{setMoveDestination(p.id);setMoveNewFolder(false)}} title={p.name}>{p.name}</button></React.Fragment>)}
+</div>
+<button className="move-create" title="Criar nova pasta neste local" onClick={()=>setMoveNewFolder(v=>!v)} disabled={busy}><FolderPlus size={17}/> Nova pasta</button>
+</div>
+{moveNewFolder&&<form className="move-new-folder" onSubmit={e=>{e.preventDefault();createMoveFolder()}}>
+<FolderPlus size={17}/><input autoFocus value={moveFolderName} onChange={e=>setMoveFolderName(e.target.value)} placeholder="Nome da nova pasta" maxLength={180} aria-label="Nome da nova pasta"/>
+<button type="button" aria-label="Cancelar criação de pasta" onClick={()=>{setMoveNewFolder(false);setMoveFolderName('')}}><X size={16}/></button>
+<button type="submit" disabled={busy||!moveFolderName.trim()}>Criar</button>
+</form>}
+<div className="move-browser-list" aria-label="Pastas disponíveis">
+{availableMoveFolders.length?availableMoveFolders.map(item=><button key={item.id} className="move-folder-row" onClick={()=>{setMoveDestination(item.id);setMoveNewFolder(false)}} onDoubleClick={()=>setMoveDestination(item.id)} title={'Abrir '+item.name}>
+<span className="move-folder-symbol"><Folder size={20} fill="#80aef2" color="#b5d1fb" strokeWidth={1.4}/></span><span className="move-folder-name">{item.name}</span><ChevronRight size={17}/></button>):<div className="move-empty"><Folder size={29}/><strong>Nenhuma subpasta aqui</strong><span>Crie uma pasta ou mova os arquivos para este local.</span></div>}
+</div>
+<div className="move-destination"><span>Destino selecionado</span><strong title={moveBreadcrumbs.length?moveBreadcrumbs.map(x=>x.name).join(' / '):'Meu Drive'}>{moveBreadcrumbs.length?moveBreadcrumbs.map(x=>x.name).join(' / '):'Meu Drive (raiz)'}</strong></div>
+<div className="move-footer"><button type="button" disabled={busy} onClick={()=>setMoveTargets(null)}>Cancelar</button><button type="button" className="move-confirm" disabled={busy||moveNewFolder} onClick={confirmMove}>{busy?'Movendo...':'Mover aqui'}</button></div>
+</div></div>}
 {preview&&<div className="preview-backdrop" onClick={()=>setPreview(null)} role="presentation"><div className="preview-modal" role="dialog" aria-modal="true" aria-label={'Prévia de '+preview.name} onClick={e=>e.stopPropagation()}>
 <div className="preview-topbar"><div><Image size={19}/><strong title={preview.name}>{preview.name}</strong><span>{size(preview.size)}</span></div><div className="preview-top-actions"><button onClick={()=>download(preview)}><Download size={16}/> Baixar</button><button title="Fechar prévia" aria-label="Fechar prévia" onClick={()=>setPreview(null)}><X size={20}/></button></div></div>
 <div className="preview-stage">{previewError?<div className="preview-failed"><Image size={45}/><p>Não foi possível exibir esta imagem.</p><button onClick={()=>download(preview)}>Baixar arquivo original</button></div>:<img key={preview.id} src={'http://127.0.0.1:8000/api/cloud/preview/'+encodeURIComponent(preview.id)+'?full=true'} alt={preview.name} onError={()=>setPreviewError(true)}/>}</div>
