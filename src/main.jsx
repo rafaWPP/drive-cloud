@@ -1,6 +1,6 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import{createRoot}from'react-dom/client';
-import{Cloud,Home,Folder,Image,DatabaseBackup,Clock3,Star,Users,RefreshCw,Trash2,Settings,Search,Plus,Upload,FolderPlus,Grid2X2,List,ChevronRight,HardDrive,WifiOff,FileText,FileArchive,File,Video,Download,MoreHorizontal,Code,X,ArrowLeft,Pencil,MoveRight,Eye,RotateCcw,Check,ChevronDown,CircleAlert}from'lucide-react';
+import{Play,Pause,Volume2,VolumeX,Maximize,Minimize,Cloud,Home,Folder,Image,DatabaseBackup,Clock3,Star,Users,RefreshCw,Trash2,Settings,Search,Plus,Upload,FolderPlus,Grid2X2,List,ChevronRight,HardDrive,WifiOff,FileText,FileArchive,File,Video,Download,MoreHorizontal,Code,X,ArrowLeft,Pencil,MoveRight,Eye,RotateCcw,Check,ChevronDown,CircleAlert}from'lucide-react';
 import{all,save,read,erase}from'./storage';
 import './style.css';
 const uid=()=>crypto.randomUUID();
@@ -97,6 +97,27 @@ if(progress){const percentage=Math.round(progress.completed/Math.max(1,progress.
 if(!toast)return null;
 const Icon=toast.kind==='error'?X:toast.kind==='info'?Cloud:Check;
 return <div className={'dc-toast '+(closing?'dc-toast-out':'')} role="status" aria-live="polite"><span className={'dc-toast-symbol '+toast.kind}><Icon size={18}/></span><div className="dc-toast-message">{toast.message}</div>{toast.undo&&<button className="dc-toast-undo" onClick={()=>{toast.undo();setClosing(true)}}>Desfazer</button>}<button className="dc-toast-close" title="Fechar notificação" aria-label="Fechar notificação" onClick={()=>setClosing(true)}><X size={17}/></button></div>}
+function DriveVideoPlayer({src,name,onError}){
+ const videoRef=useRef(null),shellRef=useRef(null);
+ const [playing,setPlaying]=useState(false),[waiting,setWaiting]=useState(true);
+ const [current,setCurrent]=useState(0),[duration,setDuration]=useState(0);
+ const [volume,setVolume]=useState(1),[muted,setMuted]=useState(false),[full,setFull]=useState(false);
+ const stamp=n=>Number.isFinite(n)?Math.floor(n/3600)>0?[Math.floor(n/3600),Math.floor(n%3600/60),Math.floor(n%60)].map(x=>String(x).padStart(2,'0')).join(':'):[Math.floor(n/60),Math.floor(n%60)].map(x=>String(x).padStart(2,'0')).join(':'):'0:00';
+ const toggle=()=>{const v=videoRef.current;if(!v)return;if(v.paused)v.play().catch(()=>{});else v.pause()};
+ const seek=value=>{const v=videoRef.current;if(v&&Number.isFinite(v.duration))v.currentTime=Number(value)};
+ const fullscreen=async()=>{const el=shellRef.current;if(!el)return;try{if(document.fullscreenElement)await document.exitFullscreen();else await el.requestFullscreen()}catch{}};
+ useEffect(()=>{const listener=()=>setFull(!!document.fullscreenElement);document.addEventListener('fullscreenchange',listener);return()=>document.removeEventListener('fullscreenchange',listener)},[]);
+ return <div ref={shellRef} className="dc-video-player" tabIndex={0} aria-label={'Player de vídeo: '+name} onKeyDown={e=>{if(e.target.tagName==='INPUT'||e.target.tagName==='BUTTON')return;if(e.key===' '||e.key==='k'){e.preventDefault();toggle()}else if(e.key==='ArrowRight'){e.preventDefault();seek(Math.min(duration,current+5))}else if(e.key==='ArrowLeft'){e.preventDefault();seek(Math.max(0,current-5))}}}>
+ <video ref={videoRef} src={src} playsInline preload="metadata" onLoadStart={()=>setWaiting(true)} onWaiting={()=>setWaiting(true)} onCanPlay={()=>setWaiting(false)} onPlaying={()=>{setPlaying(true);setWaiting(false)}} onPause={()=>setPlaying(false)} onTimeUpdate={e=>setCurrent(e.currentTarget.currentTime)} onLoadedMetadata={e=>{setDuration(e.currentTarget.duration);setWaiting(false)}} onDurationChange={e=>setDuration(e.currentTarget.duration)} onError={onError} onClick={toggle}/>
+ {waiting&&<div className="dc-video-buffer" aria-label="Carregando vídeo"><span className="dc-video-spinner"/></div>}
+ {!playing&&!waiting&&<button className="dc-video-big-play" aria-label="Reproduzir vídeo" onClick={toggle}><Play size={28} fill="currentColor"/></button>}
+ <div className="dc-video-controls"><input className="dc-video-seek" aria-label="Posição do vídeo" type="range" min="0" max={duration||1} step=".1" value={Math.min(current,duration||1)} onChange={e=>seek(e.target.value)} style={{'--progress':(duration?100*current/duration:0)+'%'}}/>
+ <div className="dc-video-control-row"><button aria-label={playing?'Pausar':'Reproduzir'} onClick={toggle}>{playing?<Pause size={19} fill="currentColor"/>:<Play size={19} fill="currentColor"/>}</button><span className="dc-video-timestamp">{stamp(current)} / {stamp(duration)}</span><span className="dc-video-flex"/>
+ <button aria-label={muted?'Ativar som':'Silenciar'} onClick={()=>{const v=videoRef.current;if(v){v.muted=!v.muted;setMuted(v.muted)}}}>{muted||volume===0?<VolumeX size={19}/>:<Volume2 size={19}/>}</button>
+ <input aria-label="Volume" className="dc-video-volume" type="range" min="0" max="1" step=".05" value={muted?0:volume} onChange={e=>{const n=Number(e.target.value);setVolume(n);setMuted(n===0);if(videoRef.current){videoRef.current.volume=n;videoRef.current.muted=n===0}}}/>
+ <button aria-label={full?'Sair da tela cheia':'Tela cheia'} onClick={fullscreen}>{full?<Minimize size={19}/>:<Maximize size={19}/>}</button></div></div>
+ </div>
+}
 function SharedMediaDisplay({src,statusUrl,name,video=false}){
  const [failure,setFailure]=useState(''),[attempt,setAttempt]=useState(0);
  async function fail(){
@@ -108,14 +129,14 @@ function SharedMediaDisplay({src,statusUrl,name,video=false}){
  }
  return <div className="dc-shared-media-view">
   {failure?<div className="dc-shared-media-error"><CircleAlert size={24}/><strong>Prévia indisponível</strong><p>{failure}</p><button type="button" onClick={()=>{setFailure('');setAttempt(x=>x+1)}}><RefreshCw size={15}/> Tentar novamente</button></div>
-  :video?<video key={attempt} src={src} controls playsInline preload="metadata" onError={fail} aria-label={name}/>
+  :video?<DriveVideoPlayer key={attempt} src={src} name={name} onError={fail}/>
   :<img key={attempt} src={src} alt={name} onError={fail}/>}
  </div>
 }
 function SharedMediaThumb({src,video=false}){
  const [failed,setFailed]=useState(false);
  if(failed)return video?<Play size={24}/>:<Image size={24}/>;
- return video?<video className="public-media-thumbnail" src={src} muted playsInline preload="metadata" onError={()=>setFailed(true)} aria-hidden="true"/>:<img className="public-media-thumbnail" loading="lazy" alt="" src={src} onError={()=>setFailed(true)}/>;
+ return video?<span className="dc-video-thumbnail"><Play size={22} fill="currentColor"/></span>:<img className="public-media-thumbnail" loading="lazy" alt="" src={src} onError={()=>setFailed(true)}/>;
 }
 function EmbeddedMedia({token}){
  const [data,setData]=useState(null),[error,setError]=useState('');
