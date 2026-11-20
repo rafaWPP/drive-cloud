@@ -97,8 +97,12 @@ async def status():
             if await c.is_user_authorized():
                 return {"configured": True, **response_user(await c.get_me())}
             return {"connected": False, "configured": True}
-        except Exception:
-            return {"connected": False, "configured": True, "error": "Não foi possível consultar o Telegram"}
+        except Exception as exc:
+            # A temporary Telegram check error must not be reported as logout.
+            # Expose the exception class only; never leak tokens or session data.
+            return {"connected": False, "configured": True,
+                    "error": "Falha temporária na verificação da sessão Telegram ("
+                             + type(exc).__name__ + "). A sessão local foi preservada."}
 
 
 @app.post("/api/telegram/credentials")
@@ -282,6 +286,8 @@ async def linked_storage_channel(client, entry):
     entity = None
     try:
         entity = await client.get_entity(recorded_id)
+    except errors.FloodWaitError:
+        raise
     except (ValueError, TypeError, errors.RPCError):
         # Missing access hash in the Telethon cache is common after restarting
         # a desktop sidecar. Listing dialogs rehydrates the input entity.
