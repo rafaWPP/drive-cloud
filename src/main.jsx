@@ -94,7 +94,8 @@ return <section className={'telegram-panel'+(onboarding?' dc-ob-telegram-panel':
 
 
 function TelegramOnboarding({stage,detail,onReady,onToast}){
- const active=stage==='credentials'?0:stage==='account'?1:2;
+ // A failed session verification never counts as a completed Telegram login.
+ const active=stage==='credentials'?0:(stage==='account'||stage==='offline'||stage==='telegram-error')?1:2;
  const labels=['Credenciais','Conta Telegram','Canal privado'];
  return <div className="dc-onboard-screen">
   <div className="dc-onboard-frame">
@@ -119,7 +120,7 @@ function TelegramOnboarding({stage,detail,onReady,onToast}){
      <h2>{stage==='offline'?'Conector indisponível':stage==='telegram-error'?'Falha ao verificar sua conta':active===0?'Prepare seu acesso':active===1?'Conecte sua conta':'Preparando seu espaço'}</h2>
      <p>{stage==='offline'||stage==='telegram-error'?'Não conseguimos confirmar a conexão agora. Isso não significa que sua conta foi desconectada.':active===0?'Informe suas credenciais pessoais da API do Telegram. Elas serão salvas apenas neste dispositivo.':active===1?'Use o QR Code do aplicativo Telegram ou seu número de telefone.': 'Vamos vincular ou criar seu canal privado automaticamente, com a logo do Drive Cloud e sem duplicar arquivos.'}</p>
     </div>
-    {stage==='offline'||stage==='telegram-error'?<div className="dc-onboard-offline" role="alert"><CircleAlert size={20}/><strong>{stage==='telegram-error'?'Não foi possível verificar a sessão Telegram':'Não foi possível conectar ao serviço local'}</strong><p>{detail||'Verifique a conexão e tente novamente. Sua configuração foi preservada.'}</p><button type="button" onClick={onReady}>Tentar novamente</button></div>:<><TelegramSettings key={stage} onboarding onReady={onReady} onToast={onToast}/>{stage==='storage'&&detail&&<p className="dc-onboard-channel-hint" role="status">{detail}</p>}</>}}
+    {stage==='offline'||stage==='telegram-error'?<div className="dc-onboard-offline" role="alert"><CircleAlert size={20}/><strong>{stage==='telegram-error'?'Não foi possível verificar a sessão Telegram':'Não foi possível conectar ao serviço local'}</strong><p>{detail||'Verifique a conexão e tente novamente. Sua configuração foi preservada.'}</p><button type="button" onClick={onReady}>Tentar novamente</button></div>:<><TelegramSettings key={stage} onboarding onReady={onReady} onToast={onToast}/>{stage==='storage'&&detail&&<p className="dc-onboard-channel-hint" role="status">{detail}</p>}</>}
    </main>
   </div>
  </div>;
