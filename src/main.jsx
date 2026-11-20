@@ -13,7 +13,7 @@ const MAX_FILE_BYTES = 512*1024*1024;
 const size=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
 const date=n=>new Date(n).toLocaleDateString('pt-BR');
 function IconFile({item,large=false}){const n=large?56:26;if(item.kind==='folder')return <Folder size={n} fill="#8db8fc" color="#a8cbff" strokeWidth={1.4}/>;if(item.type?.startsWith('image/'))return <Image size={n} color="#c3a4ff"/>;if(item.type?.startsWith('video/'))return <Video size={n} color="#70caa8"/>;if(/zip|tar|gz|rar/i.test(item.name))return <FileArchive size={n} color="#e5bd78"/>;if(item.name.toLowerCase().endsWith('.pdf'))return <FileText size={n} color="#fa929e"/>;return <File size={n} color="#b8b8ce"/>}
-function TelegramSettings({onToast}){
+function TelegramSettings({onToast,onboarding=false,onReady}){
 const [status,setStatus]=useState(null),[phone,setPhone]=useState(''),[code,setCode]=useState(''),[password,setPassword]=useState(''),[step,setStep]=useState('qr-choice'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[qrImage,setQrImage]=useState('');
 const [storage,setStorage]=useState(null),[storageBusy,setStorageBusy]=useState(false),[storageError,setStorageError]=useState('');
 const [apiId,setApiId]=useState(''),[apiHash,setApiHash]=useState(''),[savingApi,setSavingApi]=useState(false),[apiError,setApiError]=useState(''),[showApiHash,setShowApiHash]=useState(false);
@@ -21,8 +21,10 @@ const endpoint=backendOrigin;
 async function call(path,data){const response=await fetch(endpoint+path,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},...(data!==undefined?{body:JSON.stringify(data)}:{})});const result=await response.json();if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Falha na conexão');return result}
 async function refresh(){try{const r=await call('/api/telegram/status');setStatus(r);setStep(r.connected?'connected':'qr-choice')}catch{setStatus({offline:true,connected:false})}}
 useEffect(()=>{let active=true;let attempts=0;let timer;async function check(){if(!active)return;try{const result=await call('/api/telegram/status');if(!active)return;setStatus(result);setStep(result.connected?'connected':'qr-choice')}catch{if(!active)return;setStatus({offline:true,connected:false});if(++attempts<20)timer=setTimeout(check,1500)}}check();return()=>{active=false;clearTimeout(timer)}},[]);
-useEffect(()=>{if(step!=='connected'||!status?.connected)return;let cancelled=false;
+useEffect(()=>{if(step!=='connected'||!status?.connected){setStorage(null);return}let cancelled=false;
 (async()=>{setStorageBusy(true);setStorageError('');try{
+  // This existing endpoint reuses the registered private channel, or creates
+  // one automatically on the first successful Telegram login.
   const result=await call('/api/telegram/storage/ensure',{});
   if(!cancelled)setStorage(result);
 }catch(e){if(!cancelled)setStorageError(e.message)}
@@ -30,6 +32,14 @@ finally{if(!cancelled)setStorageBusy(false)}
 })();
 return()=>{cancelled=true};
 },[step,status?.connected,status?.id]);
+const readinessRef=useRef(false);
+useEffect(()=>{
+ if(onboarding&&status?.connected&&storage?.ready&&!readinessRef.current){
+  readinessRef.current=true;
+  onReady?.();
+ }
+ if(!status?.connected||!storage?.ready)readinessRef.current=false;
+},[onboarding,status?.connected,storage?.ready,onReady]);
 useEffect(()=>{if(step!=='qr')return;let stopped=false;const timer=setInterval(async()=>{try{const r=await call('/api/telegram/qr/status');if(stopped)return;if(r.step==='connected'){setStatus({...r,configured:true});setStep('connected')}else if(r.step==='password')setStep('qr-password');else if(r.step==='expired'||r.step==='error'){setStep('qr-expired');if(r.detail)setError(r.detail)}}catch(e){if(!stopped)setError(e.message)}},1400);return()=>{stopped=true;clearInterval(timer)}},[step]);
 async function saveTelegramApi(event){
  event.preventDefault();
@@ -44,7 +54,7 @@ async function saveTelegramApi(event){
  }catch(err){setApiError(err.message)}finally{setSavingApi(false)}
 }
 async function perform(path,data){setBusy(true);setError('');try{const r=await call('/api/telegram/'+path,data);if(r.image){setQrImage(r.image);setStep('qr')}else if(r.step)setStep(r.step);if(r.connected){setStatus({...r,configured:true});setPassword('');setCode('');onToast?.({kind:'success',message:'Telegram conectado com sucesso'})}else if(path==='logout'||path==='disconnect'){setStorage(null);setStorageError('');setQrImage('');await refresh();onToast?.({kind:'info',message:path==='logout'?'Sessão do Telegram encerrada':'Conexão encerrada'})}}catch(e){setError(e.message);onToast?.({kind:'error',message:e.message,duration:6500})}finally{setBusy(false)}}
-return <section className="telegram-panel"><div className="telegram-header"><div className="tg-header-icon"><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/></div><div><h2>{step==='connected'?'Conta conectada':'Conectar Telegram'}</h2><p>{step==='connected'?'Sua conta autoriza o armazenamento privado do Drive Cloud.':'Autorize a conta pelo QR Code do Telegram.'}</p></div><span className={status?.connected?'tg-connection-tag active':'tg-connection-tag'}>{status?.connected?'Conectado':'Desconectado'}</span></div>
+return <section className={'telegram-panel'+(onboarding?' dc-ob-telegram-panel':'')}><div className="telegram-header"><div className="tg-header-icon"><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/></div><div><h2>{step==='connected'?'Conta conectada':'Conectar Telegram'}</h2><p>{step==='connected'?'Sua conta autoriza o armazenamento privado do Drive Cloud.':'Autorize a conta pelo QR Code do Telegram.'}</p></div><span className={status?.connected?'tg-connection-tag active':'tg-connection-tag'}>{status?.connected?'Conectado':'Desconectado'}</span></div>
 {status&&!status.offline&&!status.configured&&<div className="tg-api-setup">
  <div className="tg-api-alert"><CircleAlert size={20}/><div><strong>Configure seu acesso à API do Telegram</strong><p>Para conectar sua conta, crie gratuitamente suas credenciais pessoais no portal oficial do Telegram. O Drive Cloud não utiliza as credenciais do desenvolvedor.</p><button className="tg-api-open-link" type="button" onClick={async()=>{try{if(window.__TAURI_INTERNALS__)await openUrl("https://my.telegram.org/apps");else window.open("https://my.telegram.org/apps","_blank","noopener,noreferrer")}catch(e){setApiError("Não foi possível abrir o navegador: "+String(e))}}}>Abrir site oficial do Telegram ↗</button></div></div>
  <details className="tg-api-instructions"><summary>Como obter meu API ID e API Hash?</summary><ol><li>Acesse <strong>my.telegram.org</strong> e entre com o número da sua conta Telegram.</li><li>Selecione <strong>API development tools</strong>.</li><li>Se ainda não tiver um aplicativo cadastrado, preencha o nome, nome curto e demais dados solicitados e clique em <strong>Create application</strong>.</li><li>Copie <strong>App api_id</strong> e <strong>App api_hash</strong> para os campos abaixo.</li></ol><p>Não compartilhe o API Hash nem códigos de login. O Telegram pode permitir apenas um cadastro de API por número.</p></details>
@@ -62,7 +72,7 @@ return <section className="telegram-panel"><div className="telegram-header"><div
 <div className="tg-account-line"><div className="tg-account-avatar">{(status?.name||'T').slice(0,1).toUpperCase()}{status?.connected&&<img src={backendOrigin+'/api/telegram/avatar?account='+encodeURIComponent(status.id||'')} alt="" onError={event=>{event.currentTarget.style.display='none'}}/>}</div><div><strong>{status?.name||'Telegram'}</strong><small>{status?.username?'@'+status.username:'Perfil conectado ao Drive Cloud'}</small></div><span className="tg-account-online"><Check size={15}/> Ativa</span></div>
 <div className="tg-channel-line"><div className="tg-channel-icon"><Folder size={20}/></div><div><strong>{storageBusy?'Verificando canal privado...':storage?.ready?storage.title:'Canal privado não configurado'}</strong><small>{storage?.ready?'Canal privado conectado e verificado.':storageError||'Configure um canal para armazenar seus arquivos.'}</small></div>{storage?.ready&&<span className="tg-channel-ok"><Check size={17}/></span>}</div>
 {!storage?.ready&&!storageBusy&&<button className="tg-setup-button" disabled={storageBusy} onClick={async()=>{setStorageBusy(true);setStorageError('');try{setStorage(await call('/api/telegram/storage/ensure',{}))}catch(e){setStorageError(e.message)}finally{setStorageBusy(false)}}}>Preparar canal de armazenamento</button>}
-<div className="tg-connected-actions"><button disabled={busy} onClick={()=>perform('disconnect',{})}>Desconectar backend</button><button disabled={busy} onClick={()=>{if(confirm('Revogar a sessão do Telegram neste computador?'))perform('logout',{})}}>Sair do Telegram</button></div></div>:<div className="tg-form">
+<div className="tg-connected-actions"><button disabled={busy} onClick={()=>perform('disconnect',{})}>Desconectar backend</button><button disabled={busy} onClick={()=>{if(confirm('Revogar a sessão do Telegram neste computador?'))perform('logout',{})}}>Sair do Telegram</button></div></div>:status?.configured?<div className="tg-form">
 {step==='qr-choice'?<><p className="tg-note">No celular: Telegram → Configurações → Dispositivos → Conectar dispositivo.</p><button disabled={busy||!status?.configured} onClick={()=>perform('qr/start',{})}>Gerar QR Code</button><button className="tg-back" onClick={()=>setStep('phone')}>Entrar com telefone</button></>:null}
 {step==='qr'?<><div className="tg-qr"><img src={qrImage} alt="QR Code temporário para conectar sua conta do Telegram"/></div><p className="tg-note">Abra o Telegram no celular, entre em Dispositivos e escaneie o código. Aguardando autorização...</p><button className="tg-back" onClick={()=>perform('qr/start',{})}>Gerar novo QR Code</button><button className="tg-back" onClick={()=>setStep('phone')}>Usar telefone</button></>:null}
 {step==='qr-expired'?<><div className="tg-warning">O QR Code expirou ou não pôde ser validado.</div><button disabled={busy} onClick={()=>perform('qr/start',{})}>Gerar outro QR Code</button><button className="tg-back" onClick={()=>setStep('phone')}>Usar telefone</button></>:null}
@@ -72,6 +82,39 @@ return <section className="telegram-panel"><div className="telegram-header"><div
 {step==='password'?<><label>Senha de verificação em duas etapas</label><input type="password" autoComplete="off" placeholder="Sua senha 2FA" value={password} onChange={e=>setPassword(e.target.value)}/><button disabled={busy} onClick={()=>perform('verify-password',{password})}>Autorizar</button></>:null}
 </div>}
 <p className="tg-security-note"><CircleAlert size={15}/> A sessão fica neste computador. Não compartilhe o QR Code, códigos, senha 2FA ou os arquivos de sessão.</p></section>
+}
+
+
+function TelegramOnboarding({stage,onReady,onToast}){
+ const active=stage==='credentials'?0:stage==='account'?1:2;
+ const labels=['Credenciais','Conta Telegram','Canal privado'];
+ return <div className="dc-onboard-screen">
+  <div className="dc-onboard-frame">
+   <aside className="dc-onboard-intro">
+    <div className="dc-onboard-brand"><span><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/></span><strong>Drive Cloud</strong></div>
+    <div className="dc-onboard-main">
+     <div className="dc-onboard-kicker"><Cloud size={15}/> CONFIGURAÇÃO INICIAL</div>
+     <h1>Seu Drive começa com o Telegram.</h1>
+     <p>Configure seu acesso uma única vez. Depois, seus arquivos ficam organizados em um espaço privado conectado à sua conta.</p>
+     <div className="dc-onboard-timeline" aria-label="Etapas da conexão">
+      {labels.map((label,index)=><div className={'dc-onboard-timeline-item'+(index===active?' is-active':index<active?' is-done':'')} key={label}>
+       <span>{index<active?<Check size={15}/>:index+1}</span>
+       <div><strong>{label}</strong><small>{index===0?'Salve API ID e API Hash':index===1?'Entre por QR Code ou telefone':'Preparação automática do armazenamento'}</small></div>
+      </div>)}
+     </div>
+    </div>
+    <div className="dc-onboard-trust"><Check size={15}/> Conexão feita diretamente com sua conta Telegram.</div>
+   </aside>
+   <main className="dc-onboard-action">
+    <div className="dc-onboard-title">
+     <small>PASSO {active+1} DE 3</small>
+     <h2>{active===0?'Prepare seu acesso':active===1?'Conecte sua conta':'Preparando seu espaço'}</h2>
+     <p>{active===0?'Informe suas credenciais pessoais da API do Telegram. Elas serão salvas apenas neste dispositivo.':active===1?'Use o QR Code do aplicativo Telegram ou seu número de telefone.': 'Vamos vincular ou criar seu canal privado automaticamente, sem duplicar arquivos.'}</p>
+    </div>
+    <TelegramSettings onboarding onReady={onReady} onToast={onToast}/>
+   </main>
+  </div>
+ </div>;
 }
 
 const isCloudImage=item=>item.kind==='file'&&(item.mime?.startsWith('image/')||/\.(jxl|jpe?g|png|gif|webp|bmp|tiff?)$/i.test(item.name));
@@ -1190,15 +1233,47 @@ function saveDriveLocation(page,folder,replace=false){
 function readDriveLayout(){return localStorage.getItem('dc-file-layout')==='grid'?'grid':'list'}
 function App(){
 const [initialReady,setInitialReady]=useState(false);
+const [connectionGate,setConnectionGate]=useState({checking:true,ready:false,stage:'credentials'});
+
 const initialRoute=useRef(readDriveLocation());
 const driveSections=['cloudFiles','home','recent','starred','trash'];const [createFolderToken,setCreateFolderToken]=useState(0);const [cloudTree,setCloudTree]=useState([]);const [cloudFolder,setCloudFolder]=useState(null);const [folderTarget,setFolderTarget]=useState(()=>initialRoute.current.folder?{id:initialRoute.current.folder,nonce:1}:null);const [deletionProgress,setDeletionProgress]=useState(null);const [toast,setToast]=useState(null);const showToast=t=>setToast({...t,id:crypto.randomUUID()});const [telegramConnected,setTelegramConnected]=useState(false);const [telegramAccountId,setTelegramAccountId]=useState(null);const [driveUsage,setDriveUsage]=useState(null);const[items,setItems]=useState([]),[section,setSection]=useState(()=>initialRoute.current.page),[area,setArea]=useState(()=>({home:'home',recent:'home',starred:'home',cloudFiles:'files',trash:'trash',backups:'backups',backupHistory:'backups',backupSchedule:'backups',sync:'sync',devices:'sync',syncActivity:'sync',settings:'settings',telegram:'settings',security:'settings',preferences:'settings'})[initialRoute.current.page]||'home'),[folder,setFolder]=useState(null),[view,setView]=useState(readDriveLayout),[query,setQuery]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[mobile,setMobile]=useState(false);
 const input=useRef(null);
 const refresh=async()=>setItems(await all());
+async function refreshTelegram(){
+ try{
+  const response=await fetch(backendOrigin+'/api/telegram/status',{cache:'no-store'});
+  if(!response.ok)throw Error('Telegram indisponível');
+  const status=await response.json();
+  setTelegramConnected(!!status.connected);
+  setTelegramAccountId(status.connected&&status.id?String(status.id):null);
+  if(!status.configured){
+   setConnectionGate({checking:false,ready:false,stage:'credentials'});
+   setDriveUsage(null);
+   return;
+  }
+  if(!status.connected){
+   setConnectionGate({checking:false,ready:false,stage:'account'});
+   setDriveUsage(null);
+   return;
+  }
+  const linked=await fetch(backendOrigin+'/api/telegram/storage/status',{cache:'no-store'});
+  if(!linked.ok)throw Error('Não foi possível verificar o canal Telegram');
+  const storageInfo=await linked.json();
+  setConnectionGate({checking:false,ready:!!storageInfo.ready,stage:'storage'});
+  if(storageInfo.ready){
+   const usage=await fetch(backendOrigin+'/api/cloud/usage');
+   if(usage.ok)setDriveUsage(await usage.json());
+  }else setDriveUsage(null);
+ }catch{
+  // Fail closed: never show Drive when the session or channel cannot be verified.
+  setConnectionGate({checking:false,ready:false,stage:'offline'});
+  setTelegramConnected(false);setTelegramAccountId(null);setDriveUsage(null);
+ }
+}
 useEffect(()=>{refresh().catch(e=>setNotice('Falha ao abrir o armazenamento: '+e.message));
-const refreshTelegram=async()=>{try{const status=await fetch(backendOrigin+'/api/telegram/status').then(r=>r.json());setTelegramConnected(!!status.connected);setTelegramAccountId(status.connected&&status.id?String(status.id):null);
-if(status.connected){const response=await fetch(backendOrigin+'/api/cloud/usage');if(response.ok)setDriveUsage(await response.json())}
-else setDriveUsage(null)}catch{setTelegramConnected(false);setTelegramAccountId(null);setDriveUsage(null)}};
-refreshTelegram();const timer=setInterval(refreshTelegram,12000);return()=>clearInterval(timer)},[]);
+refreshTelegram();
+const timer=setInterval(refreshTelegram,12000);
+return()=>clearInterval(timer)},[]);
 function msg(t){showToast({kind:'info',message:t})}
 const groupOf={home:'home',recent:'home',starred:'home',files:'files',cloudFiles:'files',photos:'files',shared:'files',trash:'trash',backups:'backups',backupHistory:'backups',backupSchedule:'backups',sync:'sync',devices:'sync',syncActivity:'sync',settings:'settings',telegram:'settings',security:'settings',preferences:'settings'};
 const defaults={home:'home',files:'cloudFiles',trash:'trash',backups:'backups',sync:'sync',settings:'settings'};
@@ -1226,6 +1301,8 @@ const primary=[['home','Início',Home],['files','Meu Drive',Folder],['trash','Li
 const sections=Object.values(menus).flat();
 const label=sections.find(s=>s[0]===section)?.[1]||'Arquivos';
 const bytes=items.filter(i=>i.kind==='file'&&!i.trashed).reduce((n,i)=>n+(i.size||0),0);
+if(connectionGate.checking)return <div className="dc-onboard-loading" role="status" aria-label="Verificando conexão Telegram"><DriveBrandLoader/><span>Verificando sua conexão...</span></div>;
+if(!connectionGate.ready)return <><TelegramOnboarding stage={connectionGate.stage} onReady={refreshTelegram} onToast={showToast}/><DriveToast toast={toast} onDismiss={()=>setToast(null)}/></>;
 return <div className="shell"><aside className="rail"><div className="logo" title="Drive Cloud"><img src="/drive-cloud-logo.svg?v=20261120b" alt="Drive Cloud"/></div>{primary.map(([a,name,Icon])=><button key={a} title={name} aria-label={name} className={area===a?'rail-on':''} onClick={()=>goArea(a)}><Icon size={21}/></button>)}</aside>
 <aside className={'sidebar '+(mobile?'show':'')+(area==='files'?' sidebar-tree':'')}><div className="sidebar-title">{primary.find(p=>p[0]===area)?.[1]||'Meu espaço'}<button className="mobile-x" onClick={()=>setMobile(false)}><X size={19}/></button></div><div className="links">{menus[area].map(([id,name,Icon])=><button key={id} className={section===id?'active':''} onClick={()=>nav(id)}><Icon size={18}/>{name}</button>)}</div>{area==='files'&&<DriveFolderTree nodes={cloudTree} current={cloudFolder} onOpen={id=>{nav('cloudFiles',id)}}/>}<div className="sidebar-bottom"><div className="dc-compact-storage">
 <div className="dc-usage-heading"><HardDrive size={16}/><span>Armazenamento</span></div>
