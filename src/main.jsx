@@ -97,13 +97,33 @@ if(progress){const percentage=Math.round(progress.completed/Math.max(1,progress.
 if(!toast)return null;
 const Icon=toast.kind==='error'?X:toast.kind==='info'?Cloud:Check;
 return <div className={'dc-toast '+(closing?'dc-toast-out':'')} role="status" aria-live="polite"><span className={'dc-toast-symbol '+toast.kind}><Icon size={18}/></span><div className="dc-toast-message">{toast.message}</div>{toast.undo&&<button className="dc-toast-undo" onClick={()=>{toast.undo();setClosing(true)}}>Desfazer</button>}<button className="dc-toast-close" title="Fechar notificação" aria-label="Fechar notificação" onClick={()=>setClosing(true)}><X size={17}/></button></div>}
+function SharedMediaDisplay({src,statusUrl,name,video=false}){
+ const [failure,setFailure]=useState(''),[attempt,setAttempt]=useState(0);
+ async function fail(){
+  try{
+   const response=await fetch(statusUrl,{cache:'no-store'});
+   if(!response.ok){const body=await response.json().catch(()=>({}));setFailure(body.detail||'Mídia indisponível (HTTP '+response.status+').')}
+   else setFailure('Não foi possível exibir esta mídia no navegador. Verifique se o formato é compatível.')
+  }catch{setFailure('Não foi possível conectar ao backend local. Verifique se ele está ativo.')}
+ }
+ return <div className="dc-shared-media-view">
+  {failure?<div className="dc-shared-media-error"><CircleAlert size={24}/><strong>Prévia indisponível</strong><p>{failure}</p><button type="button" onClick={()=>{setFailure('');setAttempt(x=>x+1)}}><RefreshCw size={15}/> Tentar novamente</button></div>
+  :video?<video key={attempt} src={src} controls playsInline preload="metadata" onError={fail} aria-label={name}/>
+  :<img key={attempt} src={src} alt={name} onError={fail}/>}
+ </div>
+}
+function SharedMediaThumb({src,video=false}){
+ const [failed,setFailed]=useState(false);
+ if(failed)return video?<Play size={24}/>:<Image size={24}/>;
+ return video?<video className="public-media-thumbnail" src={src} muted playsInline preload="metadata" onError={()=>setFailed(true)} aria-hidden="true"/>:<img className="public-media-thumbnail" loading="lazy" alt="" src={src} onError={()=>setFailed(true)}/>;
+}
 function EmbeddedMedia({token}){
  const [data,setData]=useState(null),[error,setError]=useState('');
  const endpoint='http://127.0.0.1:8000/api/public/share/'+encodeURIComponent(token);
  useEffect(()=>{let cancelled=false;fetch(endpoint,{cache:'no-store'}).then(async r=>{const body=await r.json();if(!r.ok)throw Error(body.detail||'Mídia indisponível');return body}).then(d=>{if(!cancelled)setData(d)}).catch(e=>{if(!cancelled)setError(e.message)});return()=>{cancelled=true}},[token]);
  const video=data&&/\.(mp4|webm|m4v)$/i.test(data.name);
- const picture=data&&/\.(png|jpe?g|webp|gif)$/i.test(data.name);
- return <div className="dc-embedded-media">{error?<div className="dc-embed-fail">{error}</div>:!data?<DriveCloudLoader size={64} label="Carregando mídia"/>:data.mode!=='embed'?<div className="dc-embed-fail">Incorporação não autorizada.</div>:data.kind!=='file'||(!video&&!picture)?<div className="dc-embed-fail">Formato não suportado.</div>:video?<video src={endpoint+'/media'} controls playsInline preload="metadata" aria-label={data.name}/>:<img src={endpoint+'/media'} alt={data.name}/>}</div>
+ const picture=data&&/\.(png|jpe?g|webp|gif|jxl|bmp|tiff?)$/i.test(data.name);
+ return <div className="dc-embedded-media">{error?<div className="dc-embed-fail">{error}</div>:!data?<DriveCloudLoader size={64} label="Carregando mídia"/>:data.mode!=='embed'?<div className="dc-embed-fail">Incorporação não autorizada.</div>:data.kind!=='file'||(!video&&!picture)?<div className="dc-embed-fail">Formato não suportado.</div>:<SharedMediaDisplay src={endpoint+'/media'} statusUrl={endpoint+'/media-status'} name={data.name} video={video}/>}</div>
 }
 function PublicShareView({token}){
  const [data,setData]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[current,setCurrent]=useState(null),[opened,setOpened]=useState(null),[search,setSearch]=useState(''),[view,setView]=useState('list');
@@ -119,7 +139,7 @@ function PublicShareView({token}){
  const visible=list.filter(x=>x.parent===current).filter(x=>!search.trim()||x.name.toLocaleLowerCase('pt-BR').includes(search.trim().toLocaleLowerCase('pt-BR'))).sort((a,b)=>a.kind===b.kind?a.name.localeCompare(b.name,'pt-BR'):a.kind==='folder'?-1:1);
  function goFolder(id){setCurrent(id);setSearch('');setOpened(null)}
  const up=currentFolder?.parent||root;
- const image=item=>/\.(jpe?g|png|gif|webp)$/i.test(item.name);
+ const image=item=>/\.(jpe?g|png|gif|webp|jxl|bmp|tiff?)$/i.test(item.name);
  const video=item=>/\.(mp4|webm|m4v)$/i.test(item.name);
  const mediaUrl=item=>endpoint+'/media/'+encodeURIComponent(item.id);
  return <main className="public-share-screen">
@@ -132,15 +152,15 @@ function PublicShareView({token}){
  <div className="public-drive-tools"><button className="public-drive-back" onClick={()=>goFolder(up)} disabled={current===root}><ArrowLeft size={17}/> Voltar</button><div className="public-drive-search"><Search size={16}/><input placeholder="Buscar nesta pasta..." value={search} onChange={e=>setSearch(e.target.value)}/></div><div className="public-drive-switch"><button title="Modo lista" className={view==='list'?'on':''} onClick={()=>setView('list')}><List size={17}/></button><button title="Modo grade" className={view==='grid'?'on':''} onClick={()=>setView('grid')}><Grid2X2 size={17}/></button></div></div>
  <div className={'public-drive-files '+(view==='grid'?'as-grid':'as-list')}>
  {visible.length?visible.map(item=><div className={'public-drive-entry '+(item.kind==='folder'?'is-folder':'')} key={item.id}>
- <button className="public-drive-open" title={item.kind==='folder'?'Abrir '+item.name:'Visualizar '+item.name} onClick={()=>item.kind==='folder'?goFolder(item.id):setOpened(item)}><span className="public-drive-entry-icon">{item.kind==='folder'?<Folder size={view==='grid'?35:21} fill="#80aaf0" color="#a7caff" strokeWidth={1.4}/>:image(item)?<img className="public-media-thumbnail" loading="lazy" alt="" src={mediaUrl(item)}/>:video(item)?<video className="public-media-thumbnail" src={mediaUrl(item)} muted playsInline preload="metadata" aria-hidden="true"/>:<File size={view==='grid'?33:21}/>}</span><span className="public-drive-entry-info"><strong>{item.name}</strong><small>{item.kind==='folder'?'Pasta':size(item.size||0)}</small></span></button>
+ <button className="public-drive-open" title={item.kind==='folder'?'Abrir '+item.name:'Visualizar '+item.name} onClick={()=>item.kind==='folder'?goFolder(item.id):setOpened(item)}><span className="public-drive-entry-icon">{item.kind==='folder'?<Folder size={view==='grid'?35:21} fill="#80aaf0" color="#a7caff" strokeWidth={1.4}/>:image(item)?<SharedMediaThumb src={mediaUrl(item)}/>:video(item)?<SharedMediaThumb src={mediaUrl(item)} video/>:<File size={view==='grid'?33:21}/>}</span><span className="public-drive-entry-info"><strong>{item.name}</strong><small>{item.kind==='folder'?'Pasta':size(item.size||0)}</small></span></button>
  {item.kind==='folder'?<button className="public-drive-entry-action" title="Abrir pasta" onClick={()=>goFolder(item.id)}><ChevronRight size={18}/></button>:<a className="public-drive-entry-action" title="Baixar arquivo" href={endpoint+'/file/'+encodeURIComponent(item.id)}><Download size={18}/></a>}
  </div>):<div className="public-drive-empty"><Folder size={36}/><strong>{search?'Nenhum resultado':'Esta pasta está vazia'}</strong><span>{search?'Tente outro nome de arquivo.':'Volte para explorar outras pastas compartilhadas.'}</span></div>}
  </div></>}
- {data.mode==='view'&&data.kind==='file'&&image(data)&&<div className="public-share-image"><img src={endpoint+'/media'} alt={data.name}/></div>}
- {data.mode==='view'&&data.kind==='file'&&video(data)&&<div className="public-share-image"><video src={endpoint+'/media'} controls playsInline preload="metadata"/></div>}
+ {data.mode==='view'&&data.kind==='file'&&image(data)&&<div className="public-share-image"><SharedMediaDisplay src={endpoint+'/media'} statusUrl={endpoint+'/media-status'} name={data.name}/></div>}
+ {data.mode==='view'&&data.kind==='file'&&video(data)&&<div className="public-share-image"><SharedMediaDisplay src={endpoint+'/media'} statusUrl={endpoint+'/media-status'} name={data.name} video/></div>}
  {data.mode==='download'&&<div className="public-drive-direct"><Download size={27}/><strong>Seu download está disponível</strong><p>Clique em Baixar para salvar {data.kind==='folder'?'a pasta compactada':'o arquivo'} neste computador.</p></div>}
  <div className="public-drive-footer"><span><Clock3 size={14}/> Disponível até {new Date(data.expires*1000).toLocaleString('pt-BR')}</span><span>Compartilhamento local · O computador do proprietário precisa estar ligado</span></div>
- {opened&&<div className="public-file-overlay" role="presentation" onClick={()=>setOpened(null)}><div className="public-file-preview" role="dialog" aria-modal="true" aria-label={'Visualizar '+opened.name} onClick={e=>e.stopPropagation()}><div className="public-file-preview-top"><span title={opened.name}><File size={17}/>{opened.name}</span><div><a href={endpoint+'/file/'+encodeURIComponent(opened.id)}><Download size={17}/> Baixar</a><button aria-label="Fechar visualização" onClick={()=>setOpened(null)}><X size={19}/></button></div></div><div className="public-file-preview-content">{image(opened)?<img alt={opened.name} src={mediaUrl(opened)}/>:video(opened)?<video key={opened.id} src={mediaUrl(opened)} controls playsInline preload="metadata" autoPlay={false}/>:<div className="public-file-no-preview"><File size={54}/><strong>Prévia indisponível</strong><span>Baixe o arquivo para abri-lo no seu dispositivo.</span></div>}</div></div></div>}
+ {opened&&<div className="public-file-overlay" role="presentation" onClick={()=>setOpened(null)}><div className="public-file-preview" role="dialog" aria-modal="true" aria-label={'Visualizar '+opened.name} onClick={e=>e.stopPropagation()}><div className="public-file-preview-top"><span title={opened.name}><File size={17}/>{opened.name}</span><div><a href={endpoint+'/file/'+encodeURIComponent(opened.id)}><Download size={17}/> Baixar</a><button aria-label="Fechar visualização" onClick={()=>setOpened(null)}><X size={19}/></button></div></div><div className="public-file-preview-content">{image(opened)?<SharedMediaDisplay src={mediaUrl(opened)} statusUrl={endpoint+'/media-status?file_id='+encodeURIComponent(opened.id)} name={opened.name}/>:video(opened)?<SharedMediaDisplay src={mediaUrl(opened)} statusUrl={endpoint+'/media-status?file_id='+encodeURIComponent(opened.id)} name={opened.name} video/>:<div className="public-file-no-preview"><File size={54}/><strong>Prévia indisponível</strong><span>Baixe o arquivo para abri-lo no seu dispositivo.</span></div>}</div></div></div>}
  </>}
  </div></main>;
 }
