@@ -4,6 +4,8 @@ import{createPortal}from'react-dom';
 import{Play,Pause,Volume2,VolumeX,Maximize,Minimize,Cloud,Home,Folder,Image,DatabaseBackup,Clock3,Star,Users,RefreshCw,Trash2,Settings,Search,Plus,Upload,FolderPlus,Grid2X2,List,ChevronRight,HardDrive,WifiOff,FileText,FileArchive,File,Video,Download,MoreHorizontal,Code,X,ArrowLeft,Pencil,MoveRight,Eye,RotateCcw,Check,ChevronDown,CircleAlert}from'lucide-react';
 import{all,save,read,erase}from'./storage';
 import './style.css';
+import {invoke} from '@tauri-apps/api/core';
+let backendOrigin=backendOrigin+'';
 const uid=()=>crypto.randomUUID();
 const size=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
 const date=n=>new Date(n).toLocaleDateString('pt-BR');
@@ -11,7 +13,7 @@ function IconFile({item,large=false}){const n=large?56:26;if(item.kind==='folder
 function TelegramSettings({onToast}){
 const [status,setStatus]=useState(null),[phone,setPhone]=useState(''),[code,setCode]=useState(''),[password,setPassword]=useState(''),[step,setStep]=useState('qr-choice'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[qrImage,setQrImage]=useState('');
 const [storage,setStorage]=useState(null),[storageBusy,setStorageBusy]=useState(false),[storageError,setStorageError]=useState('');
-const endpoint='http://127.0.0.1:8000';
+const endpoint=backendOrigin+'';
 async function call(path,data){const response=await fetch(endpoint+path,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},...(data!==undefined?{body:JSON.stringify(data)}:{})});const result=await response.json();if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Falha na conexão');return result}
 async function refresh(){try{const r=await call('/api/telegram/status');setStatus(r);setStep(r.connected?'connected':'qr-choice')}catch{setStatus({offline:true,connected:false})}}
 useEffect(()=>{let active=true;let attempts=0;let timer;async function check(){if(!active)return;try{const result=await call('/api/telegram/status');if(!active)return;setStatus(result);setStep(result.connected?'connected':'qr-choice')}catch{if(!active)return;setStatus({offline:true,connected:false});if(++attempts<20)timer=setTimeout(check,1500)}}check();return()=>{active=false;clearTimeout(timer)}},[]);
@@ -28,7 +30,7 @@ useEffect(()=>{if(step!=='qr')return;let stopped=false;const timer=setInterval(a
 async function perform(path,data){setBusy(true);setError('');try{const r=await call('/api/telegram/'+path,data);if(r.image){setQrImage(r.image);setStep('qr')}else if(r.step)setStep(r.step);if(r.connected){setStatus({...r,configured:true});setPassword('');setCode('');onToast?.({kind:'success',message:'Telegram conectado com sucesso'})}else if(path==='logout'||path==='disconnect'){setStorage(null);setStorageError('');setQrImage('');await refresh();onToast?.({kind:'info',message:path==='logout'?'Sessão do Telegram encerrada':'Conexão encerrada'})}}catch(e){setError(e.message);onToast?.({kind:'error',message:e.message,duration:6500})}finally{setBusy(false)}}
 return <section className="telegram-panel"><div className="telegram-header"><div className="tg-header-icon"><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/></div><div><h2>{step==='connected'?'Conta conectada':'Conectar Telegram'}</h2><p>{step==='connected'?'Sua conta autoriza o armazenamento privado do Drive Cloud.':'Autorize a conta pelo QR Code do Telegram.'}</p></div><span className={status?.connected?'tg-connection-tag active':'tg-connection-tag'}>{status?.connected?'Conectado':'Desconectado'}</span></div>
 {status?.offline?<div className="tg-warning">Não foi possível conectar ao serviço local do Drive Cloud. Verifique se outra instância está aberta ou se a porta 8000 está ocupada. O aplicativo tentará conectar automaticamente; se continuar, consulte o diagnóstico de inicialização.</div>:status&&!status.configured?<div className="tg-warning">A conexão local está ativa, mas o Telegram ainda precisa das credenciais de API nesta versão experimental. Não é necessário iniciar Python manualmente.</div>:step==='connected'?<div className="tg-connected-card">
-<div className="tg-account-line"><div className="tg-account-avatar">{(status?.name||'T').slice(0,1).toUpperCase()}{status?.connected&&<img src={'http://127.0.0.1:8000/api/telegram/avatar?account='+encodeURIComponent(status.id||'')} alt="" onError={event=>{event.currentTarget.style.display='none'}}/>}</div><div><strong>{status?.name||'Telegram'}</strong><small>{status?.username?'@'+status.username:'Perfil conectado ao Drive Cloud'}</small></div><span className="tg-account-online"><Check size={15}/> Ativa</span></div>
+<div className="tg-account-line"><div className="tg-account-avatar">{(status?.name||'T').slice(0,1).toUpperCase()}{status?.connected&&<img src={backendOrigin+'/api/telegram/avatar?account='+encodeURIComponent(status.id||'')} alt="" onError={event=>{event.currentTarget.style.display='none'}}/>}</div><div><strong>{status?.name||'Telegram'}</strong><small>{status?.username?'@'+status.username:'Perfil conectado ao Drive Cloud'}</small></div><span className="tg-account-online"><Check size={15}/> Ativa</span></div>
 <div className="tg-channel-line"><div className="tg-channel-icon"><Folder size={20}/></div><div><strong>{storageBusy?'Verificando canal privado...':storage?.ready?storage.title:'Canal privado não configurado'}</strong><small>{storage?.ready?'Canal privado conectado e verificado.':storageError||'Configure um canal para armazenar seus arquivos.'}</small></div>{storage?.ready&&<span className="tg-channel-ok"><Check size={17}/></span>}</div>
 {!storage?.ready&&!storageBusy&&<button className="tg-setup-button" disabled={storageBusy} onClick={async()=>{setStorageBusy(true);setStorageError('');try{setStorage(await call('/api/telegram/storage/ensure',{}))}catch(e){setStorageError(e.message)}finally{setStorageBusy(false)}}}>Preparar canal de armazenamento</button>}
 <div className="tg-connected-actions"><button disabled={busy} onClick={()=>perform('disconnect',{})}>Desconectar backend</button><button disabled={busy} onClick={()=>{if(confirm('Revogar a sessão do Telegram neste computador?'))perform('logout',{})}}>Sair do Telegram</button></div></div>:<div className="tg-form">
@@ -53,7 +55,7 @@ function cachedCloudPreview(item){
  if(existing){if(existing.url)return Promise.resolve(existing.url);if(existing.promise)return existing.promise;if(existing.retryAt>Date.now())return Promise.reject(Error('A prévia está temporariamente indisponível'))}
  const controller=new AbortController();
  const timeout=setTimeout(()=>controller.abort(),18000);
- const promise=fetch('http://127.0.0.1:8000/api/cloud/preview/'+encodeURIComponent(item.id),{signal:controller.signal,cache:'force-cache'}).then(response=>{
+ const promise=fetch(backendOrigin+'/api/cloud/preview/'+encodeURIComponent(item.id),{signal:controller.signal,cache:'force-cache'}).then(response=>{
    if(!response.ok)throw Error('Prévia indisponível');
    return response.blob();
  }).then(blob=>{
@@ -247,7 +249,7 @@ function SharedMediaThumb({src,video=false}){
 }
 function EmbeddedMedia({token}){
  const [data,setData]=useState(null),[error,setError]=useState('');
- const endpoint='http://127.0.0.1:8000/api/public/share/'+encodeURIComponent(token);
+ const endpoint=backendOrigin+'/api/public/share/'+encodeURIComponent(token);
  useEffect(()=>{let cancelled=false;fetch(endpoint,{cache:'no-store'}).then(async r=>{const body=await r.json();if(!r.ok)throw Error(body.detail||'Mídia indisponível');return body}).then(d=>{if(!cancelled)setData(d)}).catch(e=>{if(!cancelled)setError(e.message)});return()=>{cancelled=true}},[token]);
  const video=data&&/\.(mp4|webm|m4v)$/i.test(data.name);
  const picture=data&&/\.(png|jpe?g|webp|gif|jxl|bmp|tiff?)$/i.test(data.name);
@@ -276,7 +278,7 @@ function SharedLinkUnavailable({error,onRetry}){
 }
 function PublicShareView({token}){
  const [data,setData]=useState(null),[error,setError]=useState(null),[loading,setLoading]=useState(true),[refreshKey,setRefreshKey]=useState(0),[current,setCurrent]=useState(null),[opened,setOpened]=useState(null),[search,setSearch]=useState(''),[view,setView]=useState('list');
- const endpoint='http://127.0.0.1:8000/api/public/share/'+encodeURIComponent(token);
+ const endpoint=backendOrigin+'/api/public/share/'+encodeURIComponent(token);
  useEffect(()=>{let active=true;setLoading(true);setError(null);fetch(endpoint,{cache:'no-store'}).then(async r=>{const x=await r.json().catch(()=>null);if(!r.ok){const issue=new Error(typeof x?.detail==='string'?x.detail:'Não foi possível carregar este compartilhamento.');issue.status=r.status;throw issue;}return x;}).then(x=>{if(active){setData(x);setCurrent(x.root_id||null)}}).catch(e=>{if(active){setData(null);setError({message:e.message, status:e.status||0,network:!e.status})}}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[token,refreshKey]);
  const list=data?.items||[];
  const folders=new Map(list.filter(x=>x.kind==='folder').map(x=>[x.id,x]));
@@ -351,13 +353,13 @@ function ShareDialog({item,onClose,onToast}){
  const modes=[{value:'view',label:'Visualizar e baixar',hint:'Abrir arquivos e navegar nas pastas'},{value:'download',label:'Somente download',hint:'Baixar o arquivo ou ZIP diretamente'},...(embeddable?[{value:'embed',label:'Integração (embed)',hint:'Incorporar mídia em outro sistema'}]:[])];
  const expiryOptions=[{value:'1',label:'1 hora'},{value:'24',label:'24 horas'},{value:'168',label:'7 dias'},{value:'0',label:'Nunca expira',hint:'Até você revogar o link manualmente'}];
  const isPermanent=t=>Number(t)>=253402300799;
- async function refreshLinks(){try{const r=await fetch('http://127.0.0.1:8000/api/share');if(!r.ok)return;const data=await r.json();setExisting((data.links||[]).filter(x=>x.item_id===item.id&&!x.revoked&&x.expires>Date.now()/1000))}catch{}}
+ async function refreshLinks(){try{const r=await fetch(backendOrigin+'/api/share');if(!r.ok)return;const data=await r.json();setExisting((data.links||[]).filter(x=>x.item_id===item.id&&!x.revoked&&x.expires>Date.now()/1000))}catch{}}
  useEffect(()=>{refreshLinks()},[item.id]);
  async function createLink(){
   if(busy)return;
   setBusy(true);setError('');
   try{
-   const response=await fetch('http://127.0.0.1:8000/api/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id:item.id,mode,expires_hours:Number(expires)})});
+   const response=await fetch(backendOrigin+'/api/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id:item.id,mode,expires_hours:Number(expires)})});
    const result=await response.json();if(!response.ok)throw Error(result.detail||'Não foi possível criar o link.');
    const route=(mode==='embed'?'/embed/d/':item.kind==='folder'?'/folder/d/':'/file/d/');
    setCreated({...result,url:window.location.origin+route+encodeURIComponent(result.token),selectedMode:mode});
@@ -366,7 +368,7 @@ function ShareDialog({item,onClose,onToast}){
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
  async function copy(textToCopy){try{await navigator.clipboard.writeText(textToCopy);onToast?.({kind:'success',message:'Copiado para a área de transferência.'})}catch{setError('Não foi possível copiar automaticamente. Selecione e copie o conteúdo do campo.')}}
- async function revoke(id){try{const response=await fetch('http://127.0.0.1:8000/api/share/'+id,{method:'DELETE'});if(!response.ok)throw Error('Falha ao revogar.');if(created?.id===id)setCreated(null);await refreshLinks();onToast?.({kind:'success',message:'Link revogado.'})}catch(e){setError(e.message)}}
+ async function revoke(id){try{const response=await fetch(backendOrigin+'/api/share/'+id,{method:'DELETE'});if(!response.ok)throw Error('Falha ao revogar.');if(created?.id===id)setCreated(null);await refreshLinks();onToast?.({kind:'success',message:'Link revogado.'})}catch(e){setError(e.message)}}
  const iframe=created?.selectedMode==='embed'?'<iframe src="'+created.url+'" width="640" height="360" loading="lazy" allow="fullscreen" style="border:0;border-radius:12px" title="Mídia compartilhada"></iframe>':'';
  return <div className="move-backdrop" role="presentation" onClick={()=>!busy&&onClose()}><section className="move-dialog share-dialog dc-share-v2" role="dialog" aria-modal="true" aria-labelledby="share-dialog-title" onClick={e=>e.stopPropagation()}>
   <header className="move-dialog-header"><div className="share-dialog-heading"><span className="share-dialog-heading-icon"><Users size={21}/></span><div><h3 id="share-dialog-title">Compartilhar {item.kind==='folder'?'pasta':'arquivo'}</h3><p>Crie um link de acesso ao conteúdo</p></div></div><button type="button" className="move-close" aria-label="Fechar" onClick={onClose}><X size={19}/></button></header>
@@ -421,7 +423,7 @@ useEffect(()=>{const listener=event=>setLayout(event.detail==='grid'?'grid':'lis
 useEffect(()=>{if(folderTarget){setFolder(folderTarget.id||null);setSelected([])}},[folderTarget?.nonce]);
 useEffect(()=>{onFolderChange?.(folder)},[folder]);
 useEffect(()=>{onCatalogChange?.(nodes)},[nodes]);
-const base='http://127.0.0.1:8000/api/cloud';
+const base=backendOrigin+'/api/cloud';
 async function request(path,options){const r=await fetch(base+path,options);if(!r.ok){let detail='Erro HTTP '+r.status;try{const e=await r.json();detail=typeof e.detail==='string'?e.detail:detail}catch{}throw Error(detail)}return r}
 async function reload(){try{const r=await request('/items');setNodes((await r.json()).items);setError('')}catch(e){setError(e.message)}finally{setLoading(false)}}
 useEffect(()=>{reload()},[]);
@@ -758,14 +760,14 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
 </div></div>}
 {preview&&<div className="preview-backdrop" onClick={()=>setPreview(null)} role="presentation"><div className="preview-modal" role="dialog" aria-modal="true" aria-label={'Prévia de '+preview.name} onClick={e=>e.stopPropagation()}>
 <div className="preview-topbar"><div>{isCloudVideo(preview)?<Play size={19}/>:<Image size={19}/>}<strong title={preview.name}>{preview.name}</strong><span>{size(preview.size)}</span></div><div className="preview-top-actions"><button onClick={()=>download(preview)}><Download size={16}/> Baixar</button><button title="Fechar prévia" aria-label="Fechar prévia" onClick={()=>setPreview(null)}><X size={20}/></button></div></div>
-<div className="preview-stage">{previewError?<div className="preview-failed"><CircleAlert size={43}/><p>Não foi possível abrir a prévia.</p><button onClick={()=>download(preview)}>Baixar arquivo original</button></div>:isCloudVideo(preview)?<SharedMediaDisplay key={preview.id} src={'http://127.0.0.1:8000/api/cloud/media/'+encodeURIComponent(preview.id)} statusUrl={'http://127.0.0.1:8000/api/cloud/media-status/'+encodeURIComponent(preview.id)} name={preview.name} video/>:<DriveImagePreview key={preview.id} src={'http://127.0.0.1:8000/api/cloud/preview/'+encodeURIComponent(preview.id)+'?full=true'} name={preview.name} onError={()=>setPreviewError(true)}/>}</div>
+<div className="preview-stage">{previewError?<div className="preview-failed"><CircleAlert size={43}/><p>Não foi possível abrir a prévia.</p><button onClick={()=>download(preview)}>Baixar arquivo original</button></div>:isCloudVideo(preview)?<SharedMediaDisplay key={preview.id} src={backendOrigin+'/api/cloud/media/'+encodeURIComponent(preview.id)} statusUrl={backendOrigin+'/api/cloud/media-status/'+encodeURIComponent(preview.id)} name={preview.name} video/>:<DriveImagePreview key={preview.id} src={backendOrigin+'/api/cloud/preview/'+encodeURIComponent(preview.id)+'?full=true'} name={preview.name} onError={()=>setPreviewError(true)}/>}</div>
 <div className="preview-foot">{isCloudVideo(preview)?'Player Drive Cloud • Original preservado no Telegram':'Pré-visualização otimizada • JXL convertido apenas na prévia • Original preservado no Telegram'}</div></div></div>}
 <p className="cloud-disclaimer">Arquivos são armazenados no canal privado; pastas e referências ficam no SQLite deste computador. Nesta versão experimental o limite é de 20 MB por arquivo e não há criptografia própria ou recuperação automática do catálogo. Não use como cópia única de backups.</p>
 </section>
 }
 function BackupPages({section,onToast}){
  const [status,setStatus]=useState(null),[history,setHistory]=useState([]),[loading,setLoading]=useState(false),[frequency,setFrequency]=useState('off'),[error,setError]=useState('');
- const base='http://127.0.0.1:8000/api/backup';
+ const base=backendOrigin+'/api/backup';
  async function req(path,method='GET',body){
   const r=await fetch(base+path,{method,...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
   const data=await r.json();if(!r.ok)throw Error(data.detail||'Falha ao acessar backups');return data;
@@ -793,12 +795,12 @@ function SettingsPages({section,onToast}){
  const [motion,setMotion]=useState(()=>localStorage.getItem('dc-reduce-motion')==='true');
  const [links,setLinks]=useState([]),[error,setError]=useState('');
  useEffect(()=>{document.documentElement.classList.toggle('dc-compact-ui',compact);document.documentElement.classList.toggle('dc-less-motion',motion)},[]);
- async function refresh(){try{const res=await fetch('http://127.0.0.1:8000/api/share');if(res.ok)setLinks((await res.json()).links||[])}catch{}}
+ async function refresh(){try{const res=await fetch(backendOrigin+'/api/share');if(res.ok)setLinks((await res.json()).links||[])}catch{}}
  useEffect(()=>{refresh()},[]);
  function changeCompact(value){setCompact(value);localStorage.setItem('dc-compact',String(value));document.documentElement.classList.toggle('dc-compact-ui',value);onToast?.({kind:'success',message:'Densidade visual atualizada.'})}
  function changePreferredLayout(value){setPreferredLayout(value);localStorage.setItem('dc-file-layout',value);window.dispatchEvent(new CustomEvent('drive-layout-updated',{detail:value}));onToast?.({kind:'success',message:'Visualização padrão atualizada.'})}
  function changeMotion(value){setMotion(value);localStorage.setItem('dc-reduce-motion',String(value));document.documentElement.classList.toggle('dc-less-motion',value);onToast?.({kind:'success',message:'Preferência de animação atualizada.'})}
- async function revoke(id){try{const r=await fetch('http://127.0.0.1:8000/api/share/'+id,{method:'DELETE'});if(!r.ok)throw Error('Falha ao revogar link');await refresh();onToast?.({kind:'success',message:'Compartilhamento revogado.'})}catch(e){setError(e.message)}}
+ async function revoke(id){try{const r=await fetch(backendOrigin+'/api/share/'+id,{method:'DELETE'});if(!r.ok)throw Error('Falha ao revogar link');await refresh();onToast?.({kind:'success',message:'Compartilhamento revogado.'})}catch(e){setError(e.message)}}
  return <div className="dc-module-page">
  {section==='settings'&&<div className="dc-dashboard-grid"><div className="dc-module-card"><div className="dc-module-card-top"><Cloud size={20}/><span>Armazenamento</span></div><strong>Telegram privado</strong><small>Controle de conexão e canal no menu Conexão Telegram.</small></div><div className="dc-module-card"><div className="dc-module-card-top"><DatabaseBackup size={20}/><span>Backups</span></div><strong>Snapshots locais</strong><small>Configure cópias de segurança do catálogo em Backups.</small></div><div className="dc-module-card"><div className="dc-module-card-top"><Users size={20}/><span>Compartilhamentos</span></div><strong>{links.filter(x=>!x.revoked&&x.expires>Date.now()/1000).length} links ativos</strong><small>Revogue links antes de compartilhar novamente.</small></div></div>}
  {(section==='settings'||section==='preferences')&&<div className="dc-module-section"><h3>Aparência</h3><p>Preferências salvas somente neste navegador.</p><div className="dc-option-row"><span><strong>Visualização de arquivos</strong><small>Modo padrão ao abrir o Meu Drive.</small></span><div className="dc-select-wrap"><select aria-label="Visualização padrão" value={preferredLayout} onChange={e=>changePreferredLayout(e.target.value)}><option value="list">Lista</option><option value="grid">Grade</option></select><ChevronDown size={15}/></div></div><label className="dc-option-row"><span><strong>Interface compacta</strong><small>Reduz espaçamentos das listas e ferramentas.</small></span><input type="checkbox" checked={compact} onChange={e=>changeCompact(e.target.checked)}/></label><label className="dc-option-row"><span><strong>Reduzir animações</strong><small>Transições mais discretas para navegação e modais.</small></span><input type="checkbox" checked={motion} onChange={e=>changeMotion(e.target.checked)}/></label></div>}
@@ -876,8 +878,8 @@ const driveSections=['cloudFiles','home','recent','starred','trash'];const [crea
 const input=useRef(null);
 const refresh=async()=>setItems(await all());
 useEffect(()=>{refresh().catch(e=>setNotice('Falha ao abrir o armazenamento: '+e.message));
-const refreshTelegram=async()=>{try{const status=await fetch('http://127.0.0.1:8000/api/telegram/status').then(r=>r.json());setTelegramConnected(!!status.connected);
-if(status.connected){const response=await fetch('http://127.0.0.1:8000/api/cloud/usage');if(response.ok)setDriveUsage(await response.json())}
+const refreshTelegram=async()=>{try{const status=await fetch(backendOrigin+'/api/telegram/status').then(r=>r.json());setTelegramConnected(!!status.connected);
+if(status.connected){const response=await fetch(backendOrigin+'/api/cloud/usage');if(response.ok)setDriveUsage(await response.json())}
 else setDriveUsage(null)}catch{setTelegramConnected(false);setDriveUsage(null)}};
 refreshTelegram();const timer=setInterval(refreshTelegram,12000);return()=>clearInterval(timer)},[]);
 function msg(t){showToast({kind:'info',message:t})}
@@ -922,4 +924,16 @@ return <div className="shell"><aside className="rail"><div className="logo" titl
 const params=new URLSearchParams(window.location.search);
 const matchShare=window.location.pathname.match(/^\/(?:file|folder)\/d\/([A-Za-z0-9_-]+)\/?$/),matchEmbed=window.location.pathname.match(/^\/embed\/d\/([A-Za-z0-9_-]+)\/?$/);
 const publicToken=matchShare?.[1]||params.get('share'),embedToken=matchEmbed?.[1]||params.get('embed');
-createRoot(document.getElementById('root')).render(embedToken?<EmbeddedMedia token={embedToken}/>:publicToken?<PublicShareView token={publicToken}/>:<App/>);
+async function startDriveCloud() {
+  if (window.__TAURI_INTERNALS__) {
+    try {
+      // This is provided by the desktop host, not discovered through random
+      // ports or exposed by a public endpoint.
+      backendOrigin = await invoke('backend_origin');
+    } catch (error) {
+      console.error('Não foi possível descobrir a porta do backend local.', error);
+    }
+  }
+  createRoot(document.getElementById('root')).render(embedToken?<EmbeddedMedia token={embedToken}/>:publicToken?<PublicShareView token={publicToken}/>:<App/>);
+}
+startDriveCloud();
