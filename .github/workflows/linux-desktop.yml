@@ -55,7 +55,8 @@ jobs:
           const backend = readFileSync('backend/server.py', 'utf8');
           assert.ok(backend.indexOf('load_dotenv(DATA / ".env", override=True)') < backend.indexOf('API_ID = int(os.environ.get('), 'Stored Telegram credentials must load before API initialization');
           const tauriConfig = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-          assert.equal(tauriConfig.app.windows[0].dragDropEnabled, false, 'Desktop must use HTML5 file drop');
+          assert.equal(tauriConfig.app.windows[0].dragDropEnabled, true, 'Desktop must enable native OS drag/drop');
+          assert.ok(source.includes('getCurrentWebview().onDragDropEvent'), 'Desktop must listen for native OS file drop');
           const style = readFileSync('src/style.css', 'utf8');
           assert.match(style, /main>header \.avatar\{margin-left:auto/, 'Profile avatar must remain pinned to right');
           console.log('Desktop frontend origin initialization OK');
