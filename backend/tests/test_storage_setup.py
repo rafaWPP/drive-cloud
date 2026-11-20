@@ -20,6 +20,8 @@ class FakeChannel:
         self.creator = creator
         self.broadcast = broadcast
         self.photo = object()
+        self.username = None
+        self.usernames = []
 
 
 class FakeTelegramClient:
@@ -123,6 +125,28 @@ class StorageRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(caught.exception.status_code, 409)
         self.assertEqual(self.client.created, 0)
         self.assertEqual(self.saved, [])
+
+    async def test_public_channel_is_never_used_as_private_storage(self):
+        public = FakeChannel(675)
+        public.username = "drive_cloud_public"
+        self.client.dialogs = [public]
+        with self.assertRaises(HTTPException) as caught:
+            await server.ensure_storage()
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertIn("público", caught.exception.detail)
+        self.assertEqual(self.client.created, 0)
+        self.assertEqual(self.saved, [])
+
+    async def test_linked_channel_becoming_public_is_blocked(self):
+        public = FakeChannel(345)
+        public.username = "public_backup"
+        self.links["123"] = {"channel_id": "345"}
+        self.client.dialogs = [public]
+        with self.assertRaises(HTTPException) as caught:
+            await server.ensure_storage()
+        self.assertEqual(caught.exception.status_code, 409)
+        self.assertIn("público", caught.exception.detail)
+        self.assertEqual(self.client.created, 0)
 
     async def test_unexpected_telegram_lookup_failure_is_visible(self):
         self.client.error = RuntimeError("Fake internal Telegram failure")
