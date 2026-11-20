@@ -416,10 +416,13 @@ async def shutdown():
         await client.disconnect()
 
 # Rotas locais de arquivos; usam a mesma sessão, vínculo de canal e trava de conta.
+from catalog_telegram import build_catalog_sync_router
 from storage_api import build_router
 from backup_api import build_backup_router, backup_scheduler
 from share_api import build_share_router
 app.include_router(build_router(authorized_account, channel_links, lock))
+from storage_api import connection, channel_id
+app.include_router(build_catalog_sync_router(authorized_account, channel_links, lock, connection, channel_id))
 app.include_router(build_backup_router(authorized_account, channel_links, lock))
 app.include_router(build_share_router(authorized_account, channel_links, lock))
 
