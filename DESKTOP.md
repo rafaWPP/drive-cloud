@@ -1,37 +1,41 @@
-# Drive Cloud — início do aplicativo instalável
+# Drive Cloud — aplicativo Linux experimental (Tauri 2)
 
-Esta branch adiciona a base do aplicativo Linux usando **Tauri 2**, reaproveitando o frontend React/Vite existente. Nenhum dado, sessão do Telegram ou banco SQLite é alterado por esta etapa.
+O build do GitHub Actions agora tenta gerar um **.deb incluindo a interface React e o conector Telegram Python em um executável local** (PyInstaller). O cliente não precisa instalar Python para iniciar esse conector. O código atual ainda não foi validado por um teste de instalação ponta a ponta.
 
-## Primeira versão: limitação importante
+## Instalar para teste
 
-**Este empacotamento ainda não inclui o backend Python/Telethon.** A janela desktop abre o frontend, mas os recursos que chamam `/api` só funcionarão com o backend de desenvolvimento ativo. Não distribuir este pacote como produto final e não afirmar que login, upload e download funcionam sem serviço local.
+1. Acesse **Actions > Linux Desktop (Tauri)** nesta branch.
+2. Quando houver execução bem-sucedida, baixe o artefato `drive-cloud-linux-deb-experimental`, extraia o ZIP e instale o `.deb`.
+3. Para testar login, a conta precisa de credenciais de API MTProto. Como **não colocamos segredos no GitHub**, configure localmente `~/.local/share/br.com.drivecloud.app/.env` (caminho a confirmar com o app instalado e versão de Tauri) contendo:
+   ```dotenv
+   TELEGRAM_API_ID=seu_id
+   TELEGRAM_API_HASH=seu_hash
+   ```
+   O caminho efetivo usado pelo app é o diretório retornado por `app_local_data_dir()`. Reinicie o aplicativo depois de configurar.
+4. **Não** envie a pasta de dados, arquivos `.session` nem `.env` ao GitHub.
 
-A meta da próxima etapa é incluir um processo local integrado/sidecar ao instalador com inicialização e encerramento automáticos e armazenamento seguro das sessões. Isso **não** significa instalar um servidor em nuvem da empresa, apenas encapsular o serviço local atual; uma migração posterior para integração nativa também poderá ser avaliada.
+> O login ainda exige configuração manual no piloto. Antes de distribuir comercialmente, é necessário resolver a configuração do ID/hash do aplicativo MTProto, proteger a API local contra outras aplicações na máquina, criar testes e validar o empacotamento.
 
-## Compilar no Linux
+## Desenvolvimento
 
-Requisitos: Node.js 22, Rust, bibliotecas de desenvolvimento do Tauri 2/WebKitGTK 4.1.
+- `npm install`
+- `npm run dev` e backend Python normal continuam disponíveis sem Tauri.
+- `npm run tauri:dev` exige primeiro gerar o binário sidecar `src-tauri/binaries/drive-cloud-backend-<target-triple>` com PyInstaller, assim como o workflow.
+- `npm run tauri:build` gera o pacote `.deb` se todas as dependências estiverem instaladas.
 
-```bash
-sudo apt-get update
-sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
-npm install
-npx tauri icon public/drive-cloud-logo.svg
-npm run tauri:dev
-# ou gerar o instalador:
-npm run tauri:build
-```
+## Dados e compatibilidade
 
-Arquivo esperado: `src-tauri/target/release/bundle/deb/*.deb`.
+O sidecar usa uma pasta própria de dados persistentes via `DRIVE_CLOUD_DATA_DIR`, definida pelo aplicativo. **Os dados antigos em `backend/.data` não são migrados automaticamente.** Nunca apague ou substitua essa pasta sem antes fazer uma cópia segura; ela contém a sessão Telegram e catálogo SQLite com a estrutura de pastas.
 
-Também é possível abrir a aba **Actions** do GitHub e executar **Linux Desktop (Tauri)**. Se o workflow passar, o arquivo `.deb` fica disponível como artefato da execução.
+Os arquivos continuam armazenados no canal Telegram; a organização do Drive ainda depende de SQLite local, e a sincronização entre dispositivos **não está pronta**. Links `localhost` não funcionam como compartilhamento público.
 
-## Próximas etapas antes de testar o produto completo
+## Próximos testes obrigatórios
 
-1. Empacotar a integração Telegram local no aplicativo, sem exigir Python ou terminal do usuário.
-2. Corrigir a comunicação `/api` com o processo local no WebView, incluindo restrições de acesso e segurança da sessão.
-3. Persistir e recuperar metadados do catálogo também no Telegram para sincronização entre dispositivos.
-4. Testar login, upload, download, prévias, desconexão e atualizações; depois preparar Windows e Android.
-5. Validar limites, termos e riscos de uso comercial da API Telegram.
+- Validar compilação e instalação `.deb` real em distribuição Linux compatível.
+- Garantir que o lado Tauri consegue requisitar a API local, inclusive CORS e prévias.
+- Validar login/QR, transferências, arquivos locais, reinicialização, permissões e encerramento.
+- Criar onboarding de credenciais e gestão segura de sessões, controlar acesso à porta local.
+- Sincronizar catálogo/pastas entre dispositivos pelo Telegram.
+- Preparar Windows e Android com arquiteturas nativas apropriadas.
 
-Nunca publicar `backend/.env`, `backend/.data`, arquivos `.session` ou credenciais no repositório.
+Sem hospedagem própria para arquivos, o produto continua dependendo dos termos e limites do Telegram.
