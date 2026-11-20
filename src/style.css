@@ -493,3 +493,18 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .upload-foot button{border:0;background:#39393d;border-radius:7px;padding:8px 10px;color:#e7e7e9;font-size:10px;font-weight:650;flex-shrink:0}
 .upload-foot button:hover{background:#49494d}
 @media(max-width:560px){.upload-tray{right:10px;bottom:10px;width:calc(100vw - 20px)}.upload-head{padding:12px}.upload-head .upload-head-actions button.upload-cancel-all{padding:0 7px}.upload-tabs{overflow-x:auto}}
+
+/* Deletion progress uses the existing toast location, not a separate transfer panel. */
+.dc-toast.dc-toast-progress{width:min(540px,calc(100vw - 28px));min-width:0;max-width:none;display:flex;gap:12px;align-items:center;background:#2d2225;border:1px solid #824049;color:#f5edef;padding:14px 15px;box-shadow:0 16px 48px #000a;animation:dc-toast-in .28s cubic-bezier(.2,.8,.2,1) both}
+.dc-toast-symbol.deleting{background:#6c303a;color:#ffb8c2;width:36px;height:36px;flex-shrink:0}
+.dc-toast-progress-body{min-width:0;flex:1}
+.dc-toast-progress-title{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.dc-toast-progress-title strong{font-size:12px;font-weight:750;color:#f9e8ec}
+.dc-toast-progress-title span{font-size:11px;font-weight:650;color:#ffb2be}
+.dc-toast-progress-body p{margin:5px 0 10px;font-size:11px;color:#d1b9bf;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dc-toast-progress-track{width:100%;height:5px;background:#59373f;border-radius:99px;overflow:hidden}
+.dc-toast-progress-track>span{display:block;height:100%;background:#ed677c;border-radius:99px;transition:width .2s ease}
+.dc-toast-progress-cancel{border:0;border-radius:8px;background:#62343c;color:#ffe3e8;font-size:11px;font-weight:700;height:32px;padding:0 11px;flex-shrink:0}
+.dc-toast-progress-cancel:hover:not(:disabled){background:#79404a}
+.dc-toast-progress-cancel:disabled{opacity:.5}
+@media(max-width:540px){.dc-toast.dc-toast-progress{gap:8px;padding:12px}.dc-toast-progress-cancel{padding:0 8px}}
