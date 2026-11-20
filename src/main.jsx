@@ -1155,7 +1155,7 @@ function BackupPages({section,onToast}){
 }
 function SyncPages({section,onToast}){
  const [folders,setFolders]=useState([]),[path,setPath]=useState(''),[preview,setPreview]=useState(null),[busy,setBusy]=useState(false),[running,setRunning]=useState(null),[error,setError]=useState(''),[lastResult,setLastResult]=useState(null);
- const [remoteRoots,setRemoteRoots]=useState([]),[selectedRoot,setSelectedRoot]=useState(''),[pullPreview,setPullPreview]=useState(null),[pullResult,setPullResult]=useState(null);
+ const [remoteFolders,setRemoteFolders]=useState([]),[selectedRoot,setSelectedRoot]=useState(''),[remoteName,setRemoteName]=useState(''),[newMode,setNewMode]=useState('backup'),[autoStart,setAutoStart]=useState(false),[pullPreview,setPullPreview]=useState(null),[pullResult,setPullResult]=useState(null);
  async function request(endpoint,method='GET',payload){
   const response=await fetch(backendOrigin+'/api/sync'+endpoint,{method,headers:payload?{'Content-Type':'application/json'}:undefined,body:payload?JSON.stringify(payload):undefined});
   const data=await response.json().catch(()=>({}));
@@ -1163,7 +1163,7 @@ function SyncPages({section,onToast}){
   return data;
  }
  async function refresh(){
-  try{const [data,roots]=await Promise.all([request('/folders'),request('/remote-roots')]);setFolders(data.folders||[]);setRemoteRoots(roots.roots||[])}catch(e){setError(e.message)}
+  try{const [data,remote]=await Promise.all([request('/folders'),request('/remote-folders')]);setFolders(data.folders||[]);setRemoteFolders(remote.folders||[])}catch(e){setError(e.message)}
  }
  useEffect(()=>{refresh()},[]);
  async function browseFolder(){
@@ -1171,7 +1171,7 @@ function SyncPages({section,onToast}){
   try{
    if(!window.__TAURI_INTERNALS__){setError('Para escolher uma pasta do computador, abra o aplicativo instalado.');return}
    const selected=await openNativeDialog({directory:true,multiple:false,title:'Escolher pasta para backup no Telegram'});
-   if(typeof selected==='string')setPath(selected);
+   if(typeof selected==='string'){setPath(selected);setRemoteName(selected.split(/[\\/]/).filter(Boolean).at(-1)||'Minha pasta');setPreview(null)}
   }catch(e){setError('Não foi possível abrir o seletor de pastas: '+String(e))}
  }
  async function inspect(){
@@ -1182,11 +1182,20 @@ function SyncPages({section,onToast}){
  }
  async function register(){
   if(!preview)return;
+  const name=(remoteName||'').trim();
+  if(!selectedRoot&&!name){setError('Informe o nome da nova pasta no Meu Drive ou escolha uma pasta existente.');return}
+  if(newMode==='two-way'&&!confirm('Vincular as duas pastas em duas direções? Arquivos existentes no Telegram poderão ser baixados para o PC. O aplicativo preservará arquivos divergentes e não apagará automaticamente arquivos. Recomenda-se começar com arquivos de teste.'))return;
   setBusy(true);setError('');
   try{
-   await request('/folders','POST',{path:preview.path,remote_root_id:selectedRoot||null});
-   setPath('');setSelectedRoot('');setPreview(null);await refresh();
-   onToast?.({kind:'success',message:'Pasta adicionada. O backup automático começa desativado.'});
+   const result=await request('/folders','POST',{
+    path:preview.path,
+    remote_root_id:selectedRoot||null,
+    remote_folder_name:selectedRoot?null:name,
+    mode:newMode,automatic:autoStart
+   });
+   if(result.already_exists){setError('Esta pasta do computador já está vinculada. Remova o vínculo antigo antes de alterá-lo.');return}
+   setPath('');setSelectedRoot('');setRemoteName('');setNewMode('backup');setAutoStart(false);setPreview(null);await refresh();
+   onToast?.({kind:'success',message:'Vínculo criado: Meu Drive / '+result.remote_path+'. '+(autoStart?'Sincronização automática ativada.':'Clique em Sincronizar agora para iniciar.'),duration:7000});
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
  async function runOne(folder){
@@ -1249,23 +1258,41 @@ function SyncPages({section,onToast}){
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
  return <div className="dc-module-page">
-  <div className="dc-module-note"><RefreshCw size={20}/><div><strong>Como funciona a sincronização?</strong><p><b>Backup:</b> envia arquivos do PC ao seu canal privado. <b>Duas direções:</b> também recupera arquivos do Telegram sem sobrescrever versões divergentes. <b>Sincronizar agora:</b> executa manualmente; marque <b>Automático</b> para verificar a pasta a cada 2 minutos. Os arquivos no Telegram não são apagados ao excluí-los do PC.</p></div></div>
+  <div className="dc-module-note"><RefreshCw size={20}/><div><strong>Suas pastas, no PC e no Meu Drive</strong><p>Vincule uma pasta do computador a qualquer pasta do Meu Drive, como no Google Drive. <b>Backup</b> envia alterações do PC; <b>Duas direções</b> também recupera arquivos do Drive sem sobrescrever divergências. Marque <b>Automático</b> para verificar a cada dois minutos. Nesta versão, exclusões não são propagadas automaticamente.</p></div></div>
   {error&&<div className="public-share-error" role="alert">{error}</div>}
-  {section==='sync'&&<div className="dc-module-section dc-local-folder-setup"><h3>Adicionar pasta</h3><p>Escolha uma pasta. Primeiro analisaremos os arquivos e mostraremos o que poderá ser enviado; nada é enviado até você confirmar.</p>
-   <div className="dc-folder-path-row"><input aria-label="Pasta do computador" value={path} onChange={e=>{setPath(e.target.value);setPreview(null)}} placeholder="Selecione uma pasta do computador"/><button type="button" disabled={busy} onClick={browseFolder}><Folder size={15}/> Procurar</button><button type="button" disabled={busy||!path.trim()} onClick={inspect}>Analisar</button></div>
-   <button type="button" className="dc-sync-refresh" disabled={busy||!!running} onClick={updateCatalog}><RefreshCw size={15}/> Buscar backups de outros dispositivos no Telegram</button>
-   {remoteRoots.length>0&&<div className="dc-remote-root-selection">
-     <strong>Origem do backup</strong>
-     <DriveMenuSelect label="Origem do backup no Telegram" value={selectedRoot} onChange={setSelectedRoot}
+  {section==='sync'&&<div className="dc-module-section dc-local-folder-setup"><h3>Vincular duas pastas</h3><p>Escolha uma pasta do computador e a pasta correspondente dentro do Meu Drive. Depois defina se deseja apenas backup ou sincronização nas duas direções.</p>
+   <div className="dc-folder-connection">
+    <div className="dc-sync-local-side">
+     <div className="dc-sync-side-heading"><HardDrive size={17}/><strong>1. Pasta do computador</strong></div>
+     <div className="dc-folder-path-row"><input aria-label="Pasta do computador" value={path} onChange={e=>{const value=e.target.value;setPath(value);setRemoteName(value.split(/[\\/]/).filter(Boolean).at(-1)||'');setPreview(null)}} placeholder="Escolha uma pasta do PC"/><button type="button" disabled={busy} onClick={browseFolder}><Folder size={15}/> Procurar</button><button type="button" disabled={busy||!path.trim()} onClick={inspect}>Analisar</button></div>
+    </div>
+    <div className="dc-sync-link-line"><RefreshCw size={18}/><span>Vincular</span></div>
+    <div className="dc-sync-drive-side">
+     <div className="dc-sync-side-heading"><Cloud size={17}/><strong>2. Pasta no Meu Drive</strong></div>
+     <DriveMenuSelect label="Escolher pasta no Meu Drive" value={selectedRoot} onChange={setSelectedRoot}
       disabled={busy||!!running} icon={Folder}
-      options={[{value:'',label:'Criar novo backup no Telegram',hint:'Criar uma pasta de backup para o computador atual'},
-       ...remoteRoots.map(root=>({value:root.id,label:root.name,hint:'Reutilizar backup já encontrado no Telegram'}))]}/>
-     <small>Selecione um backup existente para reutilizar a pasta remota, ou crie um novo. Isso não cria outro canal Telegram.</small>
-    </div>}
-   {preview&&<div className="dc-folder-preview"><strong>{preview.files} arquivos • {size(preview.bytes)}</strong><small>{preview.over_limit?preview.over_limit+' arquivo(s) acima de 512 MB serão ignorados.':'Nenhum arquivo acima de 512 MB.'}</small><button className="dc-module-primary" disabled={busy} onClick={register}>Adicionar ao Drive Cloud</button></div>}
+      options={[{value:'',label:'Criar nova pasta no Meu Drive',hint:'Nova pasta na raiz do Drive'},
+       ...remoteFolders.map(folder=>({value:folder.id,label:'Meu Drive / '+folder.path,
+        hint:folder.linked_local_path?'Já vinculada neste computador: '+folder.linked_local_path:'Usar esta pasta do Meu Drive',
+        disabled:!!folder.linked_local_path}))]}/>
+     {!selectedRoot&&<label className="dc-new-remote-folder-name">Nome da nova pasta no Meu Drive
+      <input type="text" value={remoteName} maxLength={180} onChange={e=>setRemoteName(e.target.value)} placeholder="Ex.: Documentos, Fotos ou Projetos" disabled={busy}/>
+     </label>}
+     <small>Você pode escolher qualquer pasta existente, inclusive subpastas. Isso não cria outro canal no Telegram.</small>
+    </div>
+   </div>
+   <button type="button" className="dc-sync-refresh" disabled={busy||!!running} onClick={updateCatalog}><RefreshCw size={15}/> Atualizar pastas do Drive (outros computadores)</button>
+   <div className="dc-sync-setup-options"><label className="dc-sync-setup-mode">3. Como sincronizar?
+    <DriveMenuSelect label="Como sincronizar" value={newMode} onChange={setNewMode} disabled={busy} icon={RefreshCw}
+     options={[{value:'backup',label:'Somente backup (PC → Meu Drive)',hint:'Enviar arquivos novos e alterados do computador'},
+      {value:'two-way',label:'Duas direções (PC ↔ Meu Drive)',hint:'Também recuperar arquivos do Drive, preservando conflitos'}]}/>
+   </label>
+   <label className="dc-sync-auto-label"><input type="checkbox" checked={autoStart} disabled={busy} onChange={e=>setAutoStart(e.target.checked)}/> Sincronizar automaticamente a cada 2 minutos</label>
+   </div>
+   {preview&&<div className="dc-folder-preview"><strong>{preview.files} arquivo(s) na pasta do PC • {size(preview.bytes)}</strong><small>{preview.over_limit?preview.over_limit+' arquivo(s) acima de 512 MB serão ignorados.':'Nenhum arquivo acima de 512 MB.'} Arquivos existentes na pasta do Drive serão preservados; o sistema não apaga automaticamente arquivos.</small><button className="dc-module-primary" disabled={busy||(!selectedRoot&&!remoteName.trim())} onClick={register}><RefreshCw size={16}/> Vincular pastas</button></div>}
   </div>}
   <div className="dc-module-section"><h3>{section==='devices'?'Pastas neste dispositivo':section==='syncActivity'?'Atividade de backup':'Pastas configuradas'}</h3><p>O Drive Cloud envia e recupera até três arquivos por execução; no modo duas direções, consulta os snapshots do catálogo e preserva arquivos divergentes com nomes diferentes. O monitoramento automático roda a cada dois minutos quando ativado.</p>
-   <div className="dc-folder-sync-list">{folders.length?folders.map(folder=><div className="dc-folder-sync-item" key={folder.id}><div className="dc-folder-sync-title"><Folder size={19}/><div><strong>{folder.path.split(/[\\/]/).filter(Boolean).at(-1)||folder.path}</strong><small title={folder.path}>{folder.path}</small></div></div>
+   <div className="dc-folder-sync-list">{folders.length?folders.map(folder=><div className="dc-folder-sync-item" key={folder.id}><div className="dc-folder-sync-title"><Folder size={19}/><div><strong>{folder.path.split(/[\\/]/).filter(Boolean).at(-1)||folder.path}</strong><small title={folder.path}>PC: {folder.path}</small><small className={'dc-sync-mapped-destination'+(!folder.remote_available?' is-missing':'')} title={folder.remote_path}>Meu Drive: {folder.remote_path}</small></div></div>
     <div className="dc-folder-sync-actions"><span>{folder.enabled?'Sincronização automática ativada':'Sincronização automática desativada'}{folder.last_run?' • Última execução: '+new Date(folder.last_run*1000).toLocaleString('pt-BR'):''}</span><button disabled={!!running||busy} onClick={()=>runOne(folder)}>{running===folder.id?'Enviando...':'Sincronizar agora'}</button><button type="button" disabled={!!running||busy} onClick={()=>previewRemote(folder)}>Recuperar do Telegram</button><div className="dc-sync-mode"><span>Modo</span><DriveMenuSelect label={'Modo de sincronização de '+folder.path}
       value={folder.mode||'backup'} onChange={value=>setMode(folder,value)} disabled={!!running||busy} icon={RefreshCw}
       options={[{value:'backup',label:'Backup (PC → Telegram)',hint:'Enviar arquivos novos e alterados do computador'},
