@@ -1476,3 +1476,10 @@ main>header .search{flex:1 1 320px;max-width:465px}
 .dc-folder-sync-actions label{display:flex;align-items:center;gap:7px;white-space:nowrap;font-size:12px;color:#d4d9e2}
 .dc-folder-sync-actions input{accent-color:#4787e9}
 .dc-sync-error,.dc-sync-result{color:#ebb2a4;font-size:11px;line-height:1.5}
+
+/* Sync reconciliation: restrained desktop controls and explicit safety preview. */
+.dc-remote-root-selection{display:flex;flex-direction:column;gap:7px;max-width:600px;font-size:12px;color:#dce2eb}
+.dc-remote-root-selection select,.dc-sync-mode select{min-height:35px;background:#292c32;color:#e5eaf2;border:1px solid #4b505a;border-radius:8px;padding:6px 10px;font-size:12px}
+.dc-remote-root-selection small{color:#a9b4c4;font-size:11px;line-height:1.6}
+.dc-sync-mode{display:flex;align-items:center;gap:8px;font-size:11px;color:#abb6c6}
+.dc-folder-preview p{margin:0;color:#cbd8e9;font-size:12px;line-height:1.5}
