@@ -15,7 +15,7 @@ class ChannelBrandImageTests(unittest.TestCase):
     def test_photo_uses_bundled_brand_and_is_valid_jpeg(self):
         self.assertGreater(len(LOGO_WEBP_BASE64), 1000)
         data = channel_avatar_jpeg()
-        self.assertTrue(data.startswith(b"\\xff\\xd8"))
+        self.assertTrue(data.startswith(bytes.fromhex("ffd8")))
         with Image.open(io.BytesIO(data)) as image:
             image.load()
             self.assertEqual(image.format, "JPEG")
