@@ -205,12 +205,26 @@ function DriveVideoPlayer({src,name,onError}){
 }
 function SharedMediaDisplay({src,statusUrl,name,video=false}){
  const [failure,setFailure]=useState(''),[attempt,setAttempt]=useState(0);
- async function fail(){
+ async function fail(event){
+  const mediaError=video?event?.currentTarget?.error:null;
   try{
-   const response=await fetch(statusUrl,{cache:'no-store'});
-   if(!response.ok){const body=await response.json().catch(()=>({}));setFailure(body.detail||'Mídia indisponível (HTTP '+response.status+').')}
-   else setFailure('Não foi possível exibir esta mídia no navegador. Verifique se o formato é compatível.')
-  }catch{setFailure('Não foi possível conectar ao backend local. Verifique se ele está ativo.')}
+   // Checking the actual playback endpoint catches HTTP 403/416/500 errors
+   // that the lightweight catalog-only media-status endpoint cannot detect.
+   const response=video?await fetch(src,{headers:{Range:'bytes=0-0'},cache:'no-store'}):
+     await fetch(statusUrl,{cache:'no-store'});
+   if(!response.ok){
+    const body=await response.json().catch(()=>({}));
+    setFailure(body.detail||'Falha ao carregar mídia (HTTP '+response.status+').');
+   }else if(mediaError?.code===4){
+    setFailure('Este vídeo utiliza um formato ou codec não compatível com este navegador.');
+   }else if(mediaError?.code===3){
+    setFailure('O navegador não conseguiu decodificar o vídeo. O arquivo pode estar danificado ou usar um codec incompatível.');
+   }else{
+    setFailure('O servidor respondeu, mas o navegador não conseguiu abrir a mídia. Verifique o formato e tente novamente.');
+   }
+  }catch{
+   setFailure('Não foi possível conectar ao backend local. Confirme que ele está ativo e reinicie a prévia.');
+  }
  }
  return <div className="dc-shared-media-view">
   {failure?<div className="dc-shared-media-error"><CircleAlert size={24}/><strong>Prévia indisponível</strong><p>{failure}</p><button type="button" onClick={()=>{setFailure('');setAttempt(x=>x+1)}}><RefreshCw size={15}/> Tentar novamente</button></div>
