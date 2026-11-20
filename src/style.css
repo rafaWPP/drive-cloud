@@ -1403,3 +1403,14 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .dc-upload-v2 .upload-job-main>.dc-upload-path{margin-top:6px}
 .dc-upload-v2 .dc-compact-progress-label{font-variant-numeric:tabular-nums}
 @media(prefers-reduced-motion:reduce){.dc-upload-v2 .dc-upload-title-visual{transition:none}}
+
+/* Compact uploads: subtle queue position while each file takes its turn. */
+.dc-upload-v2 .dc-upload-queue-position{
+ margin-left:auto;
+ padding-left:8px;
+ flex-shrink:0;
+ color:#8795aa;
+ font-size:10px;
+ font-weight:600;
+ font-variant-numeric:tabular-nums;
+}
