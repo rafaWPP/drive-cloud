@@ -1,3 +1,4 @@
+mod download;
 use std::net::TcpListener;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -19,7 +20,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![backend_origin])
+        .invoke_handler(tauri::generate_handler![backend_origin, download::download_cloud_file])
         .setup(|app| {
             let data_dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
