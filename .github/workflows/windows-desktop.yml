@@ -18,6 +18,10 @@ on:
       - main
       - feature/tauri-desktop-linux
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   package-windows:
     runs-on: windows-2022
