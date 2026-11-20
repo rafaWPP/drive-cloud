@@ -9,18 +9,27 @@ import os
 import sqlite3
 import time
 import uuid
+import asyncio
+import zipfile
+import tempfile
+import shutil
 from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
 import pillow_jxl  # Register JPEG XL decoder for previews
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
 from pydantic import BaseModel, Field
 
 DB_PATH = Path(__file__).resolve().parent / ".data" / "files.sqlite3"
 MAX_SIZE = 20 * 1024 * 1024  # Initial bounded MVP, not a large-file backup tool.
 # Transient progress is local to the running backend process.
 UPLOAD_PROGRESS = {}
+ZIP_JOBS = {}
+ZIP_MAX_ITEMS = 250
+ZIP_MAX_TOTAL = 300 * 1024 * 1024
+ZIP_DIR = DB_PATH.parent / 'zip_exports'
+ZIP_DIR.mkdir(parents=True,exist_ok=True)
 
 def update_upload_progress(upload_id, stage, sent=0, total=0):
     if not upload_id:
@@ -213,6 +222,122 @@ def build_router(authorized_account, channel_links, lock):
                 raise
             except Exception as exc:
                 raise HTTPException(502, "Prévia indisponível: "+type(exc).__name__) from exc
+
+    def zip_safe_name(value: str) -> str:
+        clean = str(value or "arquivo").replace("\\", "_").replace("/", "_").replace("\\x00", "_").strip()
+        return clean if clean not in ("", ".", "..") else "arquivo"
+
+    @router.post("/folders/{folder_id}/zip")
+    async def prepare_folder_zip(folder_id: str):
+        """Create a temporary ZIP containing the selected folder's hierarchy."""
+        async with lock:
+            client, account = await authorized_account()
+            cid = channel_id(channel_links, account)
+            with connection() as db:
+                all_rows = [dict(row) for row in db.execute(
+                    "SELECT * FROM nodes WHERE account=? AND trashed=0", (account,)).fetchall()]
+            mapping = {row["id"]:row for row in all_rows}
+            root = mapping.get(folder_id)
+            if not root or root["kind"] != "folder":
+                raise HTTPException(404, "Pasta não encontrada.")
+            children = {}
+            for row in all_rows:
+                children.setdefault(row["parent"], []).append(row)
+            entries = []
+            todo = [(root, zip_safe_name(root["name"]) + "/")]
+            visited = set()
+            while todo:
+                row, path = todo.pop()
+                if row["id"] in visited:
+                    raise HTTPException(409,"Hierarquia de pastas inválida.")
+                visited.add(row["id"])
+                entries.append((row,path))
+                if len(entries) > ZIP_MAX_ITEMS:
+                    raise HTTPException(413,"Máximo de 250 itens por ZIP nesta versão.")
+                if row["kind"]=="folder":
+                    for child in children.get(row["id"],[]):
+                        filename=zip_safe_name(child["name"])
+                        todo.append((child,path+filename+("/" if child["kind"]=="folder" else "")))
+            total = sum(int(row["size"]) for row,_ in entries if row["kind"]=="file")
+            if total > ZIP_MAX_TOTAL:
+                raise HTTPException(413,"Limite de 300 MB de arquivos por ZIP nesta versão.")
+            if len([j for j in ZIP_JOBS.values() if j["state"] in ("preparing","downloading")]) >= 2:
+                raise HTTPException(429,"Já existem duas compactações em andamento.")
+            now = time.monotonic()
+            for key,job in list(ZIP_JOBS.items()):
+                if now-job["updated"] > 1800 and job["state"] not in ("preparing","downloading"):
+                    if job.get("path"):
+                        Path(job["path"]).unlink(missing_ok=True)
+                    ZIP_JOBS.pop(key,None)
+            task_id = str(uuid.uuid4())
+            target = ZIP_DIR / (task_id+".zip")
+            ZIP_JOBS[task_id] = {"owner":account,"state":"preparing","done":0,
+                "count":len(entries),"total_bytes":total,"processed_bytes":0,
+                "name":zip_safe_name(root["name"])+".zip","path":str(target),
+                "updated":time.monotonic(),"error":None}
+            async def build():
+                job = ZIP_JOBS[task_id]
+                job["state"]="downloading"
+                used_names=set()
+                try:
+                    with zipfile.ZipFile(target,"w",compression=zipfile.ZIP_DEFLATED,
+                                         compresslevel=5,allowZip64=True) as archive:
+                        for row,arcname in entries:
+                            # Prevent duplicate ZIP entries when siblings have the same name.
+                            if arcname in used_names:
+                                raise RuntimeError("Nomes duplicados na mesma pasta. Renomeie os itens antes de compactar.")
+                            used_names.add(arcname)
+                            if row["kind"]=="folder":
+                                archive.writestr(arcname,b"")
+                            else:
+                                message=await client.get_messages(cid,ids=row["message_id"])
+                                if not message or not message.media:
+                                    raise RuntimeError("Arquivo ausente no canal: "+row["name"])
+                                raw=await client.download_media(message,file=bytes)
+                                if raw is None:
+                                    raise RuntimeError("Falha ao recuperar: "+row["name"])
+                                archive.writestr(arcname,raw)
+                                job["processed_bytes"]+=len(raw)
+                            job["done"]+=1
+                            job["updated"]=time.monotonic()
+                            await asyncio.sleep(0)
+                    os.chmod(target,0o600)
+                    job["state"]="ready"
+                except Exception as exc:
+                    target.unlink(missing_ok=True)
+                    job["state"]="failed"
+                    job["error"]=str(exc)[:200]
+                finally:
+                    job["updated"]=time.monotonic()
+            asyncio.create_task(build())
+            return {"job_id":task_id,"count":len(entries),"total_bytes":total}
+
+    @router.get("/zip/{job_id}")
+    async def folder_zip_status(job_id: str):
+        try:
+            uuid.UUID(job_id)
+        except ValueError:
+            raise HTTPException(422,"Identificador inválido.")
+        _, account = await authorized_account()
+        job=ZIP_JOBS.get(job_id)
+        if not job or job["owner"]!=account:
+            raise HTTPException(404,"Compactação não encontrada.")
+        return {key:job[key] for key in ("state","done","count","total_bytes","processed_bytes","error","name")}
+
+    @router.get("/zip/{job_id}/download")
+    async def download_folder_zip(job_id: str):
+        try:
+            uuid.UUID(job_id)
+        except ValueError:
+            raise HTTPException(422,"Identificador inválido.")
+        _, account = await authorized_account()
+        job=ZIP_JOBS.get(job_id)
+        if not job or job["owner"]!=account:
+            raise HTTPException(404,"Compactação não encontrada.")
+        if job["state"]!="ready" or not Path(job["path"]).exists():
+            raise HTTPException(409,"O arquivo ZIP ainda não está pronto.")
+        return FileResponse(job["path"],media_type="application/zip",filename=job["name"],
+                            headers={"Cache-Control":"no-store"})
 
     @router.get("/download/{file_id}")
     async def download(file_id: str):
