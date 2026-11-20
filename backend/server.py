@@ -256,6 +256,18 @@ async def assign_drive_channel_logo(client, channel):
         return False
 
 
+def channel_has_public_username(channel):
+    """A Telegram channel with an active public username cannot be a private
+    Drive Cloud storage destination, even if its visible title matches.
+    """
+    if getattr(channel, "username", None):
+        return True
+    return any(
+        getattr(entry, "active", False) and getattr(entry, "username", None)
+        for entry in (getattr(channel, "usernames", None) or [])
+    )
+
+
 async def locate_storage_channels(client, linked_id=None):
     """Resolve an existing private channel from dialogs even when Telethon's
     in-memory entity cache is empty after restart.
@@ -272,6 +284,9 @@ async def locate_storage_channels(client, linked_id=None):
             if entity.id == linked_id:
                 return [entity]
         elif entity.creator and entity.title == CHANNEL_TITLE:
+            if channel_has_public_username(entity):
+                raise HTTPException(409, detail="Já existe um canal Drive Cloud Storage público na sua conta. "
+                                                "Por segurança, não vamos usá-lo nem criar outro automaticamente.")
             matches.append(entity)
     return [] if linked_id is not None else matches
 
@@ -298,6 +313,9 @@ async def linked_storage_channel(client, entry):
             409, detail="O canal privado já está vinculado, mas não foi encontrado na conta Telegram conectada. "
                         "Confirme que é a mesma conta. Nenhum canal será criado ou excluído.",
         )
+    if channel_has_public_username(entity):
+        raise HTTPException(409, detail="O canal vinculado tem endereço público no Telegram. "
+                                        "Para proteger seus arquivos, o Drive Cloud não o utilizará como armazenamento privado.")
     return entity
 
 
