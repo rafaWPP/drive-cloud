@@ -1414,3 +1414,26 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
  font-weight:600;
  font-variant-numeric:tabular-nums;
 }
+
+/* Telegram API onboarding: lightweight, local-only setup above connection. */
+.tg-api-setup{margin:22px 0 12px;max-width:570px;display:flex;flex-direction:column;gap:14px}
+.tg-api-alert{display:flex;align-items:flex-start;gap:12px;padding:16px;border-radius:12px;background:#292b30;color:#e1e5eb}
+.tg-api-alert>svg{color:#9dc4fb;flex-shrink:0;margin-top:2px}
+.tg-api-alert strong{font-size:13px;font-weight:700}
+.tg-api-alert p{font-size:12px;color:#b7bcc6;line-height:1.55;margin:6px 0 12px}
+.tg-api-alert a{display:inline-flex;background:#337adc;color:white;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:650;text-decoration:none}
+.tg-api-alert a:hover{background:#468be9}
+.tg-api-instructions{background:#252529;border-radius:10px;padding:13px 15px;color:#c6cbd4;font-size:12px}
+.tg-api-instructions summary{cursor:pointer;font-weight:650;color:#e4e7ee}
+.tg-api-instructions ol{padding-left:19px;margin:12px 0;line-height:1.75}
+.tg-api-instructions p{font-size:11px;color:#aeb4bf;line-height:1.5}
+.tg-api-form{display:flex;flex-direction:column;gap:9px;max-width:500px}
+.tg-api-form label{font-size:12px;font-weight:700;color:#d9dce3}
+.tg-api-form input{width:100%;min-width:0;background:#19191c;color:#f3f3f5;border:1px solid #4a4b50;border-radius:9px;padding:12px 13px;outline:0;font-size:13px}
+.tg-api-form input:focus{border-color:#538fe9}
+.tg-api-hash-row{display:flex;align-items:stretch;gap:8px}
+.tg-api-hash-row button{border:0;border-radius:8px;background:#35363d;color:#dfe5ef;padding:0 12px;cursor:pointer;font-size:12px}
+.tg-api-form>button{background:#3479df;color:#fff;border:0;border-radius:9px;padding:12px 14px;font-weight:700;cursor:pointer}
+.tg-api-form>button:disabled{opacity:.55;cursor:not-allowed}
+.tg-api-form small{color:#9fa6b0;line-height:1.6;font-size:11px}
+.tg-api-error{color:#f4a5ad;font-size:12px;margin:0}
