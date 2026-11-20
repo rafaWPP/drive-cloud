@@ -11,7 +11,7 @@ class TelegramSessionDiagnosticTests(unittest.TestCase):
     def test_database_locked_reports_actionable_reason(self):
         result = safe_session_status_error(sqlite3.OperationalError("database is locked"))
         self.assertEqual(result["code"], "SESSION_DATABASE_BUSY")
-        self.assertIn("Feche outras instâncias", result["error"])
+        self.assertIn("Feche todas as janelas", result["error"])
 
     def test_read_only_session_is_preserved(self):
         result = safe_session_status_error(sqlite3.OperationalError("attempt to write a readonly database"))
