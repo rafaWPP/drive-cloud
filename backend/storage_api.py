@@ -272,11 +272,12 @@ def build_router(authorized_account, channel_links, lock):
             target = ZIP_DIR / (task_id+".zip")
             ZIP_JOBS[task_id] = {"owner":account,"state":"preparing","done":0,
                 "count":len(entries),"total_bytes":total,"processed_bytes":0,
-                "name":zip_safe_name(root["name"])+".zip","path":str(target),
+                "name":zip_safe_name(root["name"])+".zip","path":str(target), "phase":"waiting",
                 "updated":time.monotonic(),"error":None}
             async def build():
                 job = ZIP_JOBS[task_id]
                 job["state"]="downloading"
+                job["phase"]="telegram"
                 used_names=set()
                 try:
                     with zipfile.ZipFile(target,"w",compression=zipfile.ZIP_DEFLATED,
@@ -292,21 +293,29 @@ def build_router(authorized_account, channel_links, lock):
                                 message=await client.get_messages(cid,ids=row["message_id"])
                                 if not message or not message.media:
                                     raise RuntimeError("Arquivo ausente no canal: "+row["name"])
-                                raw=await client.download_media(message,file=bytes)
-                                if raw is not None and job["processed_bytes"]+len(raw)>ZIP_MAX_TOTAL:
+                                baseline = job["processed_bytes"]
+                                def zip_download_progress(received, total):
+                                    job["processed_bytes"] = min(ZIP_MAX_TOTAL, baseline+max(0,int(received)))
+                                    job["updated"] = time.monotonic()
+                                raw=await client.download_media(message,file=bytes,progress_callback=zip_download_progress)
+                                if raw is not None and baseline+len(raw)>ZIP_MAX_TOTAL:
                                     raise RuntimeError("O tamanho real dos arquivos ultrapassa 300 MB.")
                                 if raw is None:
                                     raise RuntimeError("Falha ao recuperar: "+row["name"])
-                                archive.writestr(arcname,raw)
-                                job["processed_bytes"]+=len(raw)
+                                job["phase"]="compressing"
+                                await asyncio.to_thread(archive.writestr,arcname,raw)
+                                job["processed_bytes"]=baseline+len(raw)
+                                job["phase"]="telegram"
                             job["done"]+=1
                             job["updated"]=time.monotonic()
                             await asyncio.sleep(0)
                     os.chmod(target,0o600)
                     job["state"]="ready"
+                    job["phase"]="ready"
                 except Exception as exc:
                     target.unlink(missing_ok=True)
                     job["state"]="failed"
+                    job["phase"]="failed"
                     job["error"]=str(exc)[:200]
                 finally:
                     job["updated"]=time.monotonic()
@@ -323,7 +332,7 @@ def build_router(authorized_account, channel_links, lock):
         job=ZIP_JOBS.get(job_id)
         if not job or job["owner"]!=account:
             raise HTTPException(404,"Compactação não encontrada.")
-        return {key:job[key] for key in ("state","done","count","total_bytes","processed_bytes","error","name")}
+        return {key:job[key] for key in ("state","done","count","total_bytes","processed_bytes","phase","error","name")}
 
     @router.get("/zip/{job_id}/download")
     async def download_folder_zip(job_id: str):
