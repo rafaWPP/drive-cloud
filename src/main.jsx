@@ -467,12 +467,93 @@ const homeRecent=nodes.filter(i=>!i.trashed&&i.kind==='file').sort((a,b)=>b.crea
 const homeFavorites=nodes.filter(i=>!i.trashed&&i.starred).sort((a,b)=>b.created-a.created).slice(0,5);
 const chosen=visible.filter(i=>selected.includes(i.id));
 const setJob=(id,values)=>setJobs(j=>j.map(x=>x.id===id?{...x,...values}:x));
+async function runResumableUpload(entry){
+ const file=entry.file;
+ // A stable sample fingerprint binds a resumed local staging session to the
+ // same filename, size, modification time and start/end bytes.
+ const head=await file.slice(0,65536).arrayBuffer();
+ const tail=await file.slice(Math.max(0,file.size-65536)).arrayBuffer();
+ const metadata=new TextEncoder().encode([file.name,file.size,file.lastModified].join(':'));
+ const sample=new Uint8Array(metadata.byteLength+head.byteLength+tail.byteLength);
+ sample.set(metadata,0);
+ sample.set(new Uint8Array(head),metadata.byteLength);
+ sample.set(new Uint8Array(tail),metadata.byteLength+head.byteLength);
+ const hex=bytes=>Array.from(new Uint8Array(bytes),n=>n.toString(16).padStart(2,'0')).join('');
+ const signature=hex(await crypto.subtle.digest('SHA-256',sample));
+ const key='dc-resume:'+signature+':'+(entry.parent||'root');
+ let uploadId;
+ try{uploadId=localStorage.getItem(key)}catch{}
+ if(!uploadId)uploadId=crypto.randomUUID();
+ const remember=id=>{try{localStorage.setItem(key,id)}catch{}};
+ const forget=()=>{try{localStorage.removeItem(key)}catch{}};
+ const json=async(response,context)=>{
+  const value=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(typeof value.detail==='string'?value.detail:context+' (HTTP '+response.status+')');
+  return value;
+ };
+ const begin=async(id)=>json(await fetch(base+'/resumable/start',{
+  method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({upload_id:id,name:file.name,size:file.size,
+    mime:file.type||'application/octet-stream',signature,parent:entry.parent||null}),
+ }),"Não foi possível iniciar a retomada");
+ let state;
+ try{state=await begin(uploadId)}
+ catch(error){
+  if(!/ID de upload pertence a outro arquivo|outro arquivo, pasta ou conta/.test(error.message))throw error;
+  forget();uploadId=crypto.randomUUID();state=await begin(uploadId);
+ }
+ remember(uploadId);
+ if(state.completed){forget();return}
+ let offset=state.offset||0;
+ const controller=new AbortController();
+ active.current=controller;
+ try{
+  while(offset<file.size){
+   if(cancelAll.current)throw Error('Envio pausado; escolha o mesmo arquivo novamente para retomar.');
+   const slice=file.slice(offset,Math.min(file.size,offset+(state.max_chunk_size||1048576)));
+   const data=await slice.arrayBuffer();
+   const checksum=hex(await crypto.subtle.digest('SHA-256',data));
+   const response=await fetch(base+'/resumable/'+encodeURIComponent(uploadId)+'/chunk?offset='+offset+'&checksum='+checksum,{
+    method:'PUT',headers:{'Content-Type':'application/octet-stream'},body:data,signal:controller.signal,
+   });
+   if(response.status===409){
+    const refreshed=await json(await fetch(base+'/resumable/'+encodeURIComponent(uploadId)),'Não foi possível retomar');
+    if(refreshed.offset>offset){offset=refreshed.offset;continue}
+   }
+   const dataResponse=await json(response,'Erro ao enviar parte');
+   if(dataResponse.offset<=offset)throw Error('A parte não avançou; confira a conexão local.');
+   offset=dataResponse.offset;
+   setJob(entry.id,{progress:Math.round(offset/file.size*72),
+    detail:'Enviando ao conector local ('+Math.round(offset/file.size*100)+'%)'});
+  }
+  setJob(entry.id,{progress:73,detail:'Conector completo. Enviando arquivo ao Telegram...'});
+  let pollTimer;
+  try{
+   pollTimer=setInterval(async()=>{
+    try{
+     const response=await fetch(base+'/upload-progress/'+encodeURIComponent(uploadId),{cache:'no-store'});
+     if(!response.ok)return;
+     const p=await response.json();
+     if(p.stage==='telegram'&&p.total>0){
+      setJob(entry.id,{progress:Math.min(98,Math.round(73+25*p.sent/p.total)),
+       detail:'Transferindo ao Telegram...'});
+     }
+    }catch{}
+   },600);
+   const result=await json(await fetch(base+'/resumable/'+encodeURIComponent(uploadId)+'/complete',{
+    method:'POST',signal:controller.signal,
+   }),'Falha ao confirmar envio no Telegram');
+   if(!result.completed)throw Error('O envio ainda não foi confirmado.');
+  }finally{if(pollTimer)clearInterval(pollTimer)}
+  forget();
+ }finally{if(active.current===controller)active.current=null}
+}
 function addFiles(inputFiles){
  const files=Array.from(inputFiles||[]);if(!files.length)return;
  const valid=files.filter(file=>file.size<=MAX_FILE_BYTES);
  const rejected=files.filter(file=>file.size>MAX_FILE_BYTES);
  if(rejected.length){
-   onToast?.({kind:'error',message:rejected.length===1?'Arquivo excede o limite atual de 20 MB: '+rejected[0].name:rejected.length+' arquivos excedem o limite atual de 20 MB.',duration:6500});
+   onToast?.({kind:'error',message:rejected.length===1?'Arquivo excede o limite atual de 512 MB: '+rejected[0].name:rejected.length+' arquivos excedem o limite atual de 512 MB.',duration:6500});
  }
  if(!valid.length){
    // Validation errors show only a toast. Never open an empty transfer window.
@@ -482,7 +563,7 @@ function addFiles(inputFiles){
  }
  cancelAll.current=false;
  setCancelRequested(false);
- const entries=valid.map(file=>({id:crypto.randomUUID(),file,name:file.name,destination:uploadDestination,progress:0,status:'queued'}));
+ const entries=valid.map(file=>({id:crypto.randomUUID(),file,name:file.name,parent:folder||null,destination:uploadDestination,progress:0,status:'queued'}));
  setJobs(j=>[...j,...entries]);setTrayVisible(true);setPanel(false);
  runQueue(entries);
 }
@@ -494,7 +575,9 @@ async function runQueue(entries){
   setTrayVisible(true);
   let pollTimer=null, polling=false, finished=false;
   try{
-   await new Promise((resolve,reject)=>{
+   if(entry.file.size>=8*1024*1024){
+    await runResumableUpload(entry);
+   }else await new Promise((resolve,reject)=>{
     const xhr=new XMLHttpRequest();
     active.current=xhr;
     xhr.open('POST',base+'/upload');
@@ -535,7 +618,7 @@ async function runQueue(entries){
     const body=new FormData();
     body.append('file',entry.file);
     body.append('upload_id',entry.id);
-    if(folder)body.append('parent',folder);
+    if(entry.parent)body.append('parent',entry.parent);
     xhr.send(body);
    });
    finished=true;
