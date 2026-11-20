@@ -7,7 +7,6 @@
 
 use serde::Serialize;
 use std::fs::{self, File};
-use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -31,6 +30,19 @@ fn safe_dragged_file(path: &Path, application_data: &Path) -> Result<(PathBuf, S
         .map_err(|_| "Não foi possível acessar o arquivo arrastado.".to_string())?;
     if resolved.starts_with(application_data) {
         return Err("A pasta interna do Drive Cloud não pode ser enviada.".to_string());
+    }
+    // Do not allow accidentally dropping private credential stores. OS drop
+    // paths are untrusted input to this command, so validate every component.
+    for component in resolved.components() {
+        if let std::path::Component::Normal(value) = component {
+            let segment = value.to_string_lossy().to_lowercase();
+            if segment.starts_with('.') || matches!(segment.as_str(),
+                    "appdata" | "application data" | "system volume information" |
+                    "$recycle.bin" | "id_rsa" | "id_ed25519" | "credentials.json" |
+                    "telegram.session" | "telegram.session-journal") {
+                return Err("Por segurança, arquivos de configuração ou credenciais não podem ser arrastados.".to_string());
+            }
+        }
     }
     let filename = resolved.file_name().and_then(|s| s.to_str()).unwrap_or("");
     if filename.is_empty() || filename.starts_with('.') ||
@@ -148,6 +160,18 @@ mod tests {
         assert!(result.is_ok(), "{result:?}");
         assert_eq!(result.unwrap().2, 4);
         fs::remove_file(file).unwrap();
+    }
+
+    #[test]
+    fn refuses_hidden_credential_directories() {
+        let base = std::env::temp_dir()
+            .join(format!("dc-hidden-test-{}", uuid::Uuid::new_v4()));
+        let sensitive = base.join(".ssh");
+        fs::create_dir_all(&sensitive).unwrap();
+        let secret = sensitive.join("id_rsa");
+        fs::write(&secret, b"not for upload").unwrap();
+        assert!(safe_dragged_file(&secret, &base.join("internal")).is_err());
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
