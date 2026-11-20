@@ -16,6 +16,9 @@ function IconFile({item,large=false}){const n=large?56:26;if(item.kind==='folder
 function TelegramSettings({onToast,onboarding=false,onReady}){
 const [status,setStatus]=useState(null),[phone,setPhone]=useState(''),[code,setCode]=useState(''),[password,setPassword]=useState(''),[step,setStep]=useState('qr-choice'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[qrImage,setQrImage]=useState('');
 const [storage,setStorage]=useState(null),[storageBusy,setStorageBusy]=useState(false),[storageError,setStorageError]=useState('');
+const [recoveryOptions,setRecoveryOptions]=useState(null),[recoverySelected,setRecoverySelected]=useState('');
+const [recoveryConfirmed,setRecoveryConfirmed]=useState(false),[recoveryBusy,setRecoveryBusy]=useState(false),[recoveryError,setRecoveryError]=useState('');
+
 const [apiId,setApiId]=useState(''),[apiHash,setApiHash]=useState(''),[savingApi,setSavingApi]=useState(false),[apiError,setApiError]=useState(''),[showApiHash,setShowApiHash]=useState(false);
 const endpoint=backendOrigin;
 async function call(path,data){
@@ -48,6 +51,38 @@ useEffect(()=>{
  if(!status?.connected||!storage?.ready)readinessRef.current=false;
 },[onboarding,status?.connected,storage?.ready,onReady]);
 useEffect(()=>{if(step!=='qr')return;let stopped=false;const timer=setInterval(async()=>{try{const r=await call('/api/telegram/qr/status');if(stopped)return;if(r.step==='connected'){setStatus({...r,configured:true});setStep('connected')}else if(r.step==='password')setStep('qr-password');else if(r.step==='expired'||r.step==='error'){setStep('qr-expired');if(r.detail)setError(r.detail)}}catch(e){if(!stopped)setError(e.message)}},1400);return()=>{stopped=true;clearInterval(timer)}},[step]);
+useEffect(()=>{
+ if(!storageError||!status?.connected){
+  setRecoveryOptions(null);setRecoveryConfirmed(false);setRecoverySelected('');
+  return;
+ }
+ let cancelled=false;
+ (async()=>{
+  try{
+   const options=await call('/api/telegram/storage/recovery/options');
+   if(!cancelled){setRecoveryOptions(options);setRecoverySelected('');setRecoveryConfirmed(false)}
+  }catch{
+   if(!cancelled)setRecoveryOptions(null);
+  }
+ })();
+ return()=>{cancelled=true};
+},[storageError,status?.connected,status?.id]);
+async function recoverStorage(action){
+ if(!recoveryOptions?.eligible||!recoveryConfirmed||recoveryBusy)return;
+ setRecoveryBusy(true);setRecoveryError('');
+ try{
+  const recovered=await call('/api/telegram/storage/recovery',{
+   action,expected_channel_id:recoveryOptions.expected_channel_id,
+   channel_id:action==='link'?recoverySelected:null,confirmed:true
+  });
+  if(!recovered?.ready)throw Error('O Telegram não confirmou o canal privado.');
+  setStorage(recovered);setStorageError('');
+  setRecoveryOptions(null);setRecoverySelected('');setRecoveryConfirmed(false);
+  onToast?.({kind:'success',message:recovered.created?'Novo canal privado criado com sucesso.':'Canal privado existente vinculado.',duration:6500});
+  onReady?.();
+ }catch(e){setRecoveryError(e.message);onToast?.({kind:'error',message:'Recuperação do canal: '+e.message,duration:9000})}
+ finally{setRecoveryBusy(false)}
+}
 async function saveTelegramApi(event){
  event.preventDefault();
  if(!/^[0-9]+$/.test(apiId.trim())||!Number.isSafeInteger(Number(apiId))||Number(apiId)<1||Number(apiId)>2147483647){setApiError('Informe o App api_id numérico que aparece em my.telegram.org (somente números).');return}
@@ -79,6 +114,24 @@ return <section className={'telegram-panel'+(onboarding?' dc-ob-telegram-panel':
 <div className="tg-account-line"><div className="tg-account-avatar">{(status?.name||'T').slice(0,1).toUpperCase()}{status?.connected&&<img src={backendOrigin+'/api/telegram/avatar?account='+encodeURIComponent(status.id||'')} alt="" onError={event=>{event.currentTarget.style.display='none'}}/>}</div><div><strong>{status?.name||'Telegram'}</strong><small>{status?.username?'@'+status.username:'Perfil conectado ao Drive Cloud'}</small></div><span className="tg-account-online"><Check size={15}/> Ativa</span></div>
 <div className="tg-channel-line"><div className="tg-channel-icon"><Folder size={20}/></div><div><strong>{storageBusy?'Verificando canal privado...':storage?.ready?storage.title:'Canal privado não configurado'}</strong><small>{storage?.ready?'Canal privado conectado e verificado.':storageBusy?'Procurando um canal existente e verificando acesso...':storageError?'Não foi possível preparar o canal. Veja os detalhes abaixo.':'Vamos localizar ou criar o canal privado automaticamente.'}</small></div>{storage?.ready&&<span className="tg-channel-ok"><Check size={17}/></span>}</div>
 {storageError&&<div className="tg-storage-error" role="alert"><CircleAlert size={19}/><div><strong>Falha ao preparar ou verificar o canal</strong><p>{storageError}</p><small>A conexão com a conta não será encerrada e nenhum arquivo ou canal será apagado.</small></div></div>}
+{storageError&&recoveryOptions?.eligible&&<div className="tg-channel-recovery">
+ <div className="tg-channel-recovery-heading"><FolderPlus size={19}/><strong>Recuperar armazenamento</strong></div>
+ <p>O canal privado vinculado não foi encontrado. Você pode criar outro canal, mas <strong>os arquivos excluídos do Telegram não serão recuperados automaticamente.</strong></p>
+ {(recoveryOptions.catalog_items>0||recoveryOptions.sync_folders>0)&&<p>O catálogo anterior possui <strong>{recoveryOptions.catalog_items} registro(s)</strong> e <strong>{recoveryOptions.sync_folders} pasta(s) sincronizadas</strong>. Eles serão mantidos no histórico local, separados do novo canal, para evitar arquivos quebrados ou envios ao destino errado.</p>}
+ {recoveryOptions.candidates?.length>0&&<div className="tg-recovery-candidates">
+   <label htmlFor="dc-recovery-channel">Outro canal privado encontrado na conta</label>
+   <select id="dc-recovery-channel" value={recoverySelected} onChange={e=>setRecoverySelected(e.target.value)}>
+    <option value="">Selecione um canal para reutilizar</option>
+    {recoveryOptions.candidates.map(c=><option key={c.channel_id} value={c.channel_id}>{c.title}</option>)}
+   </select>
+   <small>Para evitar duplicados, vincule um canal existente antes de tentar criar outro.</small>
+ </div>}
+ <label className="tg-recovery-confirm"><input type="checkbox" checked={recoveryConfirmed} disabled={recoveryBusy} onChange={e=>setRecoveryConfirmed(e.target.checked)}/><span>Entendi que um novo canal não restaura arquivos apagados e que os registros antigos serão preservados separadamente.</span></label>
+ {recoveryError&&<p className="tg-recovery-failure" role="alert">{recoveryError}</p>}
+ {recoveryOptions.candidates?.length>0?
+  <button type="button" className="tg-setup-button" disabled={!recoveryConfirmed||!recoverySelected||recoveryBusy} onClick={()=>recoverStorage('link')}>{recoveryBusy?'Vinculando...':'Usar canal existente'}</button>:
+  <button type="button" className="tg-setup-button" disabled={!recoveryConfirmed||recoveryBusy} onClick={()=>recoverStorage('create')}>{recoveryBusy?'Criando canal...':'Criar novo canal privado'}</button>}
+</div>}
 {!storage?.ready&&!storageBusy&&<button className="tg-setup-button" disabled={storageBusy} onClick={async()=>{setStorageBusy(true);setStorageError('');try{const result=await call('/api/telegram/storage/ensure',{});if(!result.ready)throw Error(result.detail||'O Telegram não confirmou o canal.');setStorage(result)}catch(e){setStorageError(e.message);onToast?.({kind:'error',message:'Canal privado: '+e.message,duration:9000})}finally{setStorageBusy(false)}}}>{storageError?'Tentar preparar canal novamente':'Preparar canal de armazenamento'}</button>}
 <div className="tg-connected-actions"><button disabled={busy} onClick={()=>perform('disconnect',{})}>Desconectar backend</button><button disabled={busy} onClick={()=>{if(confirm('Revogar a sessão do Telegram neste computador?'))perform('logout',{})}}>Sair do Telegram</button></div></div>:status?.configured?<div className="tg-form">
 {step==='qr-choice'?<><p className="tg-note">No celular: Telegram → Configurações → Dispositivos → Conectar dispositivo.</p><button disabled={busy||!status?.configured} onClick={()=>perform('qr/start',{})}>Gerar QR Code</button><button className="tg-back" onClick={()=>setStep('phone')}>Entrar com telefone</button></>:null}
