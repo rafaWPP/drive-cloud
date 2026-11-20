@@ -442,6 +442,7 @@ function DriveLoadingSkeleton({layout='grid',home=false}){
 }
 function CloudFiles({mode='files',globalSearch='',onToast,onDeletionProgress,createFolderToken=0,onCatalogChange,onFolderChange,folderTarget,onInitialReady,onNavigateFolder}){
 const [preview,setPreview]=useState(null),[previewError,setPreviewError]=useState(false),[trayVisible,setTrayVisible]=useState(true),[cancelRequested,setCancelRequested]=useState(false),[nodes,setNodes]=useState([]),[folder,setFolder]=useState(null),[layout,setLayout]=useState(readDriveLayout),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selected,setSelected]=useState([]),[menu,setMenu]=useState(null),[moveTargets,setMoveTargets]=useState(null),[moveDestination,setMoveDestination]=useState(''),[moveNewFolder,setMoveNewFolder]=useState(false),[moveFolderName,setMoveFolderName]=useState(''),[folderDialog,setFolderDialog]=useState(false),[folderName,setFolderName]=useState(''),[folderBusy,setFolderBusy]=useState(false),[drag,setDrag]=useState(false),[jobs,setJobs]=useState([]),[panel,setPanel]=useState(false),[tab,setTab]=useState('all'),[deleteConfirm,setDeleteConfirm]=useState(null),[deleteJob,setDeleteJob]=useState(null),[catalogCheck,setCatalogCheck]=useState(null),[catalogBusy,setCatalogBusy]=useState(false),[zipProgress,setZipProgress]=useState(null),[shareItem,setShareItem]=useState(null);
+const [pendingResumable,setPendingResumable]=useState([]);
 const uploader=useRef(null),catalogPicker=useRef(null),active=useRef(null),cancelAll=useRef(false),cancelDeletion=useRef(false);
 useEffect(()=>{onDeletionProgress?.(deleteJob?{...deleteJob,cancel:stopDeletion}:null)},[deleteJob]);
 const trash=mode==='trash';
@@ -453,6 +454,24 @@ useEffect(()=>{if(folderTarget){setFolder(folderTarget.id||null);setSelected([])
 useEffect(()=>{onFolderChange?.(folder)},[folder]);
 useEffect(()=>{onCatalogChange?.(nodes)},[nodes]);
 const base=backendOrigin+'/api/cloud';
+async function refreshPendingResumable(){
+ try{
+  const response=await fetch(base+'/resumable/pending',{cache:'no-store'});
+  if(response.ok)setPendingResumable((await response.json()).uploads||[]);
+ }catch{}
+}
+useEffect(()=>{refreshPendingResumable()},[]);
+async function discardResumable(item){
+ if(!item.discardable)return;
+ if(!confirm('Descartar a parte local de '+item.name+'? Isso apaga apenas o upload incompleto deste dispositivo, sem excluir arquivos do Telegram.'))return;
+ try{
+  const response=await fetch(base+'/resumable/'+encodeURIComponent(item.id),{method:'DELETE'});
+  if(!response.ok){const data=await response.json().catch(()=>({}));throw Error(data.detail||'Não foi possível descartar o upload')}
+  await refreshPendingResumable();
+  onToast?.({kind:'success',message:'Parte local descartada. Seus arquivos no Telegram foram preservados.'});
+ }catch(e){onToast?.({kind:'error',message:e.message})}
+}
+
 async function request(path,options){const r=await fetch(base+path,options);if(!r.ok){let detail='Erro HTTP '+r.status;try{const e=await r.json();detail=typeof e.detail==='string'?e.detail:detail}catch{}throw Error(detail)}return r}
 async function reload(){try{const r=await request('/items');setNodes((await r.json()).items);setError('')}catch(e){setError(e.message)}finally{setLoading(false)}}
 useEffect(()=>{reload()},[]);
@@ -633,6 +652,7 @@ async function runQueue(entries){
    if(pollTimer)clearInterval(pollTimer);
    active.current=null;
    await reload();
+   await refreshPendingResumable();
   }
  }
  setBusy(false);
@@ -795,6 +815,12 @@ const forbiddenMoveFolder=id=>{
 const availableMoveFolders=nodes.filter(x=>x.kind==='folder'&&!x.trashed&&(x.parent||'')===moveDestination&&!forbiddenMoveFolder(x.id)).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
 
 return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.dataTransfer?.types?.includes('Files'))setDrag(true)}} onDragOver={e=>e.preventDefault()} onDragLeave={e=>{const b=e.currentTarget.getBoundingClientRect();if(e.clientX<=b.left||e.clientX>=b.right||e.clientY<=b.top||e.clientY>=b.bottom)setDrag(false)}} onDrop={e=>{e.preventDefault();setDrag(false);if(e.dataTransfer?.files?.length)addFiles(e.dataTransfer.files)}}>
+{pendingResumable.length>0&&<div className="dc-resume-banner"><div className="dc-resume-heading"><RefreshCw size={17}/><strong>Uploads pendentes neste computador</strong><small>{pendingResumable.length} arquivo(s)</small></div>
+ <p>Para retomar um envio pausado, selecione novamente o mesmo arquivo na mesma pasta. Arquivos com envio incerto ao Telegram não serão reenviados automaticamente.</p>
+ {pendingResumable.slice(0,5).map(item=><div className="dc-resume-item" key={item.id}><span><strong title={item.name}>{item.name}</strong><small>{item.state==='staging'?Math.round(100*item.offset/Math.max(1,item.size))+'% recebido no conector':'Verificação do Telegram pendente'}</small></span>
+  {item.discardable&&<button type="button" onClick={()=>discardResumable(item)}>Descartar parte local</button>}</div>)}
+ <button type="button" className="dc-resume-repick" onClick={()=>uploader.current?.click()}>Escolher arquivo para retomar</button></div>}
+
 {mode==='home'&&!queryText&&!loading&&<div className="home-sections">
 <section><div className="home-section-title"><Clock3 size={17}/><h3>Recentes</h3><span>Últimos arquivos enviados</span></div><div className="home-quick-list">{homeRecent.length?homeRecent.map(item=><button key={item.id} onClick={()=>open(item)}><span className="home-quick-thumb"><CloudThumbnail item={item} compact/></span><span className="home-quick-name">{item.name}</span><small>{date(item.created)}</small></button>):<p>Seus arquivos recentes aparecerão aqui.</p>}</div></section>
 <section><div className="home-section-title"><Star size={17}/><h3>Favoritos</h3><span>Acesso rápido</span></div><div className="home-quick-list">{homeFavorites.length?homeFavorites.map(item=><button key={item.id} onClick={()=>open(item)}><span className="home-quick-thumb"><CloudThumbnail item={item} compact/></span><span className="home-quick-name">{item.name}</span><Star size={15} fill="#e2c16f" color="#e2c16f"/></button>):<p>Marque arquivos com a estrela para acessá-los rapidamente.</p>}</div></section>
