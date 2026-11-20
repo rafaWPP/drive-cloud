@@ -1568,3 +1568,20 @@ main>header .search{flex:1 1 320px;max-width:465px}
 .dc-desktop-startup p{max-width:550px;color:#e0c2c4;font-size:13px;line-height:1.65;margin:0;overflow-wrap:anywhere;user-select:text}
 .dc-desktop-startup small{max-width:480px;color:#9aa9bc;font-size:11px;line-height:1.6}
 .dc-desktop-startup button{margin-top:6px;border:0;border-radius:9px;background:#347be3;color:#fff;padding:11px 19px;font-size:13px;font-weight:700;cursor:pointer}
+
+
+/* Explicit missing-channel recovery: visible, safe, consistent with onboarding. */
+.tg-channel-recovery{display:flex;flex-direction:column;gap:12px;margin:12px 0 16px;padding:16px;background:#25303b;border:1px solid #41556a;border-radius:11px}
+.tg-channel-recovery-heading{display:flex;align-items:center;gap:9px;color:#c7dffa}
+.tg-channel-recovery-heading strong{font-size:13px;color:#f1f5fa}
+.tg-channel-recovery>p{margin:0;font-size:12px;color:#b7c7d8;line-height:1.65}
+.tg-channel-recovery>p strong{color:#f0e5db}
+.tg-recovery-candidates{display:flex;flex-direction:column;gap:7px;padding:12px;border-radius:9px;background:#1e2833}
+.tg-recovery-candidates label{font-size:12px;font-weight:650;color:#e3e9f1}
+.tg-recovery-candidates select{width:100%;min-height:38px;background:#171e28;border:1px solid #4a5d72;border-radius:7px;color:#f0f3f8;padding:7px 10px}
+.tg-recovery-candidates small{color:#a0aec1;font-size:11px;line-height:1.5}
+.tg-recovery-confirm{display:flex;gap:11px;align-items:flex-start;padding:10px 0;font-size:11px;color:#d2e0ee;line-height:1.6;cursor:pointer}
+.tg-recovery-confirm input{accent-color:#387cdb;width:16px;height:16px;flex-shrink:0;margin-top:2px;cursor:pointer}
+.tg-recovery-failure{color:#ffcbd0!important;font-size:12px!important;overflow-wrap:anywhere}
+.tg-channel-recovery .tg-setup-button{margin-top:3px}
+.tg-channel-recovery .tg-setup-button:disabled{opacity:.48;cursor:not-allowed}
