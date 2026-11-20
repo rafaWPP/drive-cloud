@@ -47,6 +47,10 @@ jobs:
           assert.match(source, /backendOrigin = await invoke\('backend_origin'\)/);
           assert.ok(source.includes('!/^[0-9]+$/.test(apiId.trim())'), 'API ID must accept decimal digits');
           assert.match(source, /await openUrl\("https:\/\/my\.telegram\.org\/apps"\)/);
+          const tauriConfig = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+          assert.equal(tauriConfig.app.windows[0].dragDropEnabled, false, 'Desktop must use HTML5 file drop');
+          const style = readFileSync('src/style.css', 'utf8');
+          assert.match(style, /main>header \.avatar\{margin-left:auto/, 'Profile avatar must remain pinned to right');
           console.log('Desktop frontend origin initialization OK');
           NODE
       - name: Validar sintaxe do backend
