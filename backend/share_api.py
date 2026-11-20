@@ -28,6 +28,35 @@ MAX_PUBLIC_ITEMS = 100
 MEDIA_STREAM_LIMIT = asyncio.Semaphore(3)
 MEDIA_RANGE_CHUNK = 512 * 1024
 MEDIA_RANGE_MAX = 2 * 1024 * 1024
+# Playback authorization is generated when the share page is opened.
+# A raw /media URL without this temporary scoped credential is not a
+# shareable standalone video URL. A holder of the main share link may
+# legitimately obtain a new credential; this is not DRM.
+MEDIA_TICKETS = {}
+MEDIA_TICKET_TTL = 7200
+
+def issue_media_ticket(link):
+    now=int(time.time())
+    if len(MEDIA_TICKETS)>512:
+        for key, (_,expires) in list(MEDIA_TICKETS.items()):
+            if expires<=now:
+                MEDIA_TICKETS.pop(key,None)
+    if len(MEDIA_TICKETS)>1024:
+        for key in list(MEDIA_TICKETS)[:256]:
+            MEDIA_TICKETS.pop(key,None)
+    ticket=secrets.token_urlsafe(32)
+    digest=hashlib.sha256(ticket.encode()).hexdigest()
+    MEDIA_TICKETS[digest]=(link["id"],min(link["expires"],now+MEDIA_TICKET_TTL))
+    return ticket
+
+def require_media_ticket(link,ticket):
+    if not ticket or len(ticket)>160:
+        raise HTTPException(403,"Abra o conteúdo pelo link compartilhado.")
+    digest=hashlib.sha256(ticket.encode()).hexdigest()
+    entry=MEDIA_TICKETS.get(digest)
+    if not entry or entry[0]!=link["id"] or entry[1]<=time.time():
+        raise HTTPException(403,"Autorização de prévia expirada. Reabra o link compartilhado.")
+
 # Short-lived RAM cache: avoids downloading the same Telegram media for every
 # browser video Range request. It never persists content on disk.
 MEDIA_CACHE = OrderedDict()
@@ -202,26 +231,8 @@ def build_share_router(authorized_account, channel_links, lock):
                          "size":row["size"],"path":rel} for row,rel in items[1:]]
         return {"root_id":root["id"],"name":root["name"],"kind":root["kind"],"size":root["size"],
                 "mode":link["mode"],"expires":link["expires"],"items":output,
+                "media_ticket":issue_media_ticket(link) if link["mode"] in ("view","embed") else None,
                 "local_only":True}
-
-    @router.get("/api/public/share/{token}/preview")
-    async def preview_root(token:str):
-        link,root=await lookup(token)
-        if link["mode"]!="view" or root["kind"]!="file" or not is_image(root):
-            raise HTTPException(415,"Prévia indisponível.")
-        if root["size"]>20*1024*1024:
-            raise HTTPException(413,"Imagem grande demais para prévia nesta versão.")
-        async with lock:
-            client,account=await authorized_account()
-            if account!=link["owner"]:
-                raise HTTPException(403,"Sessão Telegram indisponível.")
-            msg=await client.get_messages(channel_id(channel_links,account),ids=root["message_id"])
-            if not msg or not msg.media:
-                raise HTTPException(404,"Imagem não encontrada.")
-            data=await client.download_media(msg,file=bytes)
-            if data is None:raise HTTPException(502,"Falha ao recuperar imagem.")
-            return Response(prepare_image(data,1200),media_type="image/jpeg",
-                headers={"Cache-Control":"no-store"})
 
     @router.get("/api/public/share/{token}/download")
     async def download_root(token:str):
@@ -303,6 +314,7 @@ def build_share_router(authorized_account, channel_links, lock):
         return start,end,True
 
     async def send_media(link,root,request:Request,item_id=None,thumb=False):
+        require_media_ticket(link,request.query_params.get("access"))
         # A media URL is an internal resource, not a second share page. Browsing
         # directly to this endpoint is blocked; media/image elements still work.
         # This is a UI guard, NOT DRM: share-token holders can retrieve file bytes.
@@ -462,27 +474,6 @@ def build_share_router(authorized_account, channel_links, lock):
     async def media_child(token:str,file_id:str,request:Request,thumb:bool=False):
         link,root=await lookup(token)
         return await send_media(link,root,request,file_id,thumb=thumb)
-
-    @router.get("/api/public/share/{token}/image/{file_id}")
-    async def preview_shared_child(token:str,file_id:str):
-        link,root=await lookup(token)
-        if link["mode"]!="view" or root["kind"]!="folder":
-            raise HTTPException(403,"Este link não permite visualizar arquivos.")
-        async with lock:
-            client,account=await authorized_account()
-            if account!=link["owner"]:
-                raise HTTPException(403,"Sessão Telegram indisponível.")
-            with connection() as db:
-                item=scoped_file(db,root,account,file_id)
-            if not item:raise HTTPException(404,"Arquivo fora desta pasta compartilhada.")
-            if not is_image(item):raise HTTPException(415,"Prévia indisponível.")
-            if item["size"]>20*1024*1024:raise HTTPException(413,"Imagem grande demais para visualização.")
-            msg=await client.get_messages(channel_id(channel_links,account),ids=item["message_id"])
-            if not msg or not msg.media:raise HTTPException(404,"Imagem não encontrada.")
-            data=await client.download_media(msg,file=bytes)
-            if data is None:raise HTTPException(502,"Falha ao recuperar imagem.")
-            return Response(prepare_image(data,1200),media_type="image/jpeg",
-                headers={"Cache-Control":"no-store"})
 
     @router.get("/api/public/share/{token}/file/{file_id}")
     async def download_shared_child(token:str,file_id:str):
