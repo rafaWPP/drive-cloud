@@ -91,6 +91,24 @@ async def status():
             return {"connected": False, "configured": True, "error": "Não foi possível consultar o Telegram"}
 
 
+@app.get("/api/telegram/avatar")
+async def telegram_avatar():
+    """Only serves the logged-in account photo on the local backend."""
+    from fastapi.responses import Response
+    async with lock:
+        c, _ = await authorized_account()
+        me = await c.get_me()
+        if not getattr(me, "photo", None):
+            raise HTTPException(404, "Esta conta não possui foto de perfil.")
+        raw = await c.download_profile_photo(me, file=bytes)
+        if not raw:
+            raise HTTPException(404, "Não foi possível recuperar a foto de perfil.")
+        if len(raw) > 2 * 1024 * 1024:
+            raise HTTPException(413, "Foto de perfil muito grande.")
+        return Response(raw, media_type="image/jpeg",
+                        headers={"Cache-Control":"private, no-store",
+                                 "X-Content-Type-Options":"nosniff"})
+
 def qr_image(url):
     img = qrcode.make(url)
     buffer = io.BytesIO()
