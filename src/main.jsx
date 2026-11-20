@@ -1336,16 +1336,37 @@ return <div className="shell"><aside className="rail"><div className="logo" titl
 const params=new URLSearchParams(window.location.search);
 const matchShare=window.location.pathname.match(/^\/(?:file|folder)\/d\/([A-Za-z0-9_-]+)\/?$/),matchEmbed=window.location.pathname.match(/^\/embed\/d\/([A-Za-z0-9_-]+)\/?$/);
 const publicToken=matchShare?.[1]||params.get('share'),embedToken=matchEmbed?.[1]||params.get('embed');
+function DesktopStartup({error,onRetry}){
+ return <div className="dc-onboard-loading dc-desktop-startup" role="alert">
+  <img src="/drive-cloud-logo.svg?v=20261120b" alt="Drive Cloud"/>
+  <strong>Não foi possível iniciar o conector</strong>
+  <p>{error}</p>
+  <small>Se o problema continuar, consulte o arquivo backend-startup.log na pasta de dados do Drive Cloud. Sua sessão do Telegram não foi apagada.</small>
+  <button type="button" onClick={onRetry}>Verificar novamente</button>
+ </div>;
+}
 async function startDriveCloud() {
-  if (window.__TAURI_INTERNALS__) {
-    try {
-      // This is provided by the desktop host, not discovered through random
-      // ports or exposed by a public endpoint.
-      backendOrigin = await invoke('backend_origin');
-    } catch (error) {
-      console.error('Não foi possível descobrir a porta do backend local.', error);
+ const root=createRoot(document.getElementById('root'));
+ if(window.__TAURI_INTERNALS__ && !publicToken && !embedToken){
+  async function launch(){
+   root.render(<div className="dc-onboard-loading" role="status" aria-busy="true"><DriveBrandLoader/><span>Preparando conexão segura do Drive Cloud...</span></div>);
+   try{
+    // Always query the current desktop host instead of falling back to port
+    // 8000: that port may belong to another local process or stale instance.
+    backendOrigin=await invoke('backend_origin');
+    if(!/^http:\/\/127\.0\.0\.1:[0-9]+$/.test(backendOrigin)){
+     throw Error('Endereço do conector local inválido.');
     }
+    await invoke('wait_backend_ready');
+    root.render(<App/>);
+   }catch(error){
+    const message=typeof error==='string'?error:error?.message||String(error);
+    root.render(<DesktopStartup error={message} onRetry={launch}/>);
+   }
   }
-  createRoot(document.getElementById('root')).render(embedToken?<EmbeddedMedia token={embedToken}/>:publicToken?<PublicShareView token={publicToken}/>:<App/>);
+  await launch();
+ }else{
+  root.render(embedToken?<EmbeddedMedia token={embedToken}/>:publicToken?<PublicShareView token={publicToken}/>:<App/>);
+ }
 }
 startDriveCloud();
