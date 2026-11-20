@@ -1353,7 +1353,7 @@ async function startDriveCloud() {
    try{
     // Always query the current desktop host instead of falling back to port
     // 8000: that port may belong to another local process or stale instance.
-    backendOrigin=await invoke('backend_origin');
+    backendOrigin = await invoke('backend_origin');
     if(!/^http:\/\/127\.0\.0\.1:[0-9]+$/.test(backendOrigin)){
      throw Error('Endereço do conector local inválido.');
     }
