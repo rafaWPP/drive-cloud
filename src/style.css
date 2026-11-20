@@ -1585,3 +1585,16 @@ main>header .search{flex:1 1 320px;max-width:465px}
 .tg-recovery-failure{color:#ffcbd0!important;font-size:12px!important;overflow-wrap:anywhere}
 .tg-channel-recovery .tg-setup-button{margin-top:3px}
 .tg-channel-recovery .tg-setup-button:disabled{opacity:.48;cursor:not-allowed}
+
+
+/* Clarify that public internet sharing requires a separate secure service. */
+.dc-share-unavailable{display:flex;align-items:flex-start;gap:11px;margin:11px 0 16px;padding:15px;border-radius:10px;background:#29313d;border:1px solid #435169;color:#c8d4e2}
+.dc-share-unavailable>svg{flex:0 0 auto;color:#9dbbe7;margin-top:1px}
+.dc-share-unavailable>div{display:flex;flex-direction:column;gap:8px;min-width:0}
+.dc-share-unavailable strong{color:#eef3fb;font-size:13px}
+.dc-share-unavailable p{color:#bac6d8;font-size:12px;line-height:1.7;margin:0}
+.dc-share-unavailable small{color:#9cacc1;font-size:11px;line-height:1.6}
+.dc-share-unavailable code{color:#d6e6ff;overflow-wrap:anywhere}
+.dc-native-drop-progress{display:flex;align-items:center;gap:10px;margin:0 0 15px;padding:11px 14px;border:1px solid #42546a;border-radius:9px;background:#243346;color:#dceafa;font-size:12px}
+.dc-native-drop-progress .dc-spin{animation:dc-spin 1.2s linear infinite}
+@keyframes dc-spin{to{transform:rotate(360deg)}}
