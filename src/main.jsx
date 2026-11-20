@@ -26,7 +26,7 @@ return()=>{cancelled=true};
 },[step,status?.connected,status?.id]);
 useEffect(()=>{if(step!=='qr')return;let stopped=false;const timer=setInterval(async()=>{try{const r=await call('/api/telegram/qr/status');if(stopped)return;if(r.step==='connected'){setStatus({...r,configured:true});setStep('connected')}else if(r.step==='password')setStep('qr-password');else if(r.step==='expired'||r.step==='error'){setStep('qr-expired');if(r.detail)setError(r.detail)}}catch(e){if(!stopped)setError(e.message)}},1400);return()=>{stopped=true;clearInterval(timer)}},[step]);
 async function perform(path,data){setBusy(true);setError('');try{const r=await call('/api/telegram/'+path,data);if(r.image){setQrImage(r.image);setStep('qr')}else if(r.step)setStep(r.step);if(r.connected){setStatus({...r,configured:true});setPassword('');setCode('');onToast?.({kind:'success',message:'Telegram conectado com sucesso'})}else if(path==='logout'||path==='disconnect'){setStorage(null);setStorageError('');setQrImage('');await refresh();onToast?.({kind:'info',message:path==='logout'?'Sessão do Telegram encerrada':'Conexão encerrada'})}}catch(e){setError(e.message);onToast?.({kind:'error',message:e.message,duration:6500})}finally{setBusy(false)}}
-return <section className="telegram-panel"><div className="telegram-header"><div className="tg-header-icon"><img src="/drive-cloud-logo.svg" alt=""/></div><div><h2>{step==='connected'?'Conta conectada':'Conectar Telegram'}</h2><p>{step==='connected'?'Sua conta autoriza o armazenamento privado do Drive Cloud.':'Autorize a conta pelo QR Code do Telegram.'}</p></div><span className={status?.connected?'tg-connection-tag active':'tg-connection-tag'}>{status?.connected?'Conectado':'Desconectado'}</span></div>
+return <section className="telegram-panel"><div className="telegram-header"><div className="tg-header-icon"><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/></div><div><h2>{step==='connected'?'Conta conectada':'Conectar Telegram'}</h2><p>{step==='connected'?'Sua conta autoriza o armazenamento privado do Drive Cloud.':'Autorize a conta pelo QR Code do Telegram.'}</p></div><span className={status?.connected?'tg-connection-tag active':'tg-connection-tag'}>{status?.connected?'Conectado':'Desconectado'}</span></div>
 {status?.offline?<div className="tg-warning">Backend local desligado. Inicie o servidor Python na porta 8000 e atualize esta página.</div>:status&&!status.configured?<div className="tg-warning">Configure TELEGRAM_API_ID e TELEGRAM_API_HASH no arquivo backend/.env e reinicie o backend.</div>:step==='connected'?<div className="tg-connected-card">
 <div className="tg-account-line"><div className="tg-account-avatar">{(status?.name||'T').slice(0,1).toUpperCase()}{status?.connected&&<img src={'http://127.0.0.1:8000/api/telegram/avatar?account='+encodeURIComponent(status.id||'')} alt="" onError={event=>{event.currentTarget.style.display='none'}}/>}</div><div><strong>{status?.name||'Telegram'}</strong><small>{status?.username?'@'+status.username:'Perfil conectado ao Drive Cloud'}</small></div><span className="tg-account-online"><Check size={15}/> Ativa</span></div>
 <div className="tg-channel-line"><div className="tg-channel-icon"><Folder size={20}/></div><div><strong>{storageBusy?'Verificando canal privado...':storage?.ready?storage.title:'Canal privado não configurado'}</strong><small>{storage?.ready?'Canal privado conectado e verificado.':storageError||'Configure um canal para armazenar seus arquivos.'}</small></div>{storage?.ready&&<span className="tg-channel-ok"><Check size={17}/></span>}</div>
@@ -207,7 +207,7 @@ function DriveVideoPlayer({src,name,onError}){
 function DriveImagePreview({src,name,onError}){
  const [loaded,setLoaded]=useState(false);
  return <div className="dc-preview-image-wrap" role="status" aria-label={loaded?'Imagem pronta':'Carregando prévia de '+name}>
- {!loaded&&<div className="dc-preview-loading"><span className="dc-preview-loading-orbit"><img src="/drive-cloud-logo.svg" alt=""/></span><span>Carregando prévia...</span></div>}
+ {!loaded&&<div className="dc-preview-loading"><span className="dc-preview-loading-orbit"><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/></span><span>Carregando prévia...</span></div>}
  <img src={src} alt={name} onLoad={()=>setLoaded(true)} onError={onError} style={{opacity:loaded?1:0}}/>
  </div>;
 }
@@ -292,7 +292,7 @@ function PublicShareView({token}){
  const video=item=>/\.(mp4|webm|m4v)$/i.test(item.name);
  const mediaUrl=item=>endpoint+'/media/'+encodeURIComponent(item.id)+'?access='+encodeURIComponent(data?.media_ticket||'');
  return <main className="public-share-screen">
- <header className="public-share-header"><span className="public-share-brand"><img src="/drive-cloud-logo.svg" alt=""/><b>Drive Cloud</b></span>{!loading&&!error&&<span className="public-share-header-pill"><Check size={13}/> Link de acesso</span>}</header>
+ <header className="public-share-header"><span className="public-share-brand"><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/><b>Drive Cloud</b></span>{!loading&&!error&&<span className="public-share-header-pill"><Check size={13}/> Link de acesso</span>}</header>
  <div className="public-drive-wrap">
  {loading?<div className="public-share-loading" aria-busy="true"><div className="dc-shimmer public-loading-hero"/><div className="dc-shimmer public-loading-nav"/><div className="public-loading-items">{[0,1,2,3].map(i=><div className="dc-shimmer" key={i}/>)}</div><p><DriveCloudLoader size={48} label="Abrindo compartilhamento"/> Abrindo compartilhamento...</p></div>:error?<SharedLinkUnavailable error={error} onRetry={()=>setRefreshKey(x=>x+1)}/>:data&&<>
  <div className="public-drive-intro"><div className="public-drive-folder-icon">{data.kind==='folder'?<Folder size={27}/>:<File size={27}/>}</div><div><span>COMPARTILHADO COM VOCÊ</span><h1>{data.name}</h1><p>{data.mode==='download'?'Acesso de download':data.kind==='folder'?'Navegue pelas pastas e abra os arquivos disponíveis':'Visualize e baixe este arquivo'}</p></div><a className="public-drive-download" href={endpoint+'/download'}><Download size={17}/>{data.kind==='folder'?'Baixar tudo em ZIP':'Baixar arquivo'}</a></div>
@@ -397,7 +397,7 @@ function DriveBrandLoader(){
    <circle className="dc-brand-ring-track" cx="60" cy="60" r="52"/>
    <circle className="dc-brand-ring-active" cx="60" cy="60" r="52"/>
   </svg>
-  <img src="/drive-cloud-logo.svg" alt=""/>
+  <img src="/drive-cloud-logo.svg?v=20261120b" alt=""/>
  </div>
 }
 function DriveLoadingSkeleton({layout='grid',home=false}){
@@ -894,7 +894,7 @@ const primary=[['home','Início',Home],['files','Meu Drive',Folder],['trash','Li
 const sections=Object.values(menus).flat();
 const label=sections.find(s=>s[0]===section)?.[1]||'Arquivos';
 const bytes=items.filter(i=>i.kind==='file'&&!i.trashed).reduce((n,i)=>n+(i.size||0),0);
-return <div className="shell"><aside className="rail"><div className="logo" title="Drive Cloud"><img src="/drive-cloud-logo.svg" alt="Drive Cloud"/></div>{primary.map(([a,name,Icon])=><button key={a} title={name} aria-label={name} className={area===a?'rail-on':''} onClick={()=>goArea(a)}><Icon size={21}/></button>)}</aside>
+return <div className="shell"><aside className="rail"><div className="logo" title="Drive Cloud"><img src="/drive-cloud-logo.svg?v=20261120b" alt="Drive Cloud"/></div>{primary.map(([a,name,Icon])=><button key={a} title={name} aria-label={name} className={area===a?'rail-on':''} onClick={()=>goArea(a)}><Icon size={21}/></button>)}</aside>
 <aside className={'sidebar '+(mobile?'show':'')+(area==='files'?' sidebar-tree':'')}><div className="sidebar-title">{primary.find(p=>p[0]===area)?.[1]||'Meu espaço'}<button className="mobile-x" onClick={()=>setMobile(false)}><X size={19}/></button></div><div className="links">{menus[area].map(([id,name,Icon])=><button key={id} className={section===id?'active':''} onClick={()=>nav(id)}><Icon size={18}/>{name}</button>)}</div>{area==='files'&&<DriveFolderTree nodes={cloudTree} current={cloudFolder} onOpen={id=>{nav('cloudFiles',id)}}/>}<div className="sidebar-bottom"><div className="dc-compact-storage">
 <div className="dc-usage-heading"><HardDrive size={16}/><span>Armazenamento</span></div>
 <div className="dc-usage-value">{driveUsage?size(driveUsage.total_bytes):'—'} <small>utilizados no Drive / <span title="O Telegram não informa uma cota de armazenamento para esta integração.">Sem cota informada</span></small></div>
