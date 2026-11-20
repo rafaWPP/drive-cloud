@@ -6,8 +6,9 @@ import json
 import os
 import re
 from pathlib import Path
-from telethon.tl.functions.channels import CreateChannelRequest
-from telethon.tl.types import Channel
+from telethon.tl.functions.channels import CreateChannelRequest, EditPhotoRequest
+from telethon.tl.types import Channel, InputChatUploadedPhoto, ChatPhotoEmpty
+from channel_brand import channel_avatar_jpeg
 
 import qrcode
 from dotenv import load_dotenv
@@ -227,6 +228,29 @@ def channel_info(channel, created=False):
     return {"ready": True, "channel_id": str(channel.id),
             "title": channel.title, "created": created}
 
+async def assign_drive_channel_logo(client, channel):
+    """Brand an unpictured channel without replacing a user's chosen avatar.
+
+    Channel creation has already been persisted before calling this method.
+    If Telegram rejects a photo update, channel storage remains usable.
+    """
+    if not getattr(channel, "creator", False):
+        return False
+    if not isinstance(getattr(channel, "photo", None), ChatPhotoEmpty):
+        return False
+    try:
+        photo_bytes = io.BytesIO(channel_avatar_jpeg())
+        photo_bytes.name = "drive-cloud-channel.jpg"
+        uploaded = await client.upload_file(photo_bytes)
+        await client(EditPhotoRequest(
+            channel=channel, photo=InputChatUploadedPhoto(file=uploaded)
+        ))
+        return True
+    except Exception:
+        # Branding is cosmetic: never block account setup or create another channel.
+        return False
+
+
 @app.get("/api/telegram/storage/status")
 async def storage_status():
     async with lock:
@@ -253,6 +277,9 @@ async def ensure_storage():
                 entity = await c.get_entity(int(entry["channel_id"]))
                 if not isinstance(entity, Channel) or not entity.broadcast:
                     raise ValueError("O vínculo aponta para outra entidade")
+                # Only unpictured channels owned by this account are branded.
+                # An existing user-customized channel photo stays untouched.
+                await assign_drive_channel_logo(c, entity)
                 return channel_info(entity)
             except (ValueError, TypeError, errors.RPCError):
                 raise HTTPException(409, detail="Seu canal já foi registrado, mas não está acessível. Verifique o Telegram; não criaremos um duplicado.")
@@ -268,6 +295,7 @@ async def ensure_storage():
                 channel = matches[0]
                 links[user_id] = {"channel_id": str(channel.id)}
                 save_channel_links(links)
+                await assign_drive_channel_logo(c, channel)
                 return channel_info(channel)
             if len(matches) > 1:
                 raise HTTPException(409, detail="Encontrados vários canais com o nome Drive Cloud Storage. Resolva a duplicidade manualmente antes de continuar.")
@@ -277,7 +305,8 @@ async def ensure_storage():
                 raise HTTPException(502, detail="O Telegram não retornou o canal criado.")
             links[user_id] = {"channel_id": str(channel.id)}
             save_channel_links(links)
-            return channel_info(channel, created=True)
+            avatar_applied = await assign_drive_channel_logo(c, channel)
+            return {**channel_info(channel, created=True), "logo_applied": avatar_applied}
         except errors.FloodWaitError as exc:
             raise HTTPException(429, detail=f"Limite do Telegram. Tente novamente em {exc.seconds} segundos.") from exc
         except errors.RPCError as exc:
