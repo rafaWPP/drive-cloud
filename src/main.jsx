@@ -108,10 +108,27 @@ const homeRecent=nodes.filter(i=>!i.trashed&&i.kind==='file').sort((a,b)=>b.crea
 const homeFavorites=nodes.filter(i=>!i.trashed&&i.starred).sort((a,b)=>b.created-a.created).slice(0,5);
 const chosen=visible.filter(i=>selected.includes(i.id));
 const setJob=(id,values)=>setJobs(j=>j.map(x=>x.id===id?{...x,...values}:x));
-function addFiles(inputFiles){const files=Array.from(inputFiles||[]);if(!files.length)return;cancelAll.current=false;const entries=files.map(file=>({id:crypto.randomUUID(),file,name:file.name,progress:0,status:'queued'}));setJobs(j=>[...j,...entries]);setPanel(true);setTrayVisible(true);runQueue(entries)}
+function addFiles(inputFiles){
+ const files=Array.from(inputFiles||[]);if(!files.length)return;
+ const valid=files.filter(file=>file.size<=20*1024*1024);
+ const rejected=files.filter(file=>file.size>20*1024*1024);
+ if(rejected.length){
+   onToast?.({kind:'error',message:rejected.length===1?'Arquivo excede o limite atual de 20 MB: '+rejected[0].name:rejected.length+' arquivos excedem o limite atual de 20 MB.',duration:6500});
+ }
+ if(!valid.length){
+   // Validation errors show only a toast. Never open an empty transfer window.
+   if(!busy)setTrayVisible(false);
+   if(uploader.current)uploader.current.value='';
+   return;
+ }
+ cancelAll.current=false;
+ const entries=valid.map(file=>({id:crypto.randomUUID(),file,name:file.name,progress:0,status:'queued'}));
+ setJobs(j=>[...j,...entries]);setPanel(true);
+ runQueue(entries);
+}
 async function runQueue(entries){setBusy(true);for(const entry of entries){if(cancelAll.current){setJob(entry.id,{status:'cancelled'});continue}
 if(entry.file.size>20*1024*1024){setJob(entry.id,{status:'failed',detail:'Limite de 20 MB'});onToast?.({kind:'error',message:'Limite de 20 MB excedido: '+entry.name});continue}
-setJob(entry.id,{status:'uploading'});try{await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();active.current=xhr;xhr.open('POST',base+'/upload');xhr.upload.onprogress=e=>{if(e.lengthComputable)setJob(entry.id,{progress:Math.round(e.loaded/e.total*100),detail:e.loaded===e.total?'Aguardando confirmação do Telegram...':'Transferindo para o backend local...'})};xhr.upload.onload=()=>setJob(entry.id,{progress:100,detail:'Processando no Telegram...'});xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)resolve();else{let detail='Erro '+xhr.status;try{detail=JSON.parse(xhr.responseText).detail||detail}catch{}reject(Error(detail))}};xhr.onerror=()=>reject(Error('Falha de rede'));xhr.onabort=()=>reject(Error('Cancelado'));const body=new FormData();body.append('file',entry.file);if(folder)body.append('parent',folder);xhr.send(body)}) ;setJob(entry.id,{status:'completed',progress:100,detail:'Salvo no Telegram'});onToast?.({kind:'success',message:'Arquivo enviado: '+entry.name})}catch(e){setJob(entry.id,{status:cancelAll.current?'cancelled':'failed',detail:e.message});if(!cancelAll.current)onToast?.({kind:'error',message:'Falha no envio de '+entry.name+': '+e.message,duration:6000})}finally{active.current=null;await reload()}}
+setJob(entry.id,{status:'uploading'});setTrayVisible(true);try{await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();active.current=xhr;xhr.open('POST',base+'/upload');xhr.upload.onprogress=e=>{if(e.lengthComputable)setJob(entry.id,{progress:Math.round(e.loaded/e.total*100),detail:e.loaded===e.total?'Aguardando confirmação do Telegram...':'Transferindo para o backend local...'})};xhr.upload.onload=()=>setJob(entry.id,{progress:100,detail:'Processando no Telegram...'});xhr.onload=()=>{if(xhr.status>=200&&xhr.status<300)resolve();else{let detail='Erro '+xhr.status;try{detail=JSON.parse(xhr.responseText).detail||detail}catch{}reject(Error(detail))}};xhr.onerror=()=>reject(Error('Falha de rede'));xhr.onabort=()=>reject(Error('Cancelado'));const body=new FormData();body.append('file',entry.file);if(folder)body.append('parent',folder);xhr.send(body)}) ;setJob(entry.id,{status:'completed',progress:100,detail:'Salvo no Telegram'});onToast?.({kind:'success',message:'Arquivo enviado: '+entry.name})}catch(e){setJob(entry.id,{status:cancelAll.current?'cancelled':'failed',detail:e.message});if(!cancelAll.current)onToast?.({kind:'error',message:'Falha no envio de '+entry.name+': '+e.message,duration:6000})}finally{active.current=null;await reload()}}
 setBusy(false);if(uploader.current)uploader.current.value=''}
 function stopUploads(){cancelAll.current=true;active.current?.abort();setJobs(j=>j.map(x=>x.status==='queued'?{...x,status:'cancelled'}:x))}
 async function newFolder(){const name=prompt('Nome da pasta:');if(!name?.trim())return;try{await request('/folders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim(),parent:folder})});await reload();setNotice('Pasta criada')}catch(e){setError(e.message)}}
