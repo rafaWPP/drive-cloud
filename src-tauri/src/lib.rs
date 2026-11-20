@@ -1,4 +1,5 @@
 mod download;
+mod drop_upload;
 use std::net::TcpListener;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -69,7 +70,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![backend_origin, wait_backend_ready, download::download_cloud_file])
+        .invoke_handler(tauri::generate_handler![backend_origin, wait_backend_ready, download::download_cloud_file, drop_upload::upload_dropped_files])
         .setup(|app| {
             let data_dir = app.path().app_local_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
