@@ -94,6 +94,8 @@ jobs:
             exit 1
           fi
           grep -q '"configured":false' /tmp/drive-cloud-status.json
+      - name: Testar conector empacotado após fechar e reabrir Linux
+        run: python backend/tests/check_sidecar_lifecycle.py build/desktop-sidecar/drive-cloud-backend
       - name: Gerar ícones a partir da logo do projeto
         run: npx tauri icon public/drive-cloud-logo.svg
       - name: Verificar proteção de downloads nativos
