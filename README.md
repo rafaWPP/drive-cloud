@@ -202,3 +202,13 @@ O endpoint de progresso guarda estado temporário em memória no backend local, 
 Depois de confirmar uma operação de exclusão ou envio à lixeira, o Drive Cloud exibe **somente um toast inferior** em vermelho com ícone de lixeira, progresso por quantidade de itens, nome do item atual e botão **Cancelar**. O painel antigo `delete-job` foi retirado da renderização. Quando a operação termina, o toast de progresso desaparece e o toast de sucesso verde informa quantos itens foram processados. Em erro, aparece um toast de erro.
 
 O cancelamento é cooperativo: interrompe **os próximos itens da fila**, mas uma exclusão remota já enviada ao Telegram pode concluir e não pode ser desfeita. Para atualizar apenas o frontend, execute `git pull origin main` e atualize a página com `Ctrl+Shift+R`. Não há mudança de API nesta atualização.
+
+## Lixeira na barra lateral e restauração do catálogo
+
+A barra de ícones da esquerda agora inclui a **Lixeira**, com o mesmo padrão visual das outras seções. Ela consulta os itens excluídos logicamente no catálogo Telegram e permite **Restaurar** ou **Excluir definitivamente**, com confirmação e progresso em toast. A visualização usa o mesmo componente do Meu Drive, sem trocar para o armazenamento antigo do navegador.
+
+O próximo passo de recuperação foi implementado: a tela **Meu Drive** oferece **Exportar catálogo** e **Restaurar catálogo** (ícones no topo). Ao escolher o arquivo JSON exportado, o backend valida versão, estrutura de pastas, identificadores e, principalmente, a **mesma conta e o mesmo canal privado Telegram**. Antes de importar, apresenta uma contagem de registros existentes e ausentes; somente os ausentes são adicionados. Itens existentes não são substituídos.
+
+A importação recupera **apenas os metadados do catálogo** (pastas, nomes, referências e favoritos). Não restaura conteúdo excluído permanentemente do canal Telegram, nem traz arquivos de outra conta ou de outro canal. Recomenda-se manter uma cópia segura do arquivo exportado. Ainda não é sincronização automática entre dispositivos, e referências importadas pressupõem que as mensagens continuem disponíveis no Telegram.
+
+Para atualizar, execute `git pull origin main`, **reinicie o backend** (nova rota `POST /api/cloud/catalog/import`) e recarregue o navegador. Teste primeiro com uma exportação do seu próprio catálogo, sem excluir arquivos.
