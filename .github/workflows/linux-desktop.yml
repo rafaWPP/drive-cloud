@@ -47,6 +47,8 @@ jobs:
           assert.match(source, /backendOrigin = await invoke\('backend_origin'\)/);
           assert.ok(source.includes('!/^[0-9]+$/.test(apiId.trim())'), 'API ID must accept decimal digits');
           assert.match(source, /await openUrl\("https:\/\/my\.telegram\.org\/apps"\)/);
+          const backend = readFileSync('backend/server.py', 'utf8');
+          assert.ok(backend.indexOf('load_dotenv(DATA / ".env", override=True)') < backend.indexOf('API_ID = int(os.environ.get('), 'Stored Telegram credentials must load before API initialization');
           const tauriConfig = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
           assert.equal(tauriConfig.app.windows[0].dragDropEnabled, false, 'Desktop must use HTML5 file drop');
           const style = readFileSync('src/style.css', 'utf8');
