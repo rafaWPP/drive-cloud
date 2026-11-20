@@ -37,6 +37,7 @@ class FolderRequest(BaseModel):
     remote_root_id: str | None = None
     remote_folder_name: str | None = Field(default=None, max_length=180)
     mode: Literal["backup", "two-way"] = "backup"
+    automatic: bool = False
 
 
 class AutoRequest(BaseModel):
@@ -201,7 +202,7 @@ def new_remote_folder_name(name):
         raise HTTPException(422, "Informe o nome da pasta nova no Meu Drive.")
     name = name.strip()
     if (not name or name in (".", "..") or len(name) > 180
-        or any(char in name for char in ("/", "\\\\", "\\0"))
+        or any(char == "/" or ord(char) in (0, 92) for char in name)
         or any(ord(char) < 32 for char in name)):
         raise HTTPException(422, "Nome inválido para a nova pasta no Meu Drive.")
     return name
@@ -381,11 +382,11 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                         409, "Essa pasta do Meu Drive já está vinculada a outra pasta deste computador: " + conflict["path"],
                     )
                 db.execute(
-                    "INSERT INTO sync_folders (id,account,path,root_node,mode) VALUES (?,?,?,?,?)",
-                    (folder_id, account, str(root), node, body.mode),
+                    "INSERT INTO sync_folders (id,account,path,root_node,mode,enabled) VALUES (?,?,?,?,?,?)",
+                    (folder_id, account, str(root), node, body.mode, int(body.automatic)),
                 )
             return {"id": folder_id, "already_exists": False,
-                    "remote_path": remote_path, "mode": body.mode, "enabled": False}
+                    "remote_path": remote_path, "mode": body.mode, "enabled": body.automatic}
 
     @router.post("/folders/{folder_id}/preview")
     async def preview_pending(folder_id: str):
