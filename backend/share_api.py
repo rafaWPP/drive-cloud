@@ -244,7 +244,7 @@ def build_share_router(authorized_account, channel_links, lock):
         byte_range=request.headers.get("range")
         if byte_range:
             import re
-            match=re.fullmatch(r"bytes=(\\d*)-(\\d*)",byte_range.strip())
+            match=re.fullmatch(r"bytes=(\d*)-(\d*)",byte_range.strip())
             if match is None or (not match.group(1) and not match.group(2)):
                 raise HTTPException(416,"Intervalo de bytes inválido.",headers={"Content-Range":f"bytes */{total}"})
             if match.group(1):
