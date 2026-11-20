@@ -54,7 +54,18 @@ async fn wait_backend_ready(state: tauri::State<'_, Backend>) -> Result<(), Stri
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    // Only the first desktop window may own the Telegram sidecar.
+    // A second launch should focus the existing window, not open the same
+    // SQLite session and trigger SESSION_DATABASE_BUSY.
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+    let app = builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
