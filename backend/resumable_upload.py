@@ -161,6 +161,29 @@ def build_resumable_router(authorized_account, channel_links, lock):
                 row = get_session(db, upload_id, account, channel)
             return row_status(row, 0)
 
+    @router.get("/pending")
+    async def pending():
+        """Expose unfinished local stages so users can resume or discard them."""
+        async with lock:
+            _, account = await authorized_account()
+            channel = channel_id(channel_links, account)
+            with connection() as db:
+                schema(db)
+                rows = db.execute(
+                    "SELECT id,parent,name,size,state,updated FROM resumable_uploads "
+                    "WHERE account=? AND channel=? AND state!='completed' ORDER BY updated DESC LIMIT 30",
+                    (account, str(channel)),
+                ).fetchall()
+            out = []
+            for row in rows:
+                path = stage_path(row["id"])
+                out.append({
+                    **dict(row),
+                    "offset": file_size(path) if path.exists() and not path.is_symlink() else 0,
+                    "discardable": row["state"] == "staging",
+                })
+            return {"uploads": out, "max_chunk_size": CHUNK_SIZE}
+
     @router.get("/{upload_id}")
     async def status(upload_id: uuid.UUID):
         async with lock:
