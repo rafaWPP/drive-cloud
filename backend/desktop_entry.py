@@ -1,20 +1,40 @@
-"""Packaged, loopback-only Telegram connector for the desktop app.
-
-The bundled executable must not bind to a public network interface.
-Credentials are read from the user's local configuration (never embedded here).
-"""
+"""Entry point for the packaged, localhost-only Drive Cloud connector."""
 import os
+import sys
+import traceback
+from datetime import datetime, timezone
 from pathlib import Path
-import uvicorn
 
 def main():
     data = Path(os.environ.get("DRIVE_CLOUD_DATA_DIR") or Path.home() / ".local/share/drive-cloud")
     data.mkdir(mode=0o700, parents=True, exist_ok=True)
-    # Enables testing with a private per-user configuration, without shipping
-    # an API hash in the public repository or reading backend/.env inside a bundle.
-    from dotenv import load_dotenv
-    load_dotenv(data / ".env", override=False)
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=False, workers=1, access_log=False)
+    try:
+        data.chmod(0o700)
+    except OSError:
+        pass
+    log_file = data / "backend-startup.log"
+    # This diagnostic log must not contain phone numbers, API hashes or tokens.
+    def report(message):
+        try:
+            with log_file.open("a", encoding="utf-8") as f:
+                f.write(f"{datetime.now(timezone.utc).isoformat()} {message}\n")
+            log_file.chmod(0o600)
+        except OSError:
+            pass
+
+    report("Starting local Drive Cloud connector")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(data / ".env", override=False)
+        import server
+        import uvicorn
+        report("Imported server module; binding to 127.0.0.1:8000")
+        uvicorn.run(server.app, host="127.0.0.1", port=8000, reload=False, workers=1, access_log=False)
+        report("Server stopped")
+    except BaseException as exc:
+        report(f"Startup failed: {type(exc).__name__}: {str(exc)[:300]}")
+        report("".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-4000:])
+        raise
 
 if __name__ == "__main__":
     main()
