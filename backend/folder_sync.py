@@ -71,13 +71,13 @@ def source_root(path: str) -> Path:
     candidate = Path(path).expanduser()
     if not candidate.is_absolute():
         raise HTTPException(422, "Selecione uma pasta absoluta do computador.")
-    if candidate.is_symlink():
+    if candidate.is_symlink() or any(parent.is_symlink() for parent in candidate.parents):
         raise HTTPException(422, "Atalhos simbólicos não podem ser sincronizados.")
     try:
         root = candidate.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
         raise HTTPException(422, "Pasta inacessível ou não encontrada.") from exc
-    if not root.is_dir() or str(root) in FORBIDDEN_TOP:
+    if not root.is_dir() or str(root) in FORBIDDEN_TOP or root == Path(root.anchor):
         raise HTTPException(422, "Selecione uma pasta de documentos, não um diretório do sistema.")
     if root.is_symlink():
         raise HTTPException(422, "Atalhos simbólicos não podem ser sincronizados.")
@@ -306,7 +306,12 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                 sent = 0
                 for rel, size, mtime in pending[:MAX_UPLOADS_PER_RUN]:
                     original = root / rel
-                    if original.is_symlink():
+                    if original.is_symlink() or any(parent.is_symlink() for parent in original.parents if parent != root):
+                        continue
+                    try:
+                        if not original.resolve(strict=True).is_relative_to(root):
+                            continue
+                    except OSError:
                         continue
                     before = original.stat()
                     if before.st_size != size or before.st_mtime_ns != mtime:
