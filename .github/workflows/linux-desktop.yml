@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - feature/tauri-desktop-linux
+      - feature/catalog-telegram-sync
     paths:
       - 'src/**'
       - 'public/**'
