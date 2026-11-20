@@ -178,3 +178,9 @@ Após `git pull origin main`, reinicie o backend para habilitar rotas de exporta
 - O backend passa a oferecer `GET /api/cloud/usage`; reinicie o Uvicorn depois de atualizar o código.
 
 **Teste seguro:** use arquivos descartáveis e uma exclusão em lote para verificar o cancelamento; não use arquivos importantes para testar exclusão definitiva.
+
+## Visual compacto e confirmação V8
+
+- Indicador na barra lateral reduzido a **Armazenamento — valor usado**, uma barra fina e estado da conexão. A barra usa **1 GB apenas como escala de comparação visual**, nunca como cota ou limite real do Telegram. O número representa os arquivos registrados no SQLite local, incluindo lixeira.
+- Modal de exclusão com **um único ícone de alerta centralizado** que gira uma vez durante a abertura e termina parado; texto de advertência abaixo, em contraste discreto. A confirmação e o painel de progresso/cancelamento continuam funcionando.
+- Para atualizar: `git pull origin main` e `Ctrl+Shift+R`. Apenas frontend foi alterado; não exige reiniciar backend.
