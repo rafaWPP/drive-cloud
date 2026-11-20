@@ -1454,3 +1454,25 @@ main>header .search{flex:1 1 320px;max-width:465px}
 .dc-remote-restore-preview{display:flex;flex-direction:column;align-items:flex-start;gap:10px;border-radius:10px;padding:14px;background:#272b32;color:#e9eef4}
 .dc-remote-restore-preview p{margin:0;color:#c5d3e6;font-size:12px;line-height:1.6}
 .dc-remote-restore-preview small{color:#abb3bf;line-height:1.5}
+
+/* Native desktop folder backup controls */
+.dc-local-folder-setup{gap:13px}
+.dc-folder-path-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.dc-folder-path-row input{flex:1 1 260px;min-width:160px;background:#22242a;color:#f2f3f5;border:1px solid #47494f;border-radius:8px;padding:11px 12px;font-size:12px}
+.dc-folder-path-row button,.dc-folder-sync-actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;border:1px solid #55565c;border-radius:8px;padding:10px 13px;background:#34373d;color:#eceff5;font-size:12px;font-weight:650}
+.dc-folder-path-row button:hover,.dc-folder-sync-actions button:hover{background:#424750}
+.dc-folder-preview{display:flex;gap:10px;align-items:flex-start;flex-direction:column;padding:15px;border-radius:10px;background:#272b32}
+.dc-folder-preview strong{font-size:13px;color:#e9f0f9}
+.dc-folder-preview small{font-size:11px;color:#bec7d3}
+.dc-folder-preview button{width:auto}
+.dc-folder-sync-list{display:flex;flex-direction:column;gap:9px;width:100%}
+.dc-folder-sync-item{padding:15px;border-radius:10px;background:#25262b;display:flex;flex-direction:column;gap:12px}
+.dc-folder-sync-title{display:flex;align-items:flex-start;gap:10px;min-width:0;color:#b3ceef}
+.dc-folder-sync-title>div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.dc-folder-sync-title strong{font-size:13px;color:#ebedf3}
+.dc-folder-sync-title small{font-size:11px;color:#aeb5c0;overflow-wrap:anywhere}
+.dc-folder-sync-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.dc-folder-sync-actions>span{font-size:11px;color:#acb6c2;flex:1 1 230px}
+.dc-folder-sync-actions label{display:flex;align-items:center;gap:7px;white-space:nowrap;font-size:12px;color:#d4d9e2}
+.dc-folder-sync-actions input{accent-color:#4787e9}
+.dc-sync-error,.dc-sync-result{color:#ebb2a4;font-size:11px;line-height:1.5}
