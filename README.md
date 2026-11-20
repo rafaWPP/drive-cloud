@@ -225,3 +225,11 @@ A janela **Mover para** agora segue o mesmo tema grafite e o mesmo efeito de abe
 A operação altera apenas o campo `parent` no catálogo SQLite; os arquivos não precisam ser enviados ao Telegram novamente. A API já impede mover uma pasta para dentro dela mesma ou de descendentes. Para receber as mudanças no frontend, use `git pull origin main` e `Ctrl+Shift+R`.
 
 **Validação:** os arquivos foram atualizados no GitHub, mas a compilação no PC do usuário ainda precisa ser conferida.
+
+## Correção dos botões Nova pasta e indicador de armazenamento
+
+Os botões **Nova pasta** do Meu Drive e do explorador **Mover para** usam a API real `POST /api/cloud/folders`. A criação no Meu Drive não depende mais do `window.prompt`: agora exibe uma janela dark com nome, confirmação e mensagens de erro em toast. O botão **Novo** do cabeçalho também abre a janela de criação no Meu Drive. Dentro de **Mover para**, o formulário cria uma subpasta na localização atual e a seleciona como destino.
+
+Foi eliminada a legenda artificial **"Escala 1 GB*"**. Ela era apenas uma referência visual, não uma cota imposta pelo Telegram. Agora o bloco mostra os **bytes usados registrados no catálogo SQLite**, e a barra apresenta a **distribuição entre arquivos ativos (azul) e arquivos na lixeira (cinza)**. Não representa espaço livre, quota total ou capacidade real da conta Telegram.
+
+Atualize com `git pull origin main` e `Ctrl+Shift+R`. As rotas do backend não mudaram. Caso a criação falhe com erro de conexão/Telegram, confira se o backend local está executando e a conta está conectada.
