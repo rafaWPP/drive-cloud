@@ -127,9 +127,9 @@ def build_share_router(authorized_account, channel_links, lock):
         if root["kind"]=="folder" and link["mode"]=="view":
             with connection() as db:
                 items=child_rows(db,root,link["owner"])
-                output=[{"id":row["id"],"kind":row["kind"],"name":row["name"],
+                output=[{"id":row["id"],"parent":row["parent"],"kind":row["kind"],"name":row["name"],
                          "size":row["size"],"path":rel} for row,rel in items[1:]]
-        return {"name":root["name"],"kind":root["kind"],"size":root["size"],
+        return {"root_id":root["id"],"name":root["name"],"kind":root["kind"],"size":root["size"],
                 "mode":link["mode"],"expires":link["expires"],"items":output,
                 "local_only":True}
 
@@ -197,6 +197,28 @@ def build_share_router(authorized_account, channel_links, lock):
             return Response(output.getvalue(),media_type="application/zip",
                 headers={"Cache-Control":"no-store","Content-Disposition":
                     "attachment; filename*=UTF-8''"+quote(root["name"]+".zip")})
+
+    @router.get("/api/public/share/{token}/image/{file_id}")
+    async def preview_shared_child(token:str,file_id:str):
+        link,root=await lookup(token)
+        if link["mode"]!="view" or root["kind"]!="folder":
+            raise HTTPException(403,"Este link não permite visualizar arquivos.")
+        async with lock:
+            client,account=await authorized_account()
+            if account!=link["owner"]:
+                raise HTTPException(403,"Sessão Telegram indisponível.")
+            with connection() as db:
+                items=child_rows(db,root,account)
+            item=next((x for x,_ in items if x["id"]==file_id and x["kind"]=="file"),None)
+            if not item:raise HTTPException(404,"Arquivo fora desta pasta compartilhada.")
+            if not is_image(item):raise HTTPException(415,"Prévia indisponível.")
+            if item["size"]>20*1024*1024:raise HTTPException(413,"Imagem grande demais para visualização.")
+            msg=await client.get_messages(channel_id(channel_links,account),ids=item["message_id"])
+            if not msg or not msg.media:raise HTTPException(404,"Imagem não encontrada.")
+            data=await client.download_media(msg,file=bytes)
+            if data is None:raise HTTPException(502,"Falha ao recuperar imagem.")
+            return Response(prepare_image(data,1200),media_type="image/jpeg",
+                headers={"Cache-Control":"no-store"})
 
     @router.get("/api/public/share/{token}/file/{file_id}")
     async def download_shared_child(token:str,file_id:str):
