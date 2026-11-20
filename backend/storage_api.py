@@ -11,14 +11,13 @@ import time
 import uuid
 import asyncio
 import zipfile
-import tempfile
-import shutil
 from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
 import pillow_jxl  # Register JPEG XL decoder for previews
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, FileResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
 DB_PATH = Path(__file__).resolve().parent / ".data" / "files.sqlite3"
@@ -224,7 +223,7 @@ def build_router(authorized_account, channel_links, lock):
                 raise HTTPException(502, "Prévia indisponível: "+type(exc).__name__) from exc
 
     def zip_safe_name(value: str) -> str:
-        clean = str(value or "arquivo").replace("\\", "_").replace("/", "_").replace("\\x00", "_").strip()
+        clean = str(value or "arquivo").replace("\\", "_").replace("/", "_").replace(chr(0), "_").strip()
         return clean if clean not in ("", ".", "..") else "arquivo"
 
     @router.post("/folders/{folder_id}/zip")
@@ -294,6 +293,8 @@ def build_router(authorized_account, channel_links, lock):
                                 if not message or not message.media:
                                     raise RuntimeError("Arquivo ausente no canal: "+row["name"])
                                 raw=await client.download_media(message,file=bytes)
+                                if raw is not None and job["processed_bytes"]+len(raw)>ZIP_MAX_TOTAL:
+                                    raise RuntimeError("O tamanho real dos arquivos ultrapassa 300 MB.")
                                 if raw is None:
                                     raise RuntimeError("Falha ao recuperar: "+row["name"])
                                 archive.writestr(arcname,raw)
@@ -337,7 +338,8 @@ def build_router(authorized_account, channel_links, lock):
         if job["state"]!="ready" or not Path(job["path"]).exists():
             raise HTTPException(409,"O arquivo ZIP ainda não está pronto.")
         return FileResponse(job["path"],media_type="application/zip",filename=job["name"],
-                            headers={"Cache-Control":"no-store"})
+                            headers={"Cache-Control":"no-store"},
+                            background=BackgroundTask(lambda: Path(job["path"]).unlink(missing_ok=True)))
 
     @router.get("/download/{file_id}")
     async def download(file_id: str):
