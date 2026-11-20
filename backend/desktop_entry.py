@@ -1,6 +1,7 @@
 """Entry point for the packaged, localhost-only Drive Cloud connector."""
 import os
 import sys
+import threading
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,7 +33,30 @@ def main():
         if not 1 <= port <= 65535:
             raise ValueError("Invalid local backend port")
         report(f"Imported server module; binding to loopback port {port}")
-        uvicorn.run(server.app, host="127.0.0.1", port=port, reload=False, workers=1, access_log=False)
+        config = uvicorn.Config(server.app, host="127.0.0.1", port=port,
+                                reload=False, workers=1, access_log=False)
+        api = uvicorn.Server(config)
+
+        def listen_for_desktop_shutdown():
+            """Both Linux and Windows Tauri close the sidecar through stdin.
+
+            The server's normal shutdown awaits Telethon.disconnect() so its
+            SQLite session is committed instead of being killed mid-write.
+            Ignore EOF: CI and terminal launches may have closed stdin.
+            """
+            try:
+                for line in sys.stdin:
+                    if line.strip() == "drive-cloud:shutdown":
+                        report("Desktop requested graceful shutdown")
+                        api.should_exit = True
+                        return
+            except (OSError, ValueError, TypeError):
+                return
+
+        if sys.stdin is not None:
+            threading.Thread(target=listen_for_desktop_shutdown,
+                             name="drive-cloud-shutdown", daemon=True).start()
+        api.run()
         report("Server stopped")
     except BaseException as exc:
         report(f"Startup failed: {type(exc).__name__}: {str(exc)[:300]}")
