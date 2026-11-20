@@ -188,3 +188,11 @@ Após `git pull origin main`, reinicie o backend para habilitar rotas de exporta
 ## Validação de uploads antes de abrir painel
 
 O gerenciador de transferências **só aparece quando um arquivo válido entra no envio**. Arquivos acima do limite experimental de **20 MB por arquivo** são rejeitados antes de entrar na fila: aparece apenas um toast de erro, sem abrir uma janela de upload vazia. Se houver uma seleção mista, os arquivos aceitos seguem para o Telegram e os rejeitados são avisados por toast. O limite permanece em vigor nesta etapa; suporte a arquivos grandes ainda requer implementação e validação em partes.
+
+## Progresso real do upload no Telegram
+
+A barra não mostra mais **100%** simplesmente porque o navegador terminou de enviar os dados ao backend. O frontend atribui 0–10% à transmissão local; depois consulta `GET /api/cloud/upload-progress/{upload_id}` para ler os bytes reais informados pelo `progress_callback` do Telethon durante o envio ao Telegram. A etapa remota ocupa os 10–95% seguintes. Ao terminar o envio ao Telegram, o sistema aguarda a gravação do catálogo SQLite, e **100% só aparece quando a API de upload retorna sucesso**.
+
+O endpoint de progresso guarda estado temporário em memória no backend local, sem gravar dados ou credenciais no GitHub. O progresso não é recuperação de upload interrompido nem garante cancelamento remoto de uma transferência iniciada.
+
+**Atualização:** faça `git pull origin main`, reinicie o backend com Uvicorn, mantenha o frontend Vite aberto e pressione `Ctrl+Shift+R` no navegador. O limite piloto continua em 20 MB por arquivo.
