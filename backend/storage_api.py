@@ -238,6 +238,22 @@ def build_router(authorized_account, channel_links, lock):
             return {"ok": True}
 
 
+    @router.get("/usage")
+    async def usage():
+        """Catalog totals for this account, not Telegram account quota."""
+        async with lock:
+            _, account = await authorized_account()
+            channel_id(channel_links, account)
+            with connection() as db:
+                stats = db.execute("""SELECT
+                    COUNT(*) AS total_items,
+                    COALESCE(SUM(CASE WHEN kind='file' THEN size ELSE 0 END),0) AS total_bytes,
+                    COALESCE(SUM(CASE WHEN kind='file' AND trashed=0 THEN size ELSE 0 END),0) AS active_bytes,
+                    COALESCE(SUM(CASE WHEN kind='file' AND trashed=1 THEN size ELSE 0 END),0) AS trash_bytes,
+                    SUM(CASE WHEN kind='file' THEN 1 ELSE 0 END) AS files
+                    FROM nodes WHERE account=?""", (account,)).fetchone()
+            return {**dict(stats), "scope": "drive_catalog", "quota_bytes": None}
+
     @router.get("/catalog/export")
     async def export_catalog():
         """Portable metadata snapshot; does not contain Telegram credentials or file bytes."""
