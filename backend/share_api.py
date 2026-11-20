@@ -262,6 +262,34 @@ def build_share_router(authorized_account, channel_links, lock):
             return Response(data[start:end+1],status_code=206,media_type=media_type,headers=headers)
         return Response(data,media_type=media_type,headers=headers)
 
+    @router.get("/api/public/share/{token}/media-status")
+    async def media_status(token:str,file_id:str|None=None):
+        """Lightweight diagnostic for broken previews, scoped to a valid share token."""
+        link,root=await lookup(token)
+        if link["mode"] not in ("view","embed"):
+            raise HTTPException(403,"Este link não autoriza visualização de mídia.")
+        target=root
+        if file_id:
+            if root["kind"]!="folder" or link["mode"]!="view":
+                raise HTTPException(403,"Arquivo fora do compartilhamento.")
+            with connection() as db:
+                items=child_rows(db,root,link["owner"])
+            target=next((row for row,_ in items if row["id"]==file_id and row["kind"]=="file"),None)
+            if not target:
+                raise HTTPException(404,"Arquivo não encontrado neste compartilhamento.")
+        if target["kind"]!="file" or not safe_media_type(target):
+            raise HTTPException(415,"Formato sem prévia no navegador. Utilize o download.")
+        if target["size"]>MAX_PUBLIC_ZIP:
+            raise HTTPException(413,"A prévia local aceita arquivos de até 50 MB.")
+        async with lock:
+            client,account=await authorized_account()
+            if account!=link["owner"]:
+                raise HTTPException(403,"A conta Telegram proprietária não está conectada.")
+            message=await client.get_messages(channel_id(channel_links,account),ids=target["message_id"])
+            if not message or not message.media:
+                raise HTTPException(404,"O arquivo não está mais disponível no canal Telegram.")
+        return {"ready":True,"name":target["name"],"type":safe_media_type(target)}
+
     @router.get("/api/public/share/{token}/media")
     async def media_root(token:str,request:Request):
         link,root=await lookup(token)
