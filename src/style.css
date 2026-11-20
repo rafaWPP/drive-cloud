@@ -1496,3 +1496,57 @@ main>header .search{flex:1 1 320px;max-width:465px}
 .dc-resume-item small{font-size:11px;color:#9fafc3}
 .dc-resume-item button{background:transparent;color:#d3dae6;border:1px solid #565e6c;border-radius:7px;font-size:11px;padding:7px 10px;white-space:nowrap}
 .dc-resume-repick{align-self:flex-start;border:0;border-radius:8px;padding:9px 13px;background:#337adc;color:white;font-size:12px;font-weight:600}
+
+
+/* First-run Telegram onboarding — native desktop, no gradients. */
+.dc-onboard-screen{min-height:100vh;min-height:100dvh;width:100%;display:flex;align-items:center;justify-content:center;padding:30px;background:#15171b;color:#f3f5f8;overflow-y:auto}
+.dc-onboard-frame{display:grid;grid-template-columns:minmax(310px,.95fr) minmax(390px,1.05fr);width:min(1110px,100%);min-height:650px;border-radius:18px;overflow:hidden;background:#202329;border:1px solid #323945}
+.dc-onboard-intro{display:flex;flex-direction:column;justify-content:space-between;gap:40px;padding:39px 44px;background:#19212c;border-right:1px solid #343d49}
+.dc-onboard-brand{display:flex;align-items:center;gap:12px;font-weight:750;font-size:17px;letter-spacing:-.35px}
+.dc-onboard-brand>span{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:#293c55}
+.dc-onboard-brand img{width:29px;height:29px;object-fit:contain}
+.dc-onboard-main{max-width:395px}
+.dc-onboard-kicker{display:inline-flex;align-items:center;gap:7px;margin-bottom:19px;font-size:10px;font-weight:750;letter-spacing:1.5px;color:#96bdf2}
+.dc-onboard-main h1{font-size:clamp(28px,3.1vw,39px);letter-spacing:-1.15px;line-height:1.16;font-weight:750;max-width:360px;margin:0}
+.dc-onboard-main>p{font-size:13px;line-height:1.75;color:#aebac9;max-width:340px;margin:18px 0 28px}
+.dc-onboard-timeline{display:flex;flex-direction:column;gap:17px}
+.dc-onboard-timeline-item{display:flex;gap:13px;align-items:center;color:#8290a1}
+.dc-onboard-timeline-item>span{flex:0 0 30px;height:30px;display:grid;place-items:center;border-radius:50%;border:1px solid #566070;color:#9da9ba;font-size:12px;font-weight:750}
+.dc-onboard-timeline-item>div{display:flex;flex-direction:column;gap:3px}
+.dc-onboard-timeline-item strong{font-size:12px;color:#a8b3c3;font-weight:700}
+.dc-onboard-timeline-item small{font-size:11px;color:#8492a3;line-height:1.45}
+.dc-onboard-timeline-item.is-active>span{background:#347ade;border-color:#347ade;color:white}
+.dc-onboard-timeline-item.is-active strong{color:#eef5ff}
+.dc-onboard-timeline-item.is-done>span{border-color:#3f756b;background:#2b4944;color:#9ce7d3}
+.dc-onboard-timeline-item.is-done strong{color:#c7d8d8}
+.dc-onboard-trust{display:flex;align-items:center;gap:8px;color:#8496a9;font-size:11px;line-height:1.6}
+.dc-onboard-trust svg{flex-shrink:0;color:#8fcaac}
+.dc-onboard-action{padding:39px 42px 31px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.dc-onboard-title small{font-size:10px;letter-spacing:1.3px;font-weight:750;color:#82b6f4}
+.dc-onboard-title h2{font-size:25px;letter-spacing:-.6px;color:#f0f3f8;font-weight:750;margin:11px 0 7px}
+.dc-onboard-title p{font-size:12px;color:#aab5c2;line-height:1.7;margin:0;max-width:440px}
+.dc-ob-telegram-panel.telegram-panel{max-width:none;width:100%;border:0;background:transparent;border-radius:0;box-shadow:none;padding:0;margin:19px 0 0}
+.dc-ob-telegram-panel .telegram-header{display:none}
+.dc-ob-telegram-panel .tg-api-setup{max-width:100%;margin:0;gap:11px}
+.dc-ob-telegram-panel .tg-api-alert{background:#292e35;padding:14px}
+.dc-ob-telegram-panel .tg-api-alert p{line-height:1.55}
+.dc-ob-telegram-panel .tg-api-form{max-width:100%}
+.dc-ob-telegram-panel .tg-api-form input{background:#191e25;border-color:#3c4755}
+.dc-ob-telegram-panel .tg-api-form input:focus{border-color:#4689ee}
+.dc-ob-telegram-panel .tg-api-form>button{background:#3178df;min-height:43px}
+.dc-ob-telegram-panel .tg-api-form small{line-height:1.55}
+.dc-ob-telegram-panel .tg-api-instructions{background:#292e35}
+.dc-ob-telegram-panel .tg-form{max-width:100%;margin-top:16px}
+.dc-ob-telegram-panel .tg-note{margin:4px 0 9px;color:#aeb8c7}
+.dc-ob-telegram-panel .tg-qr{margin:1px 0;background:#fff;border-radius:12px}
+.dc-ob-telegram-panel .tg-connected-card{margin:0}
+.dc-ob-telegram-panel .tg-connected-actions{display:none}
+.dc-ob-telegram-panel .tg-setup-button{width:100%;min-height:43px;margin-top:15px}
+.dc-ob-telegram-panel .tg-security-note{font-size:11px;color:#8996a8;line-height:1.6;margin-top:19px}
+.dc-onboard-loading{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;background:#15171b;color:#aebbca;font-size:12px}
+.dc-onboard-offline{background:#272d36;border-radius:10px;padding:18px;color:#cdd7e5;display:flex;flex-direction:column;gap:11px;margin:25px 0}
+.dc-onboard-offline strong{font-size:14px;color:#eef1f7}
+.dc-onboard-offline p{font-size:12px;line-height:1.6;margin:0}
+.dc-onboard-offline button{align-self:flex-start;background:#347ade;border:0;color:#fff;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer}
+@media(max-width:850px){.dc-onboard-frame{grid-template-columns:1fr;min-height:auto;max-width:620px}.dc-onboard-intro{padding:24px 27px;gap:22px;border-right:0;border-bottom:1px solid #344052}.dc-onboard-main h1{font-size:27px}.dc-onboard-main>p{margin:12px 0 19px}.dc-onboard-timeline{flex-direction:row;gap:10px;flex-wrap:wrap}.dc-onboard-timeline-item{gap:7px}.dc-onboard-timeline-item small{display:none}.dc-onboard-trust{display:none}.dc-onboard-action{padding:25px 27px 32px;justify-content:flex-start}.dc-onboard-screen{align-items:flex-start;padding:17px}}
+@media(max-width:480px){.dc-onboard-intro{padding:21px 19px}.dc-onboard-action{padding:23px 19px 28px}.dc-onboard-main h1{font-size:25px}.dc-onboard-timeline-item strong{font-size:11px}.dc-onboard-timeline-item>span{width:26px;height:26px;flex-basis:26px}.dc-onboard-title h2{font-size:22px}.dc-ob-telegram-panel .tg-api-alert{padding:11px}.dc-onboard-screen{padding:0}.dc-onboard-frame{border:0;border-radius:0;min-height:100dvh}}
