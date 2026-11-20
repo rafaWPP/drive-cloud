@@ -17,11 +17,12 @@ import uuid
 import zipfile
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Literal
 
 from storage_api import connection, channel_id, is_image, prepare_image, THUMBS
+from media_ranges import select_range, read_exact_range, UnsatisfiableRange, ShortMediaRead
 
 MAX_PUBLIC_ZIP = 50 * 1024 * 1024
 MAX_PUBLIC_ITEMS = 100
@@ -291,28 +292,6 @@ def build_share_router(authorized_account, channel_links, lock):
                    "jxl":"image/jpeg","bmp":"image/jpeg","tif":"image/jpeg","tiff":"image/jpeg"}
         return supported.get(ext)
 
-    def requested_bytes(header,total,is_video):
-        """Serve short 206 video segments so seeking never downloads entire files."""
-        if not header:
-            return 0,total-1,False
-        match=re.fullmatch(r"bytes=(\d*)-(\d*)",header.strip())
-        if not match or not any(match.groups()) or total<1:
-            raise HTTPException(416,"Intervalo de bytes inválido.",
-                                headers={"Content-Range":f"bytes */{total}"})
-        if match.group(1):
-            start=int(match.group(1))
-            end=int(match.group(2)) if match.group(2) else total-1
-        else:
-            length=int(match.group(2))
-            start=max(0,total-length)
-            end=total-1
-        if start>=total or start>end or end>=total:
-            raise HTTPException(416,"Intervalo fora do arquivo.",
-                                headers={"Content-Range":f"bytes */{total}"})
-        if is_video:
-            end=min(end,start+MEDIA_RANGE_MAX-1)
-        return start,end,True
-
     async def send_media(link,root,request:Request,item_id=None,thumb=False):
         require_media_ticket(link,request.query_params.get("access"))
         # A media URL is an internal resource, not a second share page. Browsing
@@ -392,36 +371,51 @@ def build_share_router(authorized_account, channel_links, lock):
 
         is_video=media_type.startswith("video/")
         if is_video:
-            total=int(getattr(getattr(msg,"file",None),"size",0) or item["size"]) if msg else len(data)
+            total=(int(getattr(getattr(msg,"file",None),"size",0) or item["size"])
+                   if msg else len(data))
             if total<=0 or total>MAX_PUBLIC_ZIP:
                 raise HTTPException(413,"Vídeo com tamanho inválido para prévia.")
-            start,end,is_range=requested_bytes(request.headers.get("range"),total,True)
+            try:
+                start,end,is_range=select_range(
+                    request.headers.get("range"),total,MEDIA_RANGE_MAX
+                )
+            except UnsatisfiableRange:
+                raise HTTPException(416,"Intervalo solicitado é inválido.",
+                                    headers={"Content-Range":f"bytes */{total}"})
             headers={"Accept-Ranges":"bytes","Cache-Control":"private, no-store",
-                     "X-Content-Type-Options":"nosniff","Content-Length":str(end-start+1)}
+                     "X-Content-Type-Options":"nosniff"}
             if is_range:
                 headers["Content-Range"]=f"bytes {start}-{end}/{total}"
-            if data is not None:
-                return Response(data[start:end+1],
-                                status_code=206 if is_range else 200,
-                                media_type=media_type,headers=headers)
 
-            async def fragments():
-                remaining=end-start+1
-                async with MEDIA_STREAM_LIMIT:
-                    async for fragment in client.iter_download(
-                        msg.media,offset=start,request_size=MEDIA_RANGE_CHUNK,
-                        chunk_size=MEDIA_RANGE_CHUNK):
-                        if remaining<=0:
-                            break
-                        portion=fragment[:remaining]
-                        if portion:
-                            remaining-=len(portion)
-                            yield portion
-                        if remaining<=0:
-                            break
-            return StreamingResponse(fragments(),
-                status_code=206 if is_range else 200,
-                media_type=media_type,headers=headers)
+            if data is None:
+                # Prefetch the exact section from Telegram BEFORE an HTTP 206
+                # begins. This prevents ASGI streaming exceptions from killing
+                # the player's response mid-transfer. Limit concurrency/RAM.
+                try:
+                    async with MEDIA_STREAM_LIMIT:
+                        # A Telegram Document is a supported iter_download input.
+                        media=getattr(msg,"document",None) or msg
+                        data=await read_exact_range(
+                            client,media,start,end-start+1
+                        )
+                except ShortMediaRead as exc:
+                    raise HTTPException(502,
+                        "Telegram enviou um trecho incompleto do vídeo. "
+                        "Tente novamente.") from exc
+                except Exception as exc:
+                    raise HTTPException(502,
+                        "Falha ao buscar trecho do vídeo no Telegram. "
+                        "Confira o backend.") from exc
+            else:
+                data=data[start:end+1]
+
+            if len(data)!=end-start+1:
+                raise HTTPException(502,"Tamanho incorreto do trecho do vídeo.")
+            # Response computes Content-Length from the actual bytes, so it
+            # cannot disagree with the transmitted body.
+            return Response(data,
+                            status_code=206 if is_range else 200,
+                            media_type=media_type,headers=headers)
 
         # For images, preserve the existing short-lived RAM cache. Conversion
         # is only needed for formats browsers cannot display natively.
