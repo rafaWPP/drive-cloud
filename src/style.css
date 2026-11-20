@@ -965,3 +965,10 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .public-share-brand img{width:28px;height:28px;object-fit:contain}
 .tg-header-icon img{width:34px;height:34px;object-fit:contain}
 @media(prefers-reduced-motion:reduce){.dc-cloud-running{animation:none;stroke-dashoffset:0}.dc-shimmer,.dc-loading-screen{animation:none}}
+
+/* Initial loading: isolated, centered outline cloud. No labels or cards visible. */
+.dc-initial-splash{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#1b1b1d}
+.dc-initial-splash .dc-cloud-loader{width:128px;height:94px;max-width:45vw}
+.dc-initial-splash .dc-cloud-outline{stroke-width:4.8;stroke:#4a4b53}
+.dc-initial-splash .dc-cloud-running{stroke-width:5.2;stroke:#398bff;stroke-dasharray:34 214;filter:drop-shadow(0 0 2px #398bff55)}
+@media(prefers-reduced-motion:reduce){.dc-initial-splash .dc-cloud-running{stroke-dasharray:82 166}}
