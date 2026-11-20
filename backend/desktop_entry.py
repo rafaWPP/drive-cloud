@@ -28,8 +28,11 @@ def main():
         load_dotenv(data / ".env", override=False)
         import server
         import uvicorn
-        report("Imported server module; binding to 127.0.0.1:8000")
-        uvicorn.run(server.app, host="127.0.0.1", port=8000, reload=False, workers=1, access_log=False)
+        port = int(os.environ.get("DRIVE_CLOUD_BACKEND_PORT", "8000"))
+        if not 1 <= port <= 65535:
+            raise ValueError("Invalid local backend port")
+        report(f"Imported server module; binding to loopback port {port}")
+        uvicorn.run(server.app, host="127.0.0.1", port=port, reload=False, workers=1, access_log=False)
         report("Server stopped")
     except BaseException as exc:
         report(f"Startup failed: {type(exc).__name__}: {str(exc)[:300]}")
