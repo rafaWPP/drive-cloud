@@ -1364,14 +1364,19 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 /* Upload panel — state belongs in the header; file and destination use quiet icons. */
 .dc-upload-v2 .upload-head{min-height:63px}
 .dc-upload-v2 .upload-title b{max-width:230px;font-size:12px;letter-spacing:-.1px}
+.dc-upload-v2 .upload-title{align-items:center;gap:9px}
 .dc-upload-v2 .dc-upload-title-visual{
- width:34px;height:34px;flex:0 0 34px;
- border-radius:10px;transition:color .18s,background .18s;
+ width:22px;height:24px;flex:0 0 22px;
+ display:flex;align-items:center;justify-content:center;
+ align-self:center;min-width:0;padding:0;gap:0;
+ border:0;border-radius:0;background:transparent;
+ box-shadow:none;transition:color .18s ease;
 }
-.dc-upload-v2 .dc-upload-title-visual.sending{background:#2b4264;color:#80b6ff}
-.dc-upload-v2 .dc-upload-title-visual.complete{background:#254536;color:#68dc9b}
-.dc-upload-v2 .dc-upload-title-visual.failed{background:#503036;color:#f3a4b0}
-.dc-upload-v2 .dc-upload-title-visual.cancelled{background:#3c3e44;color:#c1c4cb}
+.dc-upload-v2 .dc-upload-title-visual svg{display:block;flex-shrink:0}
+.dc-upload-v2 .dc-upload-title-visual.sending{background:transparent;color:#80b6ff}
+.dc-upload-v2 .dc-upload-title-visual.complete{background:transparent;color:#68dc9b}
+.dc-upload-v2 .dc-upload-title-visual.failed{background:transparent;color:#f3a4b0}
+.dc-upload-v2 .dc-upload-title-visual.cancelled{background:transparent;color:#c1c4cb}
 .dc-upload-v2.dc-upload-complete .upload-head{border-bottom-color:#343c39}
 .dc-upload-v2 .dc-compact-upload-icon.file,
 .dc-upload-v2 .upload-job-icon.dc-file-glyph{
