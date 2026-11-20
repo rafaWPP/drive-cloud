@@ -508,3 +508,11 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .dc-toast-progress-cancel:hover:not(:disabled){background:#79404a}
 .dc-toast-progress-cancel:disabled{opacity:.5}
 @media(max-width:540px){.dc-toast.dc-toast-progress{gap:8px;padding:12px}.dc-toast-progress-cancel{padding:0 8px}}
+
+/* Catalog restore confirmation: compact, consistent with Drive Cloud dialogs */
+.catalog-review{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;padding:19px 18px 10px}
+.catalog-review>div{background:#333337;border-radius:9px;padding:12px 9px;display:flex;flex-direction:column;gap:6px;text-align:center;min-width:0}
+.catalog-review strong{font-size:20px;color:#f1f1f2;font-weight:750}
+.catalog-review span{font-size:10px;color:#b0b0b5;line-height:1.3}
+.catalog-notice{padding:0 21px 17px;color:#b4b4ba;font-size:11px;line-height:1.65;margin:0}
+@media(max-width:500px){.catalog-review{padding:12px}.catalog-review>div{padding:9px 5px}.catalog-review strong{font-size:17px}}
