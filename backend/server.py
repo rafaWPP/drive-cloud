@@ -30,7 +30,7 @@ API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
 app = FastAPI(title="Drive Cloud - Telegram local", docs_url=None, redoc_url=None)
 ALLOWED = {"http://127.0.0.1:5173", "http://localhost:5173"}
 app.add_middleware(CORSMiddleware, allow_origins=list(ALLOWED), allow_credentials=False,
-                   allow_methods=["GET", "POST", "PATCH"], allow_headers=["Content-Type"])
+                   allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Content-Type"])
 client = None
 phone_pending = None
 phone_code_hash = None
