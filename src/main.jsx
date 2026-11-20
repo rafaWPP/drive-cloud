@@ -894,17 +894,29 @@ function SyncPages({section,onToast}){
   setRunning(folder.id);setError('');setLastResult(null);
   try{
    const check=await request('/folders/'+encodeURIComponent(folder.id)+'/preview','POST');
-   if(!check.pending){onToast?.({kind:'info',message:'Nenhuma alteração pendente nesta pasta.'});return}
+   if(!check.pending&&folder.mode!=='two-way'){onToast?.({kind:'info',message:'Nenhuma alteração pendente nesta pasta.'});return}
    const response=await request('/folders/'+encodeURIComponent(folder.id)+'/run','POST');
    setLastResult({path:folder.path,...response});
-   onToast?.({kind:'success',message:response.sent+' arquivo(s) enviado(s) ao Telegram. '+(response.remaining_estimate?'Execute novamente para continuar.':'')});
+   onToast?.({kind:'success',message:response.sent+' arquivo(s) enviados'+(response.remote?', '+response.remote.downloaded+' recuperados e '+response.remote.conflicts+' conflitos preservados':'')+'. '+(response.remaining_estimate?'Execute novamente para continuar.':'')+(response.sent&&!response.catalog_snapshot_saved?' Atenção: catálogo remoto não foi atualizado; tente salvar em Backups.':'')});
    await refresh();
   }catch(e){setError(e.message)}finally{setRunning(null)}
  }
+ async function updateCatalog(){
+  setBusy(true);setError('');setPullPreview(null);
+  try{
+   const result=await request('/catalog/refresh','POST');
+   await refresh();
+   onToast?.({kind:'success',message:result.items_added+' registros recuperados do catálogo Telegram. '+(result.metadata_differences_preserved?'Mudanças divergentes foram preservadas localmente.':'')});
+  }catch(e){setError(e.message)}finally{setBusy(false)}
+ }
  async function previewRemote(folder){
   setRunning(folder.id);setError('');setPullPreview(null);setPullResult(null);
-  try{const result=await request('/folders/'+encodeURIComponent(folder.id)+'/remote/preview','POST');setPullPreview({folder,...result})}
-  catch(e){setError(e.message)}finally{setRunning(null)}
+  try{
+   await request('/catalog/refresh','POST');
+   const result=await request('/folders/'+encodeURIComponent(folder.id)+'/remote/preview','POST');
+   setPullPreview({folder,...result});
+   await refresh();
+  }catch(e){setError(e.message)}finally{setRunning(null)}
  }
  async function pullRemote(folder){
   setRunning(folder.id);setError('');setPullResult(null);
@@ -942,15 +954,16 @@ function SyncPages({section,onToast}){
   {error&&<div className="public-share-error" role="alert">{error}</div>}
   {section==='sync'&&<div className="dc-module-section dc-local-folder-setup"><h3>Adicionar pasta</h3><p>Escolha uma pasta. Primeiro analisaremos os arquivos e mostraremos o que poderá ser enviado; nada é enviado até você confirmar.</p>
    <div className="dc-folder-path-row"><input aria-label="Pasta do computador" value={path} onChange={e=>{setPath(e.target.value);setPreview(null)}} placeholder="Selecione uma pasta do computador"/><button type="button" disabled={busy} onClick={browseFolder}><Folder size={15}/> Procurar</button><button type="button" disabled={busy||!path.trim()} onClick={inspect}>Analisar</button></div>
+   <button type="button" className="dc-sync-refresh" disabled={busy||!!running} onClick={updateCatalog}><RefreshCw size={15}/> Buscar backups de outros dispositivos no Telegram</button>
    {remoteRoots.length>0&&<label className="dc-remote-root-selection">Origem do backup
      <select value={selectedRoot} onChange={e=>setSelectedRoot(e.target.value)}>
       <option value="">Criar novo backup no Telegram</option>
       {remoteRoots.map(root=><option key={root.id} value={root.id}>{root.name}</option>)}
-     </select><small>Para recuperar um backup de outro computador, importe antes o catálogo em Backups e selecione aqui a pasta existente.</small>
+     </select><small>Clique em Buscar backups para localizar pastas de outros dispositivos. Depois selecione aqui a pasta existente, sem duplicar o armazenamento.</small>
     </label>}
    {preview&&<div className="dc-folder-preview"><strong>{preview.files} arquivos • {size(preview.bytes)}</strong><small>{preview.over_limit?preview.over_limit+' arquivo(s) acima de 512 MB serão ignorados.':'Nenhum arquivo acima de 512 MB.'}</small><button className="dc-module-primary" disabled={busy} onClick={register}>Adicionar ao Drive Cloud</button></div>}
   </div>}
-  <div className="dc-module-section"><h3>{section==='devices'?'Pastas neste dispositivo':section==='syncActivity'?'Atividade de backup':'Pastas configuradas'}</h3><p>O envio acontece em lotes de até três arquivos; o monitoramento automático verifica alterações a cada dois minutos quando ativado. Pastas de dependências, arquivos temporários e atalhos simbólicos são ignorados.</p>
+  <div className="dc-module-section"><h3>{section==='devices'?'Pastas neste dispositivo':section==='syncActivity'?'Atividade de backup':'Pastas configuradas'}</h3><p>O Drive Cloud envia e recupera até três arquivos por execução; no modo duas direções, consulta os snapshots do catálogo e preserva arquivos divergentes com nomes diferentes. O monitoramento automático roda a cada dois minutos quando ativado.</p>
    <div className="dc-folder-sync-list">{folders.length?folders.map(folder=><div className="dc-folder-sync-item" key={folder.id}><div className="dc-folder-sync-title"><Folder size={19}/><div><strong>{folder.path.split(/[\\/]/).filter(Boolean).at(-1)||folder.path}</strong><small title={folder.path}>{folder.path}</small></div></div>
     <div className="dc-folder-sync-actions"><span>{folder.enabled?'Backup automático ligado':'Backup automático pausado'}{folder.last_run?' • Última execução: '+new Date(folder.last_run*1000).toLocaleString('pt-BR'):''}</span><button disabled={!!running||busy} onClick={()=>runOne(folder)}>{running===folder.id?'Enviando...':'Sincronizar agora'}</button><button type="button" disabled={!!running||busy} onClick={()=>previewRemote(folder)}>Recuperar do Telegram</button><label className="dc-sync-mode">Modo <select aria-label={'Modo de sincronização de '+folder.path} disabled={!!running||busy} value={folder.mode||'backup'} onChange={e=>setMode(folder,e.target.value)}><option value="backup">Backup (PC → Telegram)</option><option value="two-way">Duas direções (PC ↔ Telegram)</option></select></label><label><input type="checkbox" disabled={!!running||busy} checked={!!folder.enabled} onChange={e=>toggleAuto(folder,e.target.checked)}/> Automático</label><button type="button" disabled={!!running||busy} onClick={()=>removeOne(folder)}>Remover da lista</button></div>
     {folder.last_error&&<small className="dc-sync-error">{folder.last_error}</small>}</div>):<p className="dc-empty-message">Nenhuma pasta configurada neste dispositivo.</p>}</div>
