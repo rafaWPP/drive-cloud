@@ -361,4 +361,22 @@ async def shutdown():
 
 # Rotas locais de arquivos; usam a mesma sessão, vínculo de canal e trava de conta.
 from storage_api import build_router
+from backup_api import build_backup_router, backup_scheduler
 app.include_router(build_router(authorized_account, channel_links, lock))
+app.include_router(build_backup_router(authorized_account, channel_links, lock))
+
+@app.on_event("startup")
+async def start_catalog_backup_scheduler():
+    app.state.catalog_backup_task = asyncio.create_task(
+        backup_scheduler(authorized_account, channel_links, lock)
+    )
+
+@app.on_event("shutdown")
+async def stop_catalog_backup_scheduler():
+    task = getattr(app.state, "catalog_backup_task", None)
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
