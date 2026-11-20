@@ -446,3 +446,50 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .cloud-preview-retry{position:absolute;right:6px;bottom:6px;width:28px;height:28px;display:grid;place-items:center;padding:0;border:1px solid #505057;background:#353539;color:#d8d8dc;border-radius:7px}
 .cloud-preview-retry:hover{background:#444449;color:#fff;border-color:#73737a}
 .cloud-row-thumb .cloud-preview-retry,.home-quick-thumb .cloud-preview-retry{height:18px;width:18px;right:0;bottom:0;border-radius:4px}
+
+/* V10 — professional upload transfer center, distinct close and collapse */
+.upload-tray{width:min(490px,calc(100vw - 30px));max-height:min(72vh,670px);background:#252527;border:1px solid #46464a;border-radius:15px;box-shadow:0 22px 65px #000a;right:22px;bottom:20px;overflow:hidden}
+.upload-tray.upload-tray-collapsed{max-height:none}
+.upload-head{min-height:74px;padding:14px 16px;background:#2b2b2e;border-bottom:1px solid #3d3d41;gap:12px}
+.upload-title{display:flex;align-items:center;gap:11px;min-width:0}
+.upload-title-icon{width:40px;height:40px;display:grid;place-items:center;flex-shrink:0;border-radius:11px;background:#343d4c;color:#91bfff}
+.upload-title>div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.upload-title b{font-size:14px;font-weight:750;line-height:1.1}
+.upload-title small{font-size:11px;color:#a6a6ab;white-space:nowrap}
+.upload-head-actions{display:flex;align-items:center;gap:6px}
+.upload-head .upload-head-actions button.upload-icon-button{width:32px;height:32px;display:grid;place-items:center;flex-shrink:0;padding:0;color:#d5d5d9;background:#37373a;border:0;border-radius:8px}
+.upload-head .upload-head-actions button.upload-icon-button:hover{background:#4a4a4e;color:#fff}
+.upload-head .upload-head-actions button.upload-cancel-all{height:32px;padding:0 10px;border:0;background:#403538;color:#ffb4b6;border-radius:8px;font-size:11px;white-space:nowrap}
+.upload-head .upload-head-actions button.upload-cancel-all:hover{background:#53383d}
+.upload-overview{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:18px 17px 10px;font-size:11px;color:#d2d2d5}
+.upload-overview span:last-child{color:#a3a3a8}
+.upload-total-meter{height:5px;background:#404045;overflow:hidden;border-radius:99px;margin:0 17px 16px}
+.upload-total-meter span{display:block;height:100%;background:#4b8eeb;transition:width .2s ease;border-radius:99px}
+.upload-tabs{gap:6px;margin:0;padding:0 17px 14px;border-bottom:1px solid #3d3d41}
+.upload-tabs button{border:0;border-radius:7px;padding:8px 10px;background:transparent;color:#acacb1;font-weight:600;font-size:11px}
+.upload-tabs button:hover{background:#39393d;color:#e8e8eb}
+.upload-tabs button.active{background:#414145;color:#f3f3f4}
+.upload-items{max-height:300px;overflow:auto;padding:0 17px}
+.upload-job{display:flex;gap:12px;align-items:flex-start;padding:16px 0;border-bottom:1px solid #3b3b3e}
+.upload-job:last-child{border-bottom:0}
+.upload-job-icon{width:35px;height:35px;flex-shrink:0;border-radius:9px;background:#343d4e;display:grid;place-items:center;color:#95bfff}
+.upload-job-icon.completed{background:#274437;color:#78d6a8}
+.upload-job-icon.failed{background:#493136;color:#f3a0a8}
+.upload-job-icon.cancelled{background:#3f3d3e;color:#b7b7bb}
+.upload-job-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.upload-job-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.upload-job-top>span{font-size:12px;min-width:0;color:#eee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:650}
+.upload-job-top>small{color:#919198;font-size:10px;white-space:nowrap;flex-shrink:0}
+.upload-job-status{display:flex;justify-content:space-between;align-items:center;margin:8px 0 1px;color:#a6a6ad;font-size:10px}
+.upload-status-label.completed{color:#7ddcb1}
+.upload-status-label.failed{color:#f29ea7}
+.upload-status-label.cancelled{color:#bcbcc1}
+.upload-job .upload-meter{height:4px;background:#414145;margin:8px 0 7px;border-radius:99px}
+.upload-job .upload-meter span{background:#4b8eeb}
+.upload-job .upload-detail{color:#99999e;font-size:10px;line-height:1.5;overflow-wrap:anywhere}
+.upload-empty-filter{padding:29px 0;text-align:center;color:#a3a3aa;font-size:12px}
+.upload-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 17px;background:#29292c;border-top:1px solid #3c3c40}
+.upload-foot>span{color:#92929a;font-size:10px;line-height:1.5}
+.upload-foot button{border:0;background:#39393d;border-radius:7px;padding:8px 10px;color:#e7e7e9;font-size:10px;font-weight:650;flex-shrink:0}
+.upload-foot button:hover{background:#49494d}
+@media(max-width:560px){.upload-tray{right:10px;bottom:10px;width:calc(100vw - 20px)}.upload-head{padding:12px}.upload-head .upload-head-actions button.upload-cancel-all{padding:0 7px}.upload-tabs{overflow-x:auto}}
