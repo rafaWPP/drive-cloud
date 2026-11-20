@@ -1437,3 +1437,7 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .tg-api-form>button:disabled{opacity:.55;cursor:not-allowed}
 .tg-api-form small{color:#9fa6b0;line-height:1.6;font-size:11px}
 .tg-api-error{color:#f4a5ad;font-size:12px;margin:0}
+
+/* Header profile: Telegram photo when available, DC fallback otherwise. */
+main>header .avatar{position:relative;overflow:hidden;flex-shrink:0}
+main>header .avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;background:#38383a}
