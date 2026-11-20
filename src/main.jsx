@@ -900,6 +900,13 @@ function SyncPages({section,onToast}){
    await refresh();
   }catch(e){setError(e.message)}finally{setRunning(null)}
  }
+ async function removeOne(folder){
+  if(!confirm('Remover esta pasta do monitoramento? Os arquivos já enviados ao Telegram serão preservados.'))return;
+  setBusy(true);setError('');
+  try{await request('/folders/'+encodeURIComponent(folder.id),'DELETE');await refresh();
+   onToast?.({kind:'success',message:'Pasta desconectada do backup. Os arquivos no Telegram foram preservados.'});
+  }catch(e){setError(e.message)}finally{setBusy(false)}
+ }
  async function toggleAuto(folder,enabled){
   setBusy(true);setError('');
   try{await request('/folders/'+encodeURIComponent(folder.id)+'/automatic','POST',{enabled});await refresh();
@@ -913,9 +920,9 @@ function SyncPages({section,onToast}){
    <div className="dc-folder-path-row"><input aria-label="Pasta do computador" value={path} onChange={e=>{setPath(e.target.value);setPreview(null)}} placeholder="Selecione uma pasta do computador"/><button type="button" disabled={busy} onClick={browseFolder}><Folder size={15}/> Procurar</button><button type="button" disabled={busy||!path.trim()} onClick={inspect}>Analisar</button></div>
    {preview&&<div className="dc-folder-preview"><strong>{preview.files} arquivos • {size(preview.bytes)}</strong><small>{preview.over_limit?preview.over_limit+' arquivo(s) acima de 512 MB serão ignorados.':'Nenhum arquivo acima de 512 MB.'}</small><button className="dc-module-primary" disabled={busy} onClick={register}>Adicionar ao Drive Cloud</button></div>}
   </div>}
-  <div className="dc-module-section"><h3>{section==='devices'?'Pastas neste dispositivo':section==='syncActivity'?'Atividade de backup':'Pastas configuradas'}</h3><p>O envio acontece em lotes de até três arquivos; o monitoramento automático verifica alterações periodicamente apenas quando ativado.</p>
+  <div className="dc-module-section"><h3>{section==='devices'?'Pastas neste dispositivo':section==='syncActivity'?'Atividade de backup':'Pastas configuradas'}</h3><p>O envio acontece em lotes de até três arquivos; o monitoramento automático verifica alterações a cada dois minutos quando ativado. Pastas de dependências, arquivos temporários e atalhos simbólicos são ignorados.</p>
    <div className="dc-folder-sync-list">{folders.length?folders.map(folder=><div className="dc-folder-sync-item" key={folder.id}><div className="dc-folder-sync-title"><Folder size={19}/><div><strong>{folder.path.split(/[\\/]/).filter(Boolean).at(-1)||folder.path}</strong><small title={folder.path}>{folder.path}</small></div></div>
-    <div className="dc-folder-sync-actions"><span>{folder.enabled?'Backup automático ligado':'Backup automático pausado'}{folder.last_run?' • Última execução: '+new Date(folder.last_run*1000).toLocaleString('pt-BR'):''}</span><button disabled={!!running||busy} onClick={()=>runOne(folder)}>{running===folder.id?'Enviando...':'Sincronizar agora'}</button><label><input type="checkbox" disabled={!!running||busy} checked={!!folder.enabled} onChange={e=>toggleAuto(folder,e.target.checked)}/> Automático</label></div>
+    <div className="dc-folder-sync-actions"><span>{folder.enabled?'Backup automático ligado':'Backup automático pausado'}{folder.last_run?' • Última execução: '+new Date(folder.last_run*1000).toLocaleString('pt-BR'):''}</span><button disabled={!!running||busy} onClick={()=>runOne(folder)}>{running===folder.id?'Enviando...':'Sincronizar agora'}</button><label><input type="checkbox" disabled={!!running||busy} checked={!!folder.enabled} onChange={e=>toggleAuto(folder,e.target.checked)}/> Automático</label><button type="button" disabled={!!running||busy} onClick={()=>removeOne(folder)}>Remover da lista</button></div>
     {folder.last_error&&<small className="dc-sync-error">{folder.last_error}</small>}</div>):<p className="dc-empty-message">Nenhuma pasta configurada neste dispositivo.</p>}</div>
    {lastResult&&<p className="dc-sync-result">{lastResult.sent} arquivo(s) enviados da pasta {lastResult.path}. {lastResult.remaining_estimate} pendentes estimados. As exclusões locais não afetam o Telegram.</p>}
   </div>
