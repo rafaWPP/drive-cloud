@@ -90,6 +90,32 @@ async def connected_client():
         await client.connect()
     return client
 
+async def release_failed_session_client():
+    """Release any SQLite handle left by a failed Telethon status check.
+
+    This never calls log_out() or deletes the .session file. If a legacy
+    backend process is still using the database, the next status request
+    remains blocked until that process exits; do not try to kill it here.
+    """
+    global client
+    failed = client
+    client = None
+    if failed is None:
+        return
+    try:
+        await failed.disconnect()
+    except Exception:
+        pass
+    # Telethon's SQLiteSession.close() is safe to call a second time after
+    # disconnect and avoids keeping an opened DB connection on an error path.
+    try:
+        session = getattr(failed, "session", None)
+        if session is not None:
+            session.close()
+    except Exception:
+        pass
+
+
 def response_user(user):
     return {"connected": True, "name": " ".join(filter(None, [user.first_name, user.last_name])),
             "username": user.username, "id": user.id}
@@ -106,8 +132,10 @@ def safe_session_status_error(exc):
             return {
                 "code": "SESSION_DATABASE_BUSY",
                 "error": "O banco de sessão Telegram está ocupado por outro processo (SESSION_DATABASE_BUSY). "
-                         "Feche outras instâncias do Drive Cloud e tente novamente. "
-                         "Não exclua o arquivo telegram.session.",
+                         "Feche todas as janelas do Drive Cloud e verifique se ficou algum "
+                         "processo drive-cloud-backend em execução. Encerre apenas o "
+                         "processo antigo, depois abra o aplicativo novamente. "
+                         "Nunca exclua o arquivo telegram.session.",
             }
         if any(word in message for word in ("readonly", "read-only", "permission denied")):
             return {
@@ -155,9 +183,14 @@ async def status():
             if await c.is_user_authorized():
                 return {"configured": True, **response_user(await c.get_me())}
             return {"connected": False, "configured": True}
+        except sqlite3.Error as exc:
+            # A failed local DB connection must not be held indefinitely by
+            # this backend. Another (legacy) process may still own the lock.
+            diagnostic = safe_session_status_error(exc)
+            await release_failed_session_client()
+            return {"connected": False, "configured": True, **diagnostic}
         except Exception as exc:
-            # Never present an unverified session as a logout. Preserve the
-            # SQLite database and explain common causes without exposing SQL.
+            # Never present an unverified session as a logout.
             return {"connected": False, "configured": True, **safe_session_status_error(exc)}
 
 
