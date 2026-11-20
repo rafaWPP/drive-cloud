@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import sqlite3
 from pathlib import Path
 from telethon.tl.functions.channels import CreateChannelRequest, EditPhotoRequest
 from telethon.tl.types import Channel, InputChatUploadedPhoto, ChatPhotoEmpty
@@ -93,6 +94,57 @@ def response_user(user):
     return {"connected": True, "name": " ".join(filter(None, [user.first_name, user.last_name])),
             "username": user.username, "id": user.id}
 
+def safe_session_status_error(exc):
+    """Diagnose known SQLite failures without disclosing session database data.
+
+    A local SQLite failure is not evidence that the user logged out.
+    Never delete/rebuild the Telethon session as an automatic fix.
+    """
+    if isinstance(exc, sqlite3.Error):
+        message = str(exc).lower()
+        if "locked" in message or "busy" in message:
+            return {
+                "code": "SESSION_DATABASE_BUSY",
+                "error": "O banco de sessão Telegram está ocupado por outro processo (SESSION_DATABASE_BUSY). "
+                         "Feche outras instâncias do Drive Cloud e tente novamente. "
+                         "Não exclua o arquivo telegram.session.",
+            }
+        if any(word in message for word in ("readonly", "read-only", "permission denied")):
+            return {
+                "code": "SESSION_READ_ONLY",
+                "error": "O banco de sessão Telegram está sem permissão de escrita (SESSION_READ_ONLY). "
+                         "Verifique as permissões da pasta de dados do Drive Cloud. "
+                         "Não exclua o arquivo de sessão.",
+            }
+        if any(word in message for word in ("disk i/o", "disk is full", "database or disk is full",
+                                            "unable to open database file", "no space left")):
+            return {
+                "code": "SESSION_STORAGE_ERROR",
+                "error": "Falha de leitura/gravação ou espaço no disco do banco Telegram (SESSION_STORAGE_ERROR). "
+                         "Verifique o espaço livre e a pasta de dados. A sessão não foi apagada.",
+            }
+        if any(word in message for word in ("malformed", "not a database", "database disk image")):
+            return {
+                "code": "SESSION_INTEGRITY_ERROR",
+                "error": "O banco de sessão Telegram apresenta problema de integridade "
+                         "(SESSION_INTEGRITY_ERROR). Preserve o arquivo original e faça uma cópia "
+                         "antes de qualquer tentativa de recuperação.",
+            }
+        return {
+            "code": "SESSION_SQLITE_ERROR",
+            "error": "Não foi possível acessar o banco local da sessão Telegram "
+                     "(SESSION_SQLITE_ERROR: " + type(exc).__name__ + "). "
+                     "Os arquivos não foram alterados.",
+        }
+    return {
+        "code": "TELEGRAM_CHECK_ERROR",
+        "error": "Falha temporária ao verificar a sessão Telegram ("
+                 + type(exc).__name__ + "). "
+                 "Não significa que a conta foi desconectada. "
+                 "Verifique a conexão e tente novamente.",
+    }
+
+
 @app.get("/api/telegram/status")
 async def status():
     if not API_ID or not API_HASH:
@@ -104,11 +156,9 @@ async def status():
                 return {"configured": True, **response_user(await c.get_me())}
             return {"connected": False, "configured": True}
         except Exception as exc:
-            # A temporary Telegram check error must not be reported as logout.
-            # Expose the exception class only; never leak tokens or session data.
-            return {"connected": False, "configured": True,
-                    "error": "Falha temporária na verificação da sessão Telegram ("
-                             + type(exc).__name__ + "). A sessão local foi preservada."}
+            # Never present an unverified session as a logout. Preserve the
+            # SQLite database and explain common causes without exposing SQL.
+            return {"connected": False, "configured": True, **safe_session_status_error(exc)}
 
 
 @app.post("/api/telegram/credentials")
