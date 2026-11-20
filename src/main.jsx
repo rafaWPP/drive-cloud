@@ -98,17 +98,40 @@ if(!toast)return null;
 const Icon=toast.kind==='error'?X:toast.kind==='info'?Cloud:Check;
 return <div className={'dc-toast '+(closing?'dc-toast-out':'')} role="status" aria-live="polite"><span className={'dc-toast-symbol '+toast.kind}><Icon size={18}/></span><div className="dc-toast-message">{toast.message}</div>{toast.undo&&<button className="dc-toast-undo" onClick={()=>{toast.undo();setClosing(true)}}>Desfazer</button>}<button className="dc-toast-close" title="Fechar notificação" aria-label="Fechar notificação" onClick={()=>setClosing(true)}><X size={17}/></button></div>}
 function PublicShareView({token}){
- const [data,setData]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
+ const [data,setData]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[current,setCurrent]=useState(null),[opened,setOpened]=useState(null),[search,setSearch]=useState(''),[view,setView]=useState('list');
  const endpoint='http://127.0.0.1:8000/api/public/share/'+encodeURIComponent(token);
- useEffect(()=>{let active=true;fetch(endpoint,{cache:'no-store'}).then(async r=>{const x=await r.json();if(!r.ok)throw Error(x.detail||'Link indisponível');return x}).then(x=>{if(active)setData(x)}).catch(e=>{if(active)setError(e.message)}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[token]);
- return <main className="public-share-screen"><div className="public-share-header"><Cloud size={25}/><b>Drive Cloud</b><span>Compartilhamento local</span></div>
- <section className="public-share-card"><div className="public-share-hero"><div className="public-share-hero-icon">{data?.kind==='folder'?<Folder size={32}/>:<File size={32}/>}</div><h1>{data?.name||'Arquivo compartilhado'}</h1><p>{loading?'Verificando link...':error?'Link indisponível':data?.mode==='download'?'Link de download direto':'Conteúdo compartilhado para visualização e download'}</p></div>
- {error?<div className="public-share-error"><CircleAlert size={18}/>{error}</div>:data&&<><div className="public-share-meta"><span>{data.kind==='folder'?'Pasta compartilhada':'Arquivo compartilhado'}</span><span>Válido até {new Date(data.expires*1000).toLocaleString('pt-BR')}</span></div>
- {data.mode==='view'&&data.kind==='file'&&/\.(jpe?g|png|gif|webp|jxl|bmp|tiff?)$/i.test(data.name)&&<div className="public-share-image"><img src={endpoint+'/preview'} alt={data.name} onError={e=>{e.currentTarget.style.display='none'}}/></div>}
- {data.mode==='view'&&data.kind==='folder'&&<div className="public-share-items">{data.items?.length?data.items.map(x=><div key={x.id} className="public-share-item">{x.kind==='folder'?<Folder size={18}/>:<File size={18}/>}<span title={x.path}>{x.path}</span>{x.kind==='file'&&<a title="Baixar arquivo" href={endpoint+'/file/'+encodeURIComponent(x.id)}><Download size={17}/></a>}</div>):<p>Esta pasta está vazia.</p>}</div>}
- <a className="public-share-download" href={endpoint+'/download'}><Download size={18}/>{data.kind==='folder'?'Baixar pasta em ZIP':'Baixar arquivo'}</a>
- <p className="public-share-footnote">Versão local: o computador e a sessão do Telegram precisam estar conectados. Este endereço não funciona publicamente na internet.</p></>}
- </section></main>
+ useEffect(()=>{let active=true;fetch(endpoint,{cache:'no-store'}).then(async r=>{const x=await r.json();if(!r.ok)throw Error(x.detail||'Link indisponível');return x}).then(x=>{if(active){setData(x);setCurrent(x.root_id||null)}}).catch(e=>{if(active)setError(e.message)}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[token]);
+ const list=data?.items||[];
+ const folders=new Map(list.filter(x=>x.kind==='folder').map(x=>[x.id,x]));
+ const root=data?.root_id;
+ const currentFolder=current===root?null:folders.get(current);
+ const parents=[];let walk=current;const seen=new Set();
+ while(walk&&walk!==root&&!seen.has(walk)){seen.add(walk);const folder=folders.get(walk);if(!folder)break;parents.unshift(folder);walk=folder.parent}
+ const name=currentFolder?.name||data?.name||'Pasta compartilhada';
+ const visible=list.filter(x=>x.parent===current).filter(x=>!search.trim()||x.name.toLocaleLowerCase('pt-BR').includes(search.trim().toLocaleLowerCase('pt-BR'))).sort((a,b)=>a.kind===b.kind?a.name.localeCompare(b.name,'pt-BR'):a.kind==='folder'?-1:1);
+ function goFolder(id){setCurrent(id);setSearch('');setOpened(null)}
+ const up=currentFolder?.parent||root;
+ const image=item=>/\.(jpe?g|png|gif|webp|jxl|bmp|tiff?)$/i.test(item.name);
+ return <main className="public-share-screen">
+ <header className="public-share-header"><span className="public-share-brand"><Cloud size={25}/><b>Drive Cloud</b></span><span className="public-share-header-pill"><Check size={13}/> Link de acesso</span></header>
+ <div className="public-drive-wrap">
+ {loading?<div className="public-share-loading"><span className="thumb-dots"><i/><i/><i/></span><p>Abrindo compartilhamento...</p></div>:error?<div className="public-share-error"><CircleAlert size={19}/>{error}</div>:data&&<>
+ <div className="public-drive-intro"><div className="public-drive-folder-icon">{data.kind==='folder'?<Folder size={27}/>:<File size={27}/>}</div><div><span>COMPARTILHADO COM VOCÊ</span><h1>{data.name}</h1><p>{data.mode==='download'?'Acesso de download':data.kind==='folder'?'Navegue pelas pastas e abra os arquivos disponíveis':'Visualize e baixe este arquivo'}</p></div><a className="public-drive-download" href={endpoint+'/download'}><Download size={17}/>{data.kind==='folder'?'Baixar tudo em ZIP':'Baixar arquivo'}</a></div>
+ {data.mode==='view'&&data.kind==='folder'&&<>
+ <div className="public-drive-toolbar"><div className="public-drive-breadcrumbs"><button title="Voltar à raiz" onClick={()=>goFolder(root)}><Home size={16}/></button><ChevronRight size={15}/><button onClick={()=>goFolder(root)} title={data.name}>{data.name}</button>{parents.map(p=><React.Fragment key={p.id}><ChevronRight size={15}/><button onClick={()=>goFolder(p.id)} title={p.name}>{p.name}</button></React.Fragment>)}</div><span className="public-drive-count">{visible.length} {visible.length===1?'item':'itens'}</span></div>
+ <div className="public-drive-tools"><button className="public-drive-back" onClick={()=>goFolder(up)} disabled={current===root}><ArrowLeft size={17}/> Voltar</button><div className="public-drive-search"><Search size={16}/><input placeholder="Buscar nesta pasta..." value={search} onChange={e=>setSearch(e.target.value)}/></div><div className="public-drive-switch"><button title="Modo lista" className={view==='list'?'on':''} onClick={()=>setView('list')}><List size={17}/></button><button title="Modo grade" className={view==='grid'?'on':''} onClick={()=>setView('grid')}><Grid2X2 size={17}/></button></div></div>
+ <div className={'public-drive-files '+(view==='grid'?'as-grid':'as-list')}>
+ {visible.length?visible.map(item=><div className={'public-drive-entry '+(item.kind==='folder'?'is-folder':'')} key={item.id}>
+ <button className="public-drive-open" title={item.kind==='folder'?'Abrir '+item.name:'Visualizar '+item.name} onClick={()=>item.kind==='folder'?goFolder(item.id):setOpened(item)}><span className="public-drive-entry-icon">{item.kind==='folder'?<Folder size={view==='grid'?35:21} fill="#80aaf0" color="#a7caff" strokeWidth={1.4}/>:image(item)?<Image size={view==='grid'?33:21}/>:<File size={view==='grid'?33:21}/>}</span><span className="public-drive-entry-info"><strong>{item.name}</strong><small>{item.kind==='folder'?'Pasta':size(item.size||0)}</small></span></button>
+ {item.kind==='folder'?<button className="public-drive-entry-action" title="Abrir pasta" onClick={()=>goFolder(item.id)}><ChevronRight size={18}/></button>:<a className="public-drive-entry-action" title="Baixar arquivo" href={endpoint+'/file/'+encodeURIComponent(item.id)}><Download size={18}/></a>}
+ </div>):<div className="public-drive-empty"><Folder size={36}/><strong>{search?'Nenhum resultado':'Esta pasta está vazia'}</strong><span>{search?'Tente outro nome de arquivo.':'Volte para explorar outras pastas compartilhadas.'}</span></div>}
+ </div></>}
+ {data.mode==='view'&&data.kind==='file'&&/\.(jpe?g|png|gif|webp|jxl|bmp|tiff?)$/i.test(data.name)&&<div className="public-share-image"><img src={endpoint+'/preview'} alt={data.name}/></div>}
+ {data.mode==='download'&&<div className="public-drive-direct"><Download size={27}/><strong>Seu download está disponível</strong><p>Clique em Baixar para salvar {data.kind==='folder'?'a pasta compactada':'o arquivo'} neste computador.</p></div>}
+ <div className="public-drive-footer"><span><Clock3 size={14}/> Disponível até {new Date(data.expires*1000).toLocaleString('pt-BR')}</span><span>Compartilhamento local · O computador do proprietário precisa estar ligado</span></div>
+ {opened&&<div className="public-file-overlay" role="presentation" onClick={()=>setOpened(null)}><div className="public-file-preview" role="dialog" aria-modal="true" aria-label={'Visualizar '+opened.name} onClick={e=>e.stopPropagation()}><div className="public-file-preview-top"><span title={opened.name}><File size={17}/>{opened.name}</span><div><a href={endpoint+'/file/'+encodeURIComponent(opened.id)}><Download size={17}/> Baixar</a><button aria-label="Fechar visualização" onClick={()=>setOpened(null)}><X size={19}/></button></div></div><div className="public-file-preview-content">{image(opened)?<img alt={opened.name} src={endpoint+'/image/'+encodeURIComponent(opened.id)}/>:<div className="public-file-no-preview"><File size={54}/><strong>Prévia indisponível</strong><span>Baixe o arquivo para abri-lo no seu dispositivo.</span></div>}</div></div></div>}
+ </>}
+ </div></main>;
 }
 function ShareDialog({item,onClose,onToast}){
  const [mode,setMode]=useState(item.kind==='folder'?'view':'download'),[expires,setExpires]=useState('24'),[busy,setBusy]=useState(false),[created,setCreated]=useState(null),[existing,setExisting]=useState([]),[error,setError]=useState('');
