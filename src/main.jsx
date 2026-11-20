@@ -652,7 +652,10 @@ const completed=jobs.filter(x=>x.status==='completed').length;
 const failures=jobs.filter(x=>x.status==='failed').length;
 const uploadingNow=jobs.filter(x=>x.status==='uploading'||x.status==='queued').length;
 const filteredJobs=jobs.filter(x=>tab==='all'||(tab==='completed'&&x.status==='completed')||(tab==='failed'&&['failed','cancelled'].includes(x.status))||(tab==='pending'&&['queued','uploading'].includes(x.status)));
-const featuredJob=[...jobs].reverse().find(x=>['uploading','queued'].includes(x.status))||jobs[jobs.length-1];
+// In the compact tray follow the active upload first, then the next queued
+// item in insertion order. Previously the last queued file hid the active one.
+const featuredJob=jobs.find(x=>x.status==='uploading')||jobs.find(x=>x.status==='queued')||jobs[jobs.length-1];
+const featuredPosition=featuredJob?jobs.findIndex(x=>x.id===featuredJob.id)+1:0;
 const uploadStatus=uploadingNow?'sending':failures?'failed':completed?'complete':'cancelled';
 const jobIcon=job=>/\.(jpg|jpeg|png|webp|gif|jxl|avif|bmp)$/i.test(job.name)?<Image size={18}/>: /\.(mp4|m4v|mkv|mov|webm)$/i.test(job.name)?<Video size={18}/>:<File size={18}/>;
 const moveBreadcrumbs=[];let moveCurrent=moveDestination;
@@ -703,8 +706,8 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
  </div>
  {!panel&&featuredJob&&<div className="dc-compact-upload-item">
   <span className="dc-compact-upload-icon file" aria-hidden="true">{jobIcon(featuredJob)}</span>
-  <div className="dc-compact-upload-info"><strong title={featuredJob.name}>{featuredJob.name}</strong>
-   <small className="dc-upload-path" title={featuredJob.destination||'Meu Drive'}><Folder size={12}/>{featuredJob.status==='completed'?'Salvo em':featuredJob.status==='failed'?'Destino':'Enviando para'} <b>{featuredJob.destination||'Meu Drive'}</b></small>
+  <div className="dc-compact-upload-info"><strong title={featuredJob.name} aria-live="polite">{featuredJob.name}</strong>
+   <small className="dc-upload-path" title={featuredJob.destination||'Meu Drive'}><Folder size={12}/>{featuredJob.status==='completed'?'Salvo em':featuredJob.status==='failed'?'Destino':featuredJob.status==='queued'?'Na fila para':'Enviando para'} <b>{featuredJob.destination||'Meu Drive'}</b>{jobs.length>1&&<span className="dc-upload-queue-position">{featuredPosition} de {jobs.length}</span>}</small>
    {['queued','uploading'].includes(featuredJob.status)&&<div className="upload-meter"><span style={{width:(featuredJob.progress||0)+'%'}}/></div>}
    {featuredJob.status==='failed'&&<small className="dc-upload-failure">{featuredJob.detail||'Falha no envio'}</small>}
   </div>
