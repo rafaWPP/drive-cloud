@@ -286,3 +286,11 @@ Verificação automática compila o frontend e verifica sintaxe do backend; test
 - Persistem os limites locais da implementação: em links de teste, até 50 MB para mídias suportadas e vídeos reproduzíveis pelo navegador. Links `localhost` **não são públicos na internet**. Não exponha o backend administrativo via proxy.
 
 Atualize `git pull origin main`, **reinicie o backend** e recarregue a página. Teste um compartilhamento novo com PNG/JPEG e MP4 em modo Visualização e Embed. Se houver falha, anote o **código HTTP e a mensagem** exibidos em mídia/console para investigação no PC local.
+
+## Player compartilhado — gestos de avanço e retrocesso
+
+O player personalizado dos links `?share=` e `?embed=` permite **toque/clique duplo no lado esquerdo para voltar 10 segundos** e **no lado direito para avançar 10 segundos**. Pares adicionais de toques no mesmo lado, em sequência, acumulam o indicador visual (10s, 20s, 30s). O clique/toque simples alterna reprodução e pausa. Os indicadores desaparecem automaticamente, sem mudar o layout da página.
+
+A barra de controle usa azul do Drive Cloud: **tempo à esquerda e tela cheia à direita acima do progresso**; abaixo, **Reproduzir/Pausar**, informação HD apenas quando o arquivo original tiver pelo menos 720p, **Picture-in-Picture quando suportado pelo navegador**, e **áudio/volume como último controle**. A indicação HD não é um seletor de transcodificação, pois esta versão reproduz o arquivo original. O player também permite atalhos: `Espaço`/`K` para pausar, `←`/`→` para saltar 10s, `F` para tela cheia e `M` para mudo quando o player estiver focado.
+
+As solicitações de vídeo ainda dependem da conexão local com Telegram. Teste em PC e celular, pois navegadores variam no suporte a PiP e nos gestos de toque.
