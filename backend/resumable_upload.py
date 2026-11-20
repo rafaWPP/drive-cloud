@@ -14,6 +14,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from telethon.tl.types import DocumentAttributeFilename
 
 from storage_api import DB_PATH, MAX_SIZE, connection, parent_valid, channel_id, update_upload_progress
 
@@ -233,8 +234,18 @@ def build_resumable_router(authorized_account, channel_links, lock):
                                (int(time.time()), str(upload_id)))
                 elif row["state"] not in ("sending", "sent"):
                     raise HTTPException(409, "Estado do upload inválido.")
-            # The marker prevents a retry from silently duplicating a known upload.
-            message = await find_sent(client, channel, upload_id)
+            # Prefer the exact Telegram message ID when sending succeeded but
+            # the local catalog commit failed; search is a fallback for a lost ACK.
+            message = None
+            if row["message_id"]:
+                try:
+                    known = await client.get_messages(channel, ids=row["message_id"])
+                    if known and known.message == caption(upload_id) and known.file:
+                        message = known
+                except Exception:
+                    pass
+            if message is None:
+                message = await find_sent(client, channel, upload_id)
             if message is None:
                 if not first_call:
                     raise HTTPException(409, "Envio anterior incerto. Confira o canal do Telegram antes de tentar outro.")
@@ -253,6 +264,8 @@ def build_resumable_router(authorized_account, channel_links, lock):
                 message = await client.send_file(
                     channel, str(stage_path(upload_id)), force_document=True,
                     caption=caption(upload_id), part_size_kb=512,
+                    mime_type=row["mime"],
+                    attributes=[DocumentAttributeFilename(row["name"])],
                     progress_callback=on_progress,
                 )
             except Exception as exc:
