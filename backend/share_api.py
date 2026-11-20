@@ -5,6 +5,8 @@ the owner's active Telegram session to retrieve file data. Never expose the
 local backend or Telegram session through an internet reverse proxy.
 """
 import hashlib
+import asyncio
+import re
 from collections import OrderedDict
 import io
 import os
@@ -15,14 +17,17 @@ import uuid
 import zipfile
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from typing import Literal
 
-from storage_api import connection, channel_id, is_image, prepare_image
+from storage_api import connection, channel_id, is_image, prepare_image, THUMBS
 
 MAX_PUBLIC_ZIP = 50 * 1024 * 1024
 MAX_PUBLIC_ITEMS = 100
+MEDIA_STREAM_LIMIT = asyncio.Semaphore(3)
+MEDIA_RANGE_CHUNK = 512 * 1024
+MEDIA_RANGE_MAX = 2 * 1024 * 1024
 # Short-lived RAM cache: avoids downloading the same Telegram media for every
 # browser video Range request. It never persists content on disk.
 MEDIA_CACHE = OrderedDict()
@@ -240,64 +245,153 @@ def build_share_router(authorized_account, channel_links, lock):
                    "jxl":"image/jpeg","bmp":"image/jpeg","tif":"image/jpeg","tiff":"image/jpeg"}
         return supported.get(ext)
 
-    async def send_media(link,root,request:Request,item_id=None):
+    def requested_bytes(header,total,is_video):
+        """Serve short 206 video segments so seeking never downloads entire files."""
+        if not header:
+            return 0,total-1,False
+        match=re.fullmatch(r"bytes=(\\d*)-(\\d*)",header.strip())
+        if not match or not any(match.groups()) or total<1:
+            raise HTTPException(416,"Intervalo de bytes inválido.",
+                                headers={"Content-Range":f"bytes */{total}"})
+        if match.group(1):
+            start=int(match.group(1))
+            end=int(match.group(2)) if match.group(2) else total-1
+        else:
+            length=int(match.group(2))
+            start=max(0,total-length)
+            end=total-1
+        if start>=total or start>end or end>=total:
+            raise HTTPException(416,"Intervalo fora do arquivo.",
+                                headers={"Content-Range":f"bytes */{total}"})
+        if is_video:
+            end=min(end,start+MEDIA_RANGE_MAX-1)
+        return start,end,True
+
+    async def send_media(link,root,request:Request,item_id=None,thumb=False):
+        # A media URL is an internal resource, not a second share page. Browsing
+        # directly to this endpoint is blocked; media/image elements still work.
+        # This is a UI guard, NOT DRM: share-token holders can retrieve file bytes.
+        if request.headers.get("sec-fetch-dest") in ("document","frame","iframe"):
+            raise HTTPException(403,"Abra a mídia pela página de compartilhamento.")
         if link["mode"] not in ("view","embed"):
-            raise HTTPException(403,"Este link não permite incorporar mídia.")
+            raise HTTPException(403,"Este link não permite visualizar mídia.")
         if item_id:
             if root["kind"]!="folder" or link["mode"]!="view":
-                raise HTTPException(403,"Arquivo fora de uma pasta compartilhada.")
+                raise HTTPException(403,"Arquivo fora da pasta compartilhada.")
             with connection() as db:
                 items=child_rows(db,root,link["owner"])
-            item=next((row for row,_ in items if row["id"]==item_id and row["kind"]=="file"),None)
+            item=next((row for row,_ in items
+                       if row["id"]==item_id and row["kind"]=="file"),None)
             if item is None:
-                raise HTTPException(404,"Mídia não incluída nesta pasta.")
+                raise HTTPException(404,"Arquivo fora do compartilhamento.")
         else:
             item=root
         media_type=safe_media_type(item)
         if not media_type or item["kind"]!="file":
-            raise HTTPException(415,"Tipo de mídia não suportado para incorporação.")
-        if item["size"]>MAX_PUBLIC_ZIP:
-            raise HTTPException(413,"Prévia local limitada a 50 MB por arquivo.")
+            raise HTTPException(415,"Prévia indisponível para este formato.")
+        if thumb and not media_type.startswith("image/"):
+            raise HTTPException(415,"Miniatura não disponível para este arquivo.")
+        if int(item["size"])>MAX_PUBLIC_ZIP:
+            raise HTTPException(413,"Mídia excede o limite de prévia de 50 MB.")
+
         async with lock:
             client,account=await authorized_account()
             if account!=link["owner"]:
-                raise HTTPException(403,"Sessão do proprietário indisponível.")
-            cache_key=(account,channel_id(channel_links,account),item["message_id"],str(item["id"]))
-            data=cached_media_get(cache_key)
+                raise HTTPException(403,"Conta Telegram do proprietário desconectada.")
+            cid=channel_id(channel_links,account)
+            media_key=(account,cid,item["message_id"],str(item["id"]))
+            derived_key=media_key+("thumb",)
+            data=cached_media_get(derived_key if thumb else media_key)
+            msg=None
+            # Message lookup is quick. Do not hold the global lock throughout
+            # downloading or streaming: other navigation must remain responsive.
             if data is None:
-                msg=await client.get_messages(cache_key[1],ids=item["message_id"])
+                msg=await client.get_messages(cid,ids=item["message_id"])
                 if not msg or not msg.media:
-                    raise HTTPException(404,"Mídia não encontrada.")
-                data=await client.download_media(msg,file=bytes)
-                if data is None:
-                    raise HTTPException(502,"Falha ao recuperar mídia.")
-                if len(data)>MAX_PUBLIC_ZIP:
-                    raise HTTPException(413,"Arquivo maior que o limite de 50 MB de prévia local.")
-                if item["name"].lower().endswith((".jxl",".bmp",".tif",".tiff")):
-                    data=prepare_image(data,1800)
-                cached_media_put(cache_key,data)
-        if len(data)>MAX_PUBLIC_ZIP:
-            raise HTTPException(413,"Arquivo grande demais para incorporação local.")
-        total=len(data)
-        headers={"Cache-Control":"private, no-store","Accept-Ranges":"bytes",
-                 "X-Content-Type-Options":"nosniff"}
-        byte_range=request.headers.get("range")
-        if byte_range:
-            import re
-            match=re.fullmatch(r"bytes=(\d*)-(\d*)",byte_range.strip())
-            if match is None or (not match.group(1) and not match.group(2)):
-                raise HTTPException(416,"Intervalo de bytes inválido.",headers={"Content-Range":f"bytes */{total}"})
-            if match.group(1):
-                start=int(match.group(1))
-                end=int(match.group(2)) if match.group(2) else total-1
-            else:
-                suffix=int(match.group(2))
-                start=max(0,total-suffix);end=total-1
-            if total==0 or start>=total or end<start or end>=total:
-                raise HTTPException(416,"Intervalo fora do arquivo.",headers={"Content-Range":f"bytes */{total}"})
-            headers["Content-Range"]=f"bytes {start}-{end}/{total}"
-            return Response(data[start:end+1],status_code=206,media_type=media_type,headers=headers)
-        return Response(data,media_type=media_type,headers=headers)
+                    raise HTTPException(404,"Arquivo não encontrado no Telegram.")
+        if thumb:
+            if data is None:
+                # Existing Drive derivative may already be cached on disk.
+                key=hashlib.sha256((account+":"+str(item["id"])+":"+
+                                   str(item["message_id"])+":False").encode()).hexdigest()
+                derivative=THUMBS/(key+".jpg")
+                if derivative.exists():
+                    data=derivative.read_bytes()
+                else:
+                    raw=None
+                    has_thumbs=(getattr(getattr(msg,"document",None),"thumbs",None)
+                                or getattr(getattr(msg,"photo",None),"sizes",None))
+                    if has_thumbs:
+                        try:
+                            raw=await client.download_media(msg,file=bytes,thumb=-1)
+                            if raw:
+                                data=prepare_image(raw,420)
+                        except (HTTPException,ValueError,TypeError,OSError):
+                            data=None
+                    if data is None:
+                        raw=cached_media_get(media_key)
+                        if raw is None:
+                            raw=await client.download_media(msg,file=bytes)
+                        if not raw:
+                            raise HTTPException(502,"Não foi possível preparar miniatura.")
+                        data=prepare_image(raw,420)
+                    # Derivatives contain no original byte payload.
+                    try:
+                        derivative.write_bytes(data)
+                    except OSError:
+                        pass
+                cached_media_put(derived_key,data)
+            return Response(data,media_type="image/jpeg",
+                            headers={"Cache-Control":"private, no-store",
+                                     "X-Content-Type-Options":"nosniff"})
+
+        is_video=media_type.startswith("video/")
+        if is_video:
+            total=int(getattr(getattr(msg,"file",None),"size",0) or item["size"]) if msg else len(data)
+            if total<=0 or total>MAX_PUBLIC_ZIP:
+                raise HTTPException(413,"Vídeo com tamanho inválido para prévia.")
+            start,end,is_range=requested_bytes(request.headers.get("range"),total,True)
+            headers={"Accept-Ranges":"bytes","Cache-Control":"private, no-store",
+                     "X-Content-Type-Options":"nosniff","Content-Length":str(end-start+1)}
+            if is_range:
+                headers["Content-Range"]=f"bytes {start}-{end}/{total}"
+            if data is not None:
+                return Response(data[start:end+1],
+                                status_code=206 if is_range else 200,
+                                media_type=media_type,headers=headers)
+
+            async def fragments():
+                remaining=end-start+1
+                async with MEDIA_STREAM_LIMIT:
+                    async for fragment in client.iter_download(
+                        msg.media,offset=start,request_size=MEDIA_RANGE_CHUNK,
+                        chunk_size=MEDIA_RANGE_CHUNK):
+                        if remaining<=0:
+                            break
+                        portion=fragment[:remaining]
+                        if portion:
+                            remaining-=len(portion)
+                            yield portion
+                        if remaining<=0:
+                            break
+            return StreamingResponse(fragments(),
+                status_code=206 if is_range else 200,
+                media_type=media_type,headers=headers)
+
+        # For images, preserve the existing short-lived RAM cache. Conversion
+        # is only needed for formats browsers cannot display natively.
+        if data is None:
+            data=await client.download_media(msg,file=bytes)
+            if data is None:
+                raise HTTPException(502,"Falha ao recuperar imagem.")
+            if len(data)>MAX_PUBLIC_ZIP:
+                raise HTTPException(413,"Imagem grande demais para prévia.")
+            if str(item["name"]).lower().endswith((".jxl",".bmp",".tif",".tiff")):
+                data=prepare_image(data,1800)
+            cached_media_put(media_key,data)
+        return Response(data,media_type=media_type,
+                        headers={"Cache-Control":"private, no-store",
+                                 "X-Content-Type-Options":"nosniff"})
 
     @router.get("/api/public/share/{token}/media-status")
     async def media_status(token:str,file_id:str|None=None):
@@ -328,14 +422,14 @@ def build_share_router(authorized_account, channel_links, lock):
         return {"ready":True,"name":target["name"],"type":safe_media_type(target)}
 
     @router.get("/api/public/share/{token}/media")
-    async def media_root(token:str,request:Request):
+    async def media_root(token:str,request:Request,thumb:bool=False):
         link,root=await lookup(token)
-        return await send_media(link,root,request)
+        return await send_media(link,root,request,thumb=thumb)
 
     @router.get("/api/public/share/{token}/media/{file_id}")
-    async def media_child(token:str,file_id:str,request:Request):
+    async def media_child(token:str,file_id:str,request:Request,thumb:bool=False):
         link,root=await lookup(token)
-        return await send_media(link,root,request,file_id)
+        return await send_media(link,root,request,file_id,thumb=thumb)
 
     @router.get("/api/public/share/{token}/image/{file_id}")
     async def preview_shared_child(token:str,file_id:str):
