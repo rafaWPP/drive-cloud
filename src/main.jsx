@@ -87,7 +87,7 @@ function CloudThumbnail({item,compact=false}){
  if(item.kind==='folder')return <div className="cloud-thumb-folder"><Folder size={compact?25:78} fill="#96bcf1" color="#b1d0ff" strokeWidth={1.2}/></div>;
  if(!isCloudImage(item))return <div className="cloud-thumb-fallback"><IconFile item={item} large={!compact}/></div>;
  if(result.failed)return <div className="cloud-thumb-fallback cloud-thumb-retry"><IconFile item={item} large={!compact}/><button className="cloud-preview-retry" title="Tentar carregar miniatura novamente" aria-label={'Recarregar miniatura de '+item.name} onClick={event=>{event.stopPropagation();cloudPreviewCache.delete(item.id+':'+(item.message_id??''));setResult({url:null,failed:false});cachedCloudPreview(item).then(url=>setResult({url,failed:false})).catch(()=>setResult({url:null,failed:true}))}}><RefreshCw size={compact?12:16}/></button></div>;
- return <div className="cloud-thumb-photo">{!result.url&&<div className="dc-thumb-placeholder" role="status" aria-label="Preparando miniatura"><span className="dc-loader-dots"><i/><i/><i/></span></div>}{result.url&&<img src={result.url} alt={item.name}/>}</div>
+ return <div className="cloud-thumb-photo">{!result.url&&<div className="dc-thumb-placeholder" role="status" aria-label="Preparando miniatura"><DriveCloudLoader size={30} label="Preparando miniatura"/></div>}{result.url&&<img src={result.url} alt={item.name}/>}</div>
 }
 function DriveToast({toast,progress,onDismiss}){const [closing,setClosing]=useState(false);
 useEffect(()=>setClosing(false),[toast?.id]);
@@ -103,7 +103,7 @@ function EmbeddedMedia({token}){
  useEffect(()=>{let cancelled=false;fetch(endpoint,{cache:'no-store'}).then(async r=>{const body=await r.json();if(!r.ok)throw Error(body.detail||'Mídia indisponível');return body}).then(d=>{if(!cancelled)setData(d)}).catch(e=>{if(!cancelled)setError(e.message)});return()=>{cancelled=true}},[token]);
  const video=data&&/\.(mp4|webm|m4v)$/i.test(data.name);
  const picture=data&&/\.(png|jpe?g|webp|gif)$/i.test(data.name);
- return <div className="dc-embedded-media">{error?<div className="dc-embed-fail">{error}</div>:!data?<span className="thumb-dots"><i/><i/><i/></span>:data.mode!=='embed'?<div className="dc-embed-fail">Incorporação não autorizada.</div>:data.kind!=='file'||(!video&&!picture)?<div className="dc-embed-fail">Formato não suportado.</div>:video?<video src={endpoint+'/media'} controls playsInline preload="metadata" aria-label={data.name}/>:<img src={endpoint+'/media'} alt={data.name}/>}</div>
+ return <div className="dc-embedded-media">{error?<div className="dc-embed-fail">{error}</div>:!data?<DriveCloudLoader size={64} label="Carregando mídia"/>:data.mode!=='embed'?<div className="dc-embed-fail">Incorporação não autorizada.</div>:data.kind!=='file'||(!video&&!picture)?<div className="dc-embed-fail">Formato não suportado.</div>:video?<video src={endpoint+'/media'} controls playsInline preload="metadata" aria-label={data.name}/>:<img src={endpoint+'/media'} alt={data.name}/>}</div>
 }
 function PublicShareView({token}){
  const [data,setData]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[current,setCurrent]=useState(null),[opened,setOpened]=useState(null),[search,setSearch]=useState(''),[view,setView]=useState('list');
@@ -125,7 +125,7 @@ function PublicShareView({token}){
  return <main className="public-share-screen">
  <header className="public-share-header"><span className="public-share-brand"><img src="/drive-cloud-logo.svg" alt=""/><b>Drive Cloud</b></span><span className="public-share-header-pill"><Check size={13}/> Link de acesso</span></header>
  <div className="public-drive-wrap">
- {loading?<div className="public-share-loading" aria-busy="true"><div className="dc-shimmer public-loading-hero"/><div className="dc-shimmer public-loading-nav"/><div className="public-loading-items">{[0,1,2,3].map(i=><div className="dc-shimmer" key={i}/>)}</div><p><span className="dc-loader-dots"><i/><i/><i/></span> Abrindo compartilhamento...</p></div>:error?<div className="public-share-error"><CircleAlert size={19}/>{error}</div>:data&&<>
+ {loading?<div className="public-share-loading" aria-busy="true"><div className="dc-shimmer public-loading-hero"/><div className="dc-shimmer public-loading-nav"/><div className="public-loading-items">{[0,1,2,3].map(i=><div className="dc-shimmer" key={i}/>)}</div><p><DriveCloudLoader size={48} label="Abrindo compartilhamento"/> Abrindo compartilhamento...</p></div>:error?<div className="public-share-error"><CircleAlert size={19}/>{error}</div>:data&&<>
  <div className="public-drive-intro"><div className="public-drive-folder-icon">{data.kind==='folder'?<Folder size={27}/>:<File size={27}/>}</div><div><span>COMPARTILHADO COM VOCÊ</span><h1>{data.name}</h1><p>{data.mode==='download'?'Acesso de download':data.kind==='folder'?'Navegue pelas pastas e abra os arquivos disponíveis':'Visualize e baixe este arquivo'}</p></div><a className="public-drive-download" href={endpoint+'/download'}><Download size={17}/>{data.kind==='folder'?'Baixar tudo em ZIP':'Baixar arquivo'}</a></div>
  {data.mode==='view'&&data.kind==='folder'&&<>
  <div className="public-drive-toolbar"><div className="public-drive-breadcrumbs"><button title="Voltar à raiz" onClick={()=>goFolder(root)}><Home size={16}/></button><ChevronRight size={15}/><button onClick={()=>goFolder(root)} title={data.name}>{data.name}</button>{parents.map(p=><React.Fragment key={p.id}><ChevronRight size={15}/><button onClick={()=>goFolder(p.id)} title={p.name}>{p.name}</button></React.Fragment>)}</div><span className="public-drive-count">{visible.length} {visible.length===1?'item':'itens'}</span></div>
@@ -170,13 +170,21 @@ function ShareDialog({item,onClose,onToast}){
  {existing.length>0&&<div className="share-existing"><strong>Links ativos</strong>{existing.map(link=><div key={link.id}><span>{link.mode==='download'?'Download':link.mode==='embed'?'Integração':'Compartilhado'} • até {new Date(link.expires*1000).toLocaleDateString('pt-BR')}</span><button onClick={()=>revoke(link.id)}>Revogar</button></div>)}</div>}
  </div><div className="move-footer"><button onClick={onClose}>Concluir</button><button className="move-confirm" disabled={busy} onClick={createLink}><Users size={16}/>{busy?'Criando...':'Gerar novo link'}</button></div></div></div>
 }
+function DriveCloudLoader({size=58,label='Carregando...'}) {
+ return <span className="dc-cloud-loader" role="status" aria-label={label} style={{'--cloud-size':size+'px'}}>
+  <svg viewBox="0 0 96 64" aria-hidden="true" fill="none" xmlns="http://www.w3.org/2000/svg">
+   <path className="dc-cloud-outline" d="M25 52h48c11 0 18-7.5 18-17 0-9.2-7.1-16.5-16.5-16.5-1.8 0-3.6.3-5.2.8C65.7 10.7 57.8 5 48 5 35.1 5 24.4 14.7 23.2 27.2 13.1 27.2 5 32.8 5 40.3 5 47.7 11 52 25 52Z"/>
+   <path className="dc-cloud-running" d="M25 52h48c11 0 18-7.5 18-17 0-9.2-7.1-16.5-16.5-16.5-1.8 0-3.6.3-5.2.8C65.7 10.7 57.8 5 48 5 35.1 5 24.4 14.7 23.2 27.2 13.1 27.2 5 32.8 5 40.3 5 47.7 11 52 25 52Z"/>
+  </svg>
+ </span>
+}
 function DriveLoadingSkeleton({layout='grid',home=false}){
  const count=home?4:layout==='grid'?8:7;
  return <div className="dc-loading-screen" role="status" aria-label="Carregando seus arquivos" aria-busy="true">
  {home&&<div className="dc-loading-home"><div className="dc-shimmer dc-loading-label"/><div className="dc-loading-recent">{[0,1,2].map(i=><div key={i} className="dc-shimmer dc-loading-recent-item"/>)}</div></div>}
  <div className="dc-loading-top"><div className="dc-shimmer dc-loading-label"/><div className="dc-shimmer dc-loading-label short"/></div>
  {layout==='grid'?<div className="dc-loading-grid">{Array.from({length:count},(_,i)=><div className="dc-loading-card" key={i}><div className="dc-shimmer dc-loading-art"/><div className="dc-shimmer dc-loading-line"/><div className="dc-shimmer dc-loading-line tiny"/></div>)}</div>:<div className="dc-loading-rows">{Array.from({length:count},(_,i)=><div className="dc-loading-row" key={i}><div className="dc-shimmer dc-loading-row-icon"/><div className="dc-shimmer dc-loading-row-label"/><div className="dc-shimmer dc-loading-row-size"/></div>)}</div>}
- <div className="dc-loading-caption"><span className="dc-loader-dots"><i/><i/><i/></span> Preparando seus arquivos...</div>
+ <div className="dc-loading-caption"><DriveCloudLoader size={48} label="Preparando seus arquivos"/> <span>Preparando seus arquivos...</span></div>
  </div>
 }
 function CloudFiles({mode='files',globalSearch='',onToast,onDeletionProgress,createFolderToken=0,onCatalogChange,onFolderChange,folderTarget}){
