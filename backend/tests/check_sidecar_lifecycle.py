@@ -64,6 +64,26 @@ def test_lifecycle(executable: Path):
                     with urllib.request.urlopen(origin + "/api/telegram/status", timeout=2) as reply:
                         status = json.load(reply)
                     assert status["configured"] is False, status
+                    # A second packaged connector must never open the same
+                    # Telethon SQLite session concurrently, even on a new port.
+                    other_env = dict(env)
+                    other_env["DRIVE_CLOUD_BACKEND_PORT"] = str(free_loopback_port())
+                    with subprocess.Popen(
+                        [str(executable)], env=other_env, stdin=subprocess.PIPE,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                    ) as second:
+                        try:
+                            second.wait(timeout=20)
+                            assert second.returncode != 0, (
+                                "Second process should be refused while the first holds the session lock"
+                            )
+                            with urllib.request.urlopen(origin + "/api/health", timeout=2) as alive:
+                                assert json.load(alive).get("ready") is True
+                        finally:
+                            if second.poll() is None:
+                                second.kill()
+                                second.wait(timeout=10)
                     assert process.stdin is not None
                     process.stdin.write(SHUTDOWN_COMMAND)
                     process.stdin.flush()
@@ -80,6 +100,10 @@ def test_lifecycle(executable: Path):
         startup_log = data_dir / "backend-startup.log"
         assert startup_log.exists(), "Expected sidecar diagnostic log"
         log = startup_log.read_text(encoding="utf-8")
+        assert log.count("Exclusive Telegram session directory lock acquired") == 2, (
+            "Expected exactly two successful exclusive session locks"
+        )
+        assert "RuntimeError" in log, "Expected duplicate-instance refusal in startup diagnostic"
         assert log.count("Desktop requested graceful shutdown") == 2, (
             "Desktop sidecar did not receive graceful shutdown on both runs"
         )
