@@ -6,6 +6,38 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
+def acquire_session_lock(data):
+    """Enforce one packaged backend per Telegram SQLite session directory.
+
+    OS advisory locks release automatically if the process is terminated.
+    Never delete, rename, repair, or recreate the user's .session file.
+    """
+    target = data / "backend-instance.lock"
+    handle = target.open("a+b")
+    try:
+        if handle.seek(0, os.SEEK_END) == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise RuntimeError(
+                "Já existe outro conector Drive Cloud utilizando esta sessão Telegram. "
+                "Feche as outras janelas e processos do Drive Cloud antes de tentar novamente. "
+                "A sessão e os arquivos foram preservados."
+            ) from exc
+        return handle
+    except BaseException:
+        handle.close()
+        raise
+
+
 def main():
     data = Path(os.environ.get("DRIVE_CLOUD_DATA_DIR") or Path.home() / ".local/share/drive-cloud")
     data.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -24,7 +56,10 @@ def main():
             pass
 
     report("Starting local Drive Cloud connector")
+    session_lock = None
     try:
+        session_lock = acquire_session_lock(data)
+        report("Exclusive Telegram session directory lock acquired")
         from dotenv import load_dotenv
         load_dotenv(data / ".env", override=False)
         import server
@@ -59,9 +94,14 @@ def main():
         api.run()
         report("Server stopped")
     except BaseException as exc:
-        report(f"Startup failed: {type(exc).__name__}: {str(exc)[:300]}")
-        report("".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-4000:])
+        report(f"Startup failed: {type(exc).__name__}")
+        # The error's class is useful for diagnosis; avoid logging raw SQL,
+        # session path, phone number, API hash or message content.
+        report("Shutdown/startup exception class: " + type(exc).__name__)
         raise
+    finally:
+        if session_lock is not None:
+            session_lock.close()
 
 if __name__ == "__main__":
     main()
