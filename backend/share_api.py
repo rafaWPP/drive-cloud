@@ -5,6 +5,7 @@ the owner's active Telegram session to retrieve file data. Never expose the
 local backend or Telegram session through an internet reverse proxy.
 """
 import hashlib
+from collections import OrderedDict
 import io
 import os
 import secrets
@@ -22,6 +23,36 @@ from storage_api import connection, channel_id, is_image, prepare_image
 
 MAX_PUBLIC_ZIP = 50 * 1024 * 1024
 MAX_PUBLIC_ITEMS = 100
+# Short-lived RAM cache: avoids downloading the same Telegram media for every
+# browser video Range request. It never persists content on disk.
+MEDIA_CACHE = OrderedDict()
+MEDIA_CACHE_BYTES = 0
+MEDIA_CACHE_LIMIT = 96 * 1024 * 1024
+MEDIA_CACHE_TTL = 180
+
+def cached_media_get(key):
+    global MEDIA_CACHE_BYTES
+    now=time.monotonic()
+    for cached_key,(stamp,blob) in list(MEDIA_CACHE.items()):
+        if now-stamp>MEDIA_CACHE_TTL:
+            MEDIA_CACHE_BYTES-=len(blob)
+            del MEDIA_CACHE[cached_key]
+    entry=MEDIA_CACHE.get(key)
+    if entry:
+        MEDIA_CACHE.move_to_end(key)
+        return entry[1]
+    return None
+
+def cached_media_put(key,blob):
+    global MEDIA_CACHE_BYTES
+    if len(blob)>MEDIA_CACHE_LIMIT:return
+    old=MEDIA_CACHE.pop(key,None)
+    if old:MEDIA_CACHE_BYTES-=len(old[1])
+    while MEDIA_CACHE and MEDIA_CACHE_BYTES+len(blob)>MEDIA_CACHE_LIMIT:
+        _,(_,oldblob)=MEDIA_CACHE.popitem(last=False)
+        MEDIA_CACHE_BYTES-=len(oldblob)
+    MEDIA_CACHE[key]=(time.monotonic(),blob)
+    MEDIA_CACHE_BYTES+=len(blob)
 
 def schema(db):
     db.execute("""CREATE TABLE IF NOT EXISTS share_links(
@@ -231,14 +262,20 @@ def build_share_router(authorized_account, channel_links, lock):
             client,account=await authorized_account()
             if account!=link["owner"]:
                 raise HTTPException(403,"Sessão do proprietário indisponível.")
-            msg=await client.get_messages(channel_id(channel_links,account),ids=item["message_id"])
-            if not msg or not msg.media:
-                raise HTTPException(404,"Mídia não encontrada.")
-            data=await client.download_media(msg,file=bytes)
-        if data is None:
-            raise HTTPException(502,"Falha ao recuperar mídia.")
-        if item["name"].lower().endswith((".jxl",".bmp",".tif",".tiff")):
-            data=prepare_image(data,1800)
+            cache_key=(account,channel_id(channel_links,account),item["message_id"],str(item["id"]))
+            data=cached_media_get(cache_key)
+            if data is None:
+                msg=await client.get_messages(cache_key[1],ids=item["message_id"])
+                if not msg or not msg.media:
+                    raise HTTPException(404,"Mídia não encontrada.")
+                data=await client.download_media(msg,file=bytes)
+                if data is None:
+                    raise HTTPException(502,"Falha ao recuperar mídia.")
+                if len(data)>MAX_PUBLIC_ZIP:
+                    raise HTTPException(413,"Arquivo maior que o limite de 50 MB de prévia local.")
+                if item["name"].lower().endswith((".jxl",".bmp",".tif",".tiff")):
+                    data=prepare_image(data,1800)
+                cached_media_put(cache_key,data)
         if len(data)>MAX_PUBLIC_ZIP:
             raise HTTPException(413,"Arquivo grande demais para incorporação local.")
         total=len(data)
