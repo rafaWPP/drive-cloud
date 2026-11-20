@@ -362,8 +362,10 @@ async def shutdown():
 # Rotas locais de arquivos; usam a mesma sessão, vínculo de canal e trava de conta.
 from storage_api import build_router
 from backup_api import build_backup_router, backup_scheduler
+from share_api import build_share_router
 app.include_router(build_router(authorized_account, channel_links, lock))
 app.include_router(build_backup_router(authorized_account, channel_links, lock))
+app.include_router(build_share_router(authorized_account, channel_links, lock))
 
 @app.on_event("startup")
 async def start_catalog_backup_scheduler():
