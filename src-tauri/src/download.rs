@@ -71,6 +71,7 @@ fn save_stream(origin: &str, file_id: &str, expected_size: u64, destination: &Pa
     let result = (|| -> Result<(), String> {
         let client = reqwest::blocking::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .no_proxy() // Local file bytes must never pass through an HTTP proxy.
             .timeout(Duration::from_secs(60 * 60 * 2))
             .build()
             .map_err(|_| "Não foi possível preparar o download.".to_string())?;
