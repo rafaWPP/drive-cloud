@@ -18,7 +18,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Literal
 
-from storage_api import connection, channel_id
+from storage_api import connection, channel_id, is_image, prepare_image
 
 MAX_PUBLIC_ZIP = 50 * 1024 * 1024
 MAX_PUBLIC_ITEMS = 100
@@ -132,6 +132,25 @@ def build_share_router(authorized_account, channel_links, lock):
         return {"name":root["name"],"kind":root["kind"],"size":root["size"],
                 "mode":link["mode"],"expires":link["expires"],"items":output,
                 "local_only":True}
+
+    @router.get("/api/public/share/{token}/preview")
+    async def preview_root(token:str):
+        link,root=await lookup(token)
+        if link["mode"]!="view" or root["kind"]!="file" or not is_image(root):
+            raise HTTPException(415,"Prévia indisponível.")
+        if root["size"]>20*1024*1024:
+            raise HTTPException(413,"Imagem grande demais para prévia nesta versão.")
+        async with lock:
+            client,account=await authorized_account()
+            if account!=link["owner"]:
+                raise HTTPException(403,"Sessão Telegram indisponível.")
+            msg=await client.get_messages(channel_id(channel_links,account),ids=root["message_id"])
+            if not msg or not msg.media:
+                raise HTTPException(404,"Imagem não encontrada.")
+            data=await client.download_media(msg,file=bytes)
+            if data is None:raise HTTPException(502,"Falha ao recuperar imagem.")
+            return Response(prepare_image(data,1200),media_type="image/jpeg",
+                headers={"Cache-Control":"no-store"})
 
     @router.get("/api/public/share/{token}/download")
     async def download_root(token:str):
