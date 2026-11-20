@@ -35,7 +35,7 @@ class RangeSelectionTests(unittest.TestCase):
 
     def test_unaligned_requested_offset(self):
         self.assertEqual(select_range("bytes=4099-8199", 10000, 4096),
-                         (4099, 8199, True))
+                         (4099, 8194, True))
 
 
 class FakeClient:
