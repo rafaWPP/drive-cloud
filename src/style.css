@@ -1349,3 +1349,14 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
  .dc-drop-bottom{min-width:0;width:calc(100% - 30px)}
 }
 @media(prefers-reduced-motion:reduce){.dc-share-unavailable,.dc-drop-float-arrow{animation:none}}
+
+/* File previews display a clear loading indicator while Telegram prepares images. */
+.dc-preview-image-wrap{width:100%;height:100%;min-height:170px;min-width:0;display:grid;place-items:center;position:relative;overflow:hidden}
+.dc-preview-image-wrap>img{grid-area:1/1;width:100%;height:100%;object-fit:contain;transition:opacity .22s ease}
+.dc-preview-loading{grid-area:1/1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;font-size:12px;color:#aab3c2}
+.dc-preview-loading-orbit{display:grid;place-items:center;width:72px;height:72px;border:2px solid #394555;border-top-color:#438afa;border-right-color:#438afa;border-radius:50%;animation:dc-preview-orbit 1.15s linear infinite}
+.dc-preview-loading-orbit img{width:39px;height:39px;object-fit:contain;animation:dc-preview-counter-orbit 1.15s linear infinite}
+@keyframes dc-preview-orbit{to{transform:rotate(360deg)}}
+@keyframes dc-preview-counter-orbit{to{transform:rotate(-360deg)}}
+.dc-shared-media-view>.dc-preview-image-wrap{min-height:250px}
+@media(prefers-reduced-motion:reduce){.dc-preview-loading-orbit,.dc-preview-loading-orbit img{animation:none}}
