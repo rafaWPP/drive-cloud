@@ -108,10 +108,10 @@ function TelegramOnboarding({stage,onReady,onToast}){
    <main className="dc-onboard-action">
     <div className="dc-onboard-title">
      <small>PASSO {active+1} DE 3</small>
-     <h2>{active===0?'Prepare seu acesso':active===1?'Conecte sua conta':'Preparando seu espaço'}</h2>
-     <p>{active===0?'Informe suas credenciais pessoais da API do Telegram. Elas serão salvas apenas neste dispositivo.':active===1?'Use o QR Code do aplicativo Telegram ou seu número de telefone.': 'Vamos vincular ou criar seu canal privado automaticamente, sem duplicar arquivos.'}</p>
+     <h2>{stage==='offline'?'Conector indisponível':active===0?'Prepare seu acesso':active===1?'Conecte sua conta':'Preparando seu espaço'}</h2>
+     <p>{stage==='offline'?'O Drive Cloud não conseguiu verificar a conexão local. Não vamos abrir seu Drive sem confirmar a conta Telegram.':active===0?'Informe suas credenciais pessoais da API do Telegram. Elas serão salvas apenas neste dispositivo.':active===1?'Use o QR Code do aplicativo Telegram ou seu número de telefone.': 'Vamos vincular ou criar seu canal privado automaticamente, com a logo do Drive Cloud e sem duplicar arquivos.'}</p>
     </div>
-    <TelegramSettings onboarding onReady={onReady} onToast={onToast}/>
+    {stage==='offline'?<div className="dc-onboard-offline"><CircleAlert size={20}/><strong>Não foi possível conectar ao serviço local</strong><p>Verifique se o conector do Drive Cloud está funcionando. Você pode tentar novamente sem perder sua configuração.</p><button type="button" onClick={onReady}>Tentar novamente</button></div>:<TelegramSettings key={stage} onboarding onReady={onReady} onToast={onToast}/>}
    </main>
   </div>
  </div>;
