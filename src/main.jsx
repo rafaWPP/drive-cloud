@@ -80,7 +80,7 @@ return <section className={'telegram-panel'+(onboarding?' dc-ob-telegram-panel':
 {step==='phone'?<><label>Telefone com DDI</label><input autoComplete="tel" placeholder="+5511999999999" value={phone} onChange={e=>setPhone(e.target.value)}/><button disabled={busy||!status?.configured} onClick={()=>perform('send-code',{phone})}>Enviar código de verificação</button><button className="tg-back" onClick={()=>setStep('qr-choice')}>Usar QR Code</button></>:null}
 {step==='code'?<><label>Código recebido no Telegram</label><input autoComplete="one-time-code" inputMode="numeric" placeholder="Código de login" value={code} onChange={e=>setCode(e.target.value)}/><button disabled={busy} onClick={()=>perform('verify-code',{code})}>Confirmar código</button><button className="tg-back" onClick={()=>setStep('phone')}>Voltar</button></>:null}
 {step==='password'?<><label>Senha de verificação em duas etapas</label><input type="password" autoComplete="off" placeholder="Sua senha 2FA" value={password} onChange={e=>setPassword(e.target.value)}/><button disabled={busy} onClick={()=>perform('verify-password',{password})}>Autorizar</button></>:null}
-</div>}
+</div>:null}
 <p className="tg-security-note"><CircleAlert size={15}/> A sessão fica neste computador. Não compartilhe o QR Code, códigos, senha 2FA ou os arquivos de sessão.</p></section>
 }
 
