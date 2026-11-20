@@ -410,7 +410,7 @@ function DriveLoadingSkeleton({layout='grid',home=false}){
  </div>
 }
 function CloudFiles({mode='files',globalSearch='',onToast,onDeletionProgress,createFolderToken=0,onCatalogChange,onFolderChange,folderTarget,onInitialReady,onNavigateFolder}){
-const [preview,setPreview]=useState(null),[previewError,setPreviewError]=useState(false),[trayVisible,setTrayVisible]=useState(true),[nodes,setNodes]=useState([]),[folder,setFolder]=useState(null),[layout,setLayout]=useState(readDriveLayout),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selected,setSelected]=useState([]),[menu,setMenu]=useState(null),[moveTargets,setMoveTargets]=useState(null),[moveDestination,setMoveDestination]=useState(''),[moveNewFolder,setMoveNewFolder]=useState(false),[moveFolderName,setMoveFolderName]=useState(''),[folderDialog,setFolderDialog]=useState(false),[folderName,setFolderName]=useState(''),[folderBusy,setFolderBusy]=useState(false),[drag,setDrag]=useState(false),[jobs,setJobs]=useState([]),[panel,setPanel]=useState(false),[tab,setTab]=useState('all'),[deleteConfirm,setDeleteConfirm]=useState(null),[deleteJob,setDeleteJob]=useState(null),[catalogCheck,setCatalogCheck]=useState(null),[catalogBusy,setCatalogBusy]=useState(false),[zipProgress,setZipProgress]=useState(null),[shareItem,setShareItem]=useState(null);
+const [preview,setPreview]=useState(null),[previewError,setPreviewError]=useState(false),[trayVisible,setTrayVisible]=useState(true),[cancelRequested,setCancelRequested]=useState(false),[nodes,setNodes]=useState([]),[folder,setFolder]=useState(null),[layout,setLayout]=useState(readDriveLayout),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selected,setSelected]=useState([]),[menu,setMenu]=useState(null),[moveTargets,setMoveTargets]=useState(null),[moveDestination,setMoveDestination]=useState(''),[moveNewFolder,setMoveNewFolder]=useState(false),[moveFolderName,setMoveFolderName]=useState(''),[folderDialog,setFolderDialog]=useState(false),[folderName,setFolderName]=useState(''),[folderBusy,setFolderBusy]=useState(false),[drag,setDrag]=useState(false),[jobs,setJobs]=useState([]),[panel,setPanel]=useState(false),[tab,setTab]=useState('all'),[deleteConfirm,setDeleteConfirm]=useState(null),[deleteJob,setDeleteJob]=useState(null),[catalogCheck,setCatalogCheck]=useState(null),[catalogBusy,setCatalogBusy]=useState(false),[zipProgress,setZipProgress]=useState(null),[shareItem,setShareItem]=useState(null);
 const uploader=useRef(null),catalogPicker=useRef(null),active=useRef(null),cancelAll=useRef(false),cancelDeletion=useRef(false);
 useEffect(()=>{onDeletionProgress?.(deleteJob?{...deleteJob,cancel:stopDeletion}:null)},[deleteJob]);
 const trash=mode==='trash';
@@ -450,6 +450,7 @@ function addFiles(inputFiles){
    return;
  }
  cancelAll.current=false;
+ setCancelRequested(false);
  const entries=valid.map(file=>({id:crypto.randomUUID(),file,name:file.name,destination:uploadDestination,progress:0,status:'queued'}));
  setJobs(j=>[...j,...entries]);setTrayVisible(true);setPanel(false);
  runQueue(entries);
@@ -523,7 +524,7 @@ async function runQueue(entries){
  setBusy(false);
  if(uploader.current)uploader.current.value='';
 }
-function stopUploads(){cancelAll.current=true;active.current?.abort();setJobs(j=>j.map(x=>x.status==='queued'?{...x,status:'cancelled'}:x))}
+function stopUploads(){if(cancelAll.current)return;cancelAll.current=true;setCancelRequested(true);setJobs(j=>j.map(x=>x.status==='queued'?{...x,status:'cancelled'}:x));active.current?.abort()}
 function newFolder(){setFolderName('');setFolderDialog(true)}
 async function submitNewFolder(){
  const name=folderName.trim();if(!name||folderBusy)return;
@@ -656,7 +657,7 @@ const filteredJobs=jobs.filter(x=>tab==='all'||(tab==='completed'&&x.status==='c
 // item in insertion order. Previously the last queued file hid the active one.
 const featuredJob=jobs.find(x=>x.status==='uploading')||jobs.find(x=>x.status==='queued')||jobs[jobs.length-1];
 const featuredPosition=featuredJob?jobs.findIndex(x=>x.id===featuredJob.id)+1:0;
-const uploadStatus=uploadingNow?'sending':failures?'failed':completed?'complete':'cancelled';
+const uploadStatus=cancelRequested?(uploadingNow?'cancelling':'cancelled'):uploadingNow?'sending':failures?'failed':completed?'complete':'cancelled';
 const jobIcon=job=>/\.(jpg|jpeg|png|webp|gif|jxl|avif|bmp)$/i.test(job.name)?<Image size={18}/>: /\.(mp4|m4v|mkv|mov|webm)$/i.test(job.name)?<Video size={18}/>:<File size={18}/>;
 const moveBreadcrumbs=[];let moveCurrent=moveDestination;
 for(let depth=0;moveCurrent&&depth<40;depth++){
@@ -700,9 +701,9 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
  <div className="upload-head">
   <div className="upload-title">
    <div className={'dc-upload-title-visual '+uploadStatus} aria-hidden="true"><Folder size={21} strokeWidth={1.95}/></div>
-   <div><b aria-live="polite">{uploadStatus==='sending'?'Fazendo upload de '+uploadingNow+' '+(uploadingNow===1?'item':'itens'):uploadStatus==='failed'?failures+' '+(failures===1?'upload com falha':'uploads com falha'):uploadStatus==='complete'?completed+(completed===1?' upload concluído':' uploads concluídos'):'Transferências canceladas'}</b>{panel&&<small>{uploadStatus==='complete'?'Arquivos salvos no Drive':uploadStatus==='sending'?'Transferindo arquivos para o Telegram':'Gerenciador de transferências'}</small>}</div>
+   <div><b aria-live="polite">{uploadStatus==='sending'?'Fazendo upload de '+uploadingNow+' '+(uploadingNow===1?'item':'itens'):uploadStatus==='failed'?failures+' '+(failures===1?'upload com falha':'uploads com falha'):uploadStatus==='complete'?completed+(completed===1?' upload concluído':' uploads concluídos'):uploadStatus==='cancelling'?'Cancelando envios...':'Transferências canceladas'}</b>{panel&&<small>{uploadStatus==='complete'?'Arquivos salvos no Drive':uploadStatus==='sending'?'Transferindo arquivos para o Telegram':'Gerenciador de transferências'}</small>}</div>
   </div>
-  <div className="upload-head-actions">{busy&&<button className="upload-cancel-all" onClick={stopUploads}>Cancelar envios</button>}<button type="button" className="upload-icon-button" aria-label={panel?'Recolher':'Expandir'} onClick={()=>setPanel(v=>!v)}><ChevronDown size={18} style={{transform:panel?'rotate(0deg)':'rotate(180deg)'}}/></button><button type="button" className="upload-icon-button" aria-label="Fechar transferências" onClick={()=>setTrayVisible(false)}><X size={18}/></button></div>
+  <div className="upload-head-actions">{busy&&!cancelRequested&&uploadingNow>0&&<button className="upload-cancel-all" onClick={stopUploads}>Cancelar envios</button>}<button type="button" className="upload-icon-button" aria-label={panel?'Recolher':'Expandir'} onClick={()=>setPanel(v=>!v)}><ChevronDown size={18} style={{transform:panel?'rotate(0deg)':'rotate(180deg)'}}/></button><button type="button" className="upload-icon-button" aria-label="Fechar transferências" onClick={()=>setTrayVisible(false)}><X size={18}/></button></div>
  </div>
  {!panel&&featuredJob&&<div className="dc-compact-upload-item">
   <span className="dc-compact-upload-icon file" aria-hidden="true">{jobIcon(featuredJob)}</span>
