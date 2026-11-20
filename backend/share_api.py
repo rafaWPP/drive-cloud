@@ -295,7 +295,7 @@ def build_share_router(authorized_account, channel_links, lock):
         """Serve short 206 video segments so seeking never downloads entire files."""
         if not header:
             return 0,total-1,False
-        match=re.fullmatch(r"bytes=(\\d*)-(\\d*)",header.strip())
+        match=re.fullmatch(r"bytes=(\d*)-(\d*)",header.strip())
         if not match or not any(match.groups()) or total<1:
             raise HTTPException(416,"Intervalo de bytes inválido.",
                                 headers={"Content-Range":f"bytes */{total}"})
