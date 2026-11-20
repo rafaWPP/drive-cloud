@@ -229,13 +229,11 @@ def build_resumable_router(authorized_account, channel_links, lock):
                 if file_size(stage_path(upload_id)) != row["size"]:
                     raise HTTPException(409, "Arquivo ainda incompleto. Retome as partes pendentes.")
                 first_call = row["state"] == "staging"
-                if first_call:
-                    db.execute("UPDATE resumable_uploads SET state='sending',updated=? WHERE id=?",
-                               (int(time.time()), str(upload_id)))
-                elif row["state"] not in ("sending", "sent"):
+                if not first_call and row["state"] not in ("sending", "sent"):
                     raise HTTPException(409, "Estado do upload inválido.")
-            # Prefer the exact Telegram message ID when sending succeeded but
-            # the local catalog commit failed; search is a fallback for a lost ACK.
+            # A brand-new session has never sent a Telegram file, so it
+            # should not depend on remote search before starting its first send.
+            # Older uncertain sessions must be checked before any resend.
             message = None
             if row["message_id"]:
                 try:
@@ -244,7 +242,7 @@ def build_resumable_router(authorized_account, channel_links, lock):
                         message = known
                 except Exception:
                     pass
-            if message is None:
+            if message is None and not first_call:
                 message = await find_sent(client, channel, upload_id)
             if message is None:
                 if not first_call:
@@ -257,6 +255,14 @@ def build_resumable_router(authorized_account, channel_links, lock):
                 stage_path(upload_id).unlink(missing_ok=True)
                 update_upload_progress(str(upload_id), "completed", row["size"], row["size"])
                 return {"completed": True, "node_id": node, "recovered": True}
+            # Transition to uncertain state immediately before the first
+            # Telegram send, not during initial validation or remote lookup.
+            with connection() as db:
+                schema(db)
+                current = get_session(db, upload_id, account, channel)
+                if current["state"] == "staging":
+                    db.execute("UPDATE resumable_uploads SET state='sending',updated=? WHERE id=?",
+                               (int(time.time()), str(upload_id)))
             update_upload_progress(str(upload_id), "telegram", 0, row["size"])
             try:
                 def on_progress(sent, total):
