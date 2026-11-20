@@ -699,7 +699,30 @@ async function downloadFolderZip(item){
   }
  }catch(e){setZipProgress(null);onToast?.({kind:'error',message:'Falha ao compactar pasta: '+e.message,duration:6500})}
 }
-async function download(item){if(item.kind==='folder')return downloadFolderZip(item);try{setError('');const r=await request('/download/'+encodeURIComponent(item.id));const blob=await r.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=item.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);onToast?.({kind:'success',message:'Download iniciado: '+item.name})}catch(e){setError(e.message)}}
+async function download(item){
+ if(item.kind==='folder')return downloadFolderZip(item);
+ try{
+  setError('');
+  if(window.__TAURI_INTERNALS__){
+   // The native side saves directly to disk, without creating a large WebView Blob.
+   const path=await invoke('download_cloud_file',{
+    fileId:item.id,suggestedName:item.name,expectedSize:Number(item.size)||0
+   });
+   if(path)onToast?.({kind:'success',message:'Arquivo salvo no computador: '+item.name});
+  }else{
+   // In the browser, let the browser stream to its own download manager.
+   const a=document.createElement('a');
+   a.href=base+'/download/'+encodeURIComponent(item.id);
+   a.download=item.name;
+   document.body.append(a);a.click();a.remove();
+   onToast?.({kind:'info',message:'Download iniciado no navegador: '+item.name});
+  }
+ }catch(e){
+  const message=typeof e==='string'?e:e?.message||String(e);
+  setError(message);
+  onToast?.({kind:'error',message:'Falha no download: '+message,duration:6500});
+ }
+}
 async function open(item){if(item.kind==='folder'){if(mode!=='files'){onNavigateFolder?.(item.id)}else setFolder(item.id);setSelected([]);setMenu(null)}else if(isCloudImage(item)||isCloudVideo(item)){setPreview(item);setPreviewError(false);setMenu(null)}else await download(item)}
 async function patch(item,data){const r=await request('/items/'+encodeURIComponent(item.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});await r.json()}
 async function action(kind,targets){setMenu(null);if(!targets.length)return;try{if(kind==='download'){for(const item of targets)await download(item);return}
