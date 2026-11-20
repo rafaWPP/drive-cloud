@@ -11,6 +11,7 @@ import time
 import uuid
 import asyncio
 import zipfile
+import tempfile
 from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
 import pillow_jxl  # Register JPEG XL decoder for previews
@@ -21,7 +22,8 @@ from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
 DB_PATH = (Path(os.environ["DRIVE_CLOUD_DATA_DIR"]).expanduser() if os.environ.get("DRIVE_CLOUD_DATA_DIR") else Path(__file__).resolve().parent / ".data") / "files.sqlite3"
-MAX_SIZE = 20 * 1024 * 1024  # Initial bounded MVP, not a large-file backup tool.
+MAX_SIZE = 512 * 1024 * 1024  # Bounded 512 MiB per file; Telegram handles 512 KiB transfer parts.
+MAX_PREVIEW_SIZE = 20 * 1024 * 1024  # RAM-backed previews remain deliberately small.
 # Transient progress is local to the running backend process.
 UPLOAD_PROGRESS = {}
 ZIP_JOBS = {}
@@ -157,37 +159,49 @@ def build_router(authorized_account, channel_links, lock):
             name = os.path.basename((file.filename or "arquivo").replace("\\", "/"))[:180]
             if name in (".", "..", ""):
                 raise HTTPException(422, "Nome inválido.")
-            data = await file.read(MAX_SIZE + 1)
-            if len(data) > MAX_SIZE:
-                raise HTTPException(413, "Limite desta versão: 20 MB por arquivo.")
-            buffer = io.BytesIO(data)
-            buffer.name = name
-            update_upload_progress(upload_id, "telegram", 0, len(data))
-            def report_progress(sent, total):
-                update_upload_progress(upload_id, "telegram", sent, total)
-            try:
-                msg = await client.send_file(
-                    cid, buffer, force_document=True,
-                    caption="Drive Cloud • arquivo", part_size_kb=512,
-                    progress_callback=report_progress
-                )
-                update_upload_progress(upload_id, "catalog", len(data), len(data))
-            except Exception as exc:
-                update_upload_progress(upload_id, "failed")
-                raise HTTPException(502, "Falha ao enviar ao Telegram: " + type(exc).__name__) from exc
+            if chr(0) in name:
+                raise HTTPException(422, "Nome de arquivo inválido.")
+            # Never hold the whole upload in RAM. A private temporary file is
+            # removed even when Telegram rejects the transfer.
+            with tempfile.TemporaryDirectory(prefix=".dc-upload-", dir=str(DB_PATH.parent)) as folder:
+                target = Path(folder) / name
+                total_bytes = 0
+                with target.open("xb") as output:
+                    os.chmod(target, 0o600)
+                    while True:
+                        chunk = await file.read(min(1024 * 1024, MAX_SIZE - total_bytes + 1))
+                        if not chunk:
+                            break
+                        total_bytes += len(chunk)
+                        if total_bytes > MAX_SIZE:
+                            raise HTTPException(413, "Limite atual: 512 MB por arquivo.")
+                        output.write(chunk)
+                update_upload_progress(upload_id, "telegram", 0, total_bytes)
+                def report_progress(sent, total):
+                    update_upload_progress(upload_id, "telegram", sent, total)
+                try:
+                    msg = await client.send_file(
+                        cid, str(target), force_document=True,
+                        caption="Drive Cloud • arquivo", part_size_kb=512,
+                        progress_callback=report_progress
+                    )
+                    update_upload_progress(upload_id, "catalog", total_bytes, total_bytes)
+                except Exception as exc:
+                    update_upload_progress(upload_id, "failed")
+                    raise HTTPException(502, "Falha ao enviar ao Telegram: " + type(exc).__name__) from exc
             id_ = str(uuid.uuid4())
             try:
                 with connection() as db:
                     db.execute("""INSERT INTO nodes
                                (id,account,kind,parent,name,size,mime,message_id,created)
                                VALUES (?,?,?,?,?,?,?,?,?)""",
-                               (id_,account,"file",parent,name,len(data),
+                               (id_,account,"file",parent,name,total_bytes,
                                 file.content_type or "application/octet-stream",msg.id,int(time.time()*1000)))
             except Exception as exc:
                 # The message may exist on Telegram even if catalog persistence fails.
                 raise HTTPException(500, "Arquivo enviado, mas catálogo local não foi gravado. Não reenvie antes de conferir o canal.") from exc
-            update_upload_progress(upload_id, "completed", len(data), len(data))
-            return {"id": id_, "kind": "file", "name": name, "size": len(data)}
+            update_upload_progress(upload_id, "completed", total_bytes, total_bytes)
+            return {"id": id_, "kind": "file", "name": name, "size": total_bytes}
 
     @router.get("/preview/{file_id}")
     async def preview(file_id: str, full: bool = False):
@@ -368,7 +382,7 @@ def build_router(authorized_account, channel_links, lock):
                 raise HTTPException(404, "Vídeo não encontrado no catálogo.")
             if not row["name"].lower().endswith((".mp4", ".m4v", ".webm")):
                 raise HTTPException(415, "Este formato não tem prévia de vídeo.")
-            if int(row["size"]) > MAX_SIZE:
+            if int(row["size"]) > MAX_PREVIEW_SIZE:
                 raise HTTPException(413, "Vídeo acima do limite de prévia local.")
             msg = await client.get_messages(cid, ids=row["message_id"])
             if not msg or not msg.media:
@@ -398,7 +412,7 @@ def build_router(authorized_account, channel_links, lock):
             mime = video_types.get(extension)
             if mime is None:
                 raise HTTPException(415, "Formato de vídeo não suportado na prévia.")
-            if int(item["size"]) > MAX_SIZE:
+            if int(item["size"]) > MAX_PREVIEW_SIZE:
                 raise HTTPException(413, "Vídeo ultrapassa o limite de prévia local.")
             # The RAM cache also serves media in scoped sharing pages.
             from share_api import cached_media_get, cached_media_put
@@ -411,7 +425,7 @@ def build_router(authorized_account, channel_links, lock):
                 data = await client.download_media(msg, file=bytes)
                 if data is None:
                     raise HTTPException(502, "Não foi possível recuperar o vídeo.")
-                if len(data) > MAX_SIZE:
+                if len(data) > MAX_PREVIEW_SIZE:
                     raise HTTPException(413, "Prévia local maior que o limite permitido.")
                 cached_media_put(cache_key, data)
         total = len(data)
@@ -449,16 +463,28 @@ def build_router(authorized_account, channel_links, lock):
                 msg = await client.get_messages(cid, ids=row["message_id"])
                 if not msg or not msg.media:
                     raise HTTPException(404, "Arquivo não encontrado no canal do Telegram.")
-                raw = await client.download_media(msg, file=bytes)
-                if raw is None:
-                    raise HTTPException(502, "Não foi possível recuperar arquivo.")
+                # Download into a private file instead of allocating hundreds
+                # of megabytes of Python RAM, then stream it to the UI.
+                with tempfile.NamedTemporaryFile(prefix=".dc-download-", dir=str(DB_PATH.parent),
+                                                 delete=False) as temporary:
+                    temporary_path = Path(temporary.name)
+                os.chmod(temporary_path, 0o600)
+                try:
+                    saved = await client.download_media(msg, file=str(temporary_path))
+                    if not saved or not temporary_path.exists():
+                        raise HTTPException(502, "Não foi possível recuperar arquivo.")
+                except Exception:
+                    temporary_path.unlink(missing_ok=True)
+                    raise
             except HTTPException:
                 raise
             except Exception as exc:
                 raise HTTPException(502, "Falha no download do Telegram: " + type(exc).__name__) from exc
-            # Frontend uses Blob download attribute; no untrusted filenames in headers.
-            return Response(content=raw, media_type="application/octet-stream",
-                            headers={"Cache-Control":"no-store"})
+            return FileResponse(
+                temporary_path, media_type="application/octet-stream",
+                headers={"Cache-Control": "no-store"},
+                background=BackgroundTask(lambda: temporary_path.unlink(missing_ok=True)),
+            )
 
 
     class ChangeInput(BaseModel):
