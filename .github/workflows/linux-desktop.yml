@@ -96,6 +96,8 @@ jobs:
           grep -q '"configured":false' /tmp/drive-cloud-status.json
       - name: Gerar ícones a partir da logo do projeto
         run: npx tauri icon public/drive-cloud-logo.svg
+      - name: Verificar proteção de downloads nativos
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
       - name: Gerar instalador .deb
         run: npx tauri build --bundles deb
       - name: Publicar artefato de teste
