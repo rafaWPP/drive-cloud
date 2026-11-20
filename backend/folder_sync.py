@@ -35,6 +35,8 @@ FORBIDDEN_TOP = {"/", "/proc", "/sys", "/dev", "/etc"}
 class FolderRequest(BaseModel):
     path: str = Field(min_length=2, max_length=4096)
     remote_root_id: str | None = None
+    remote_folder_name: str | None = Field(default=None, max_length=180)
+    mode: Literal["backup", "two-way"] = "backup"
 
 
 class AutoRequest(BaseModel):
@@ -133,6 +135,78 @@ def ensure_remote_folder(db, account, parent_id, name, timestamp):
     return node
 
 
+def remote_folder_path(db, account, folder_id):
+    """Validate that the selected Drive folder and every ancestor are active.
+
+    Never create or upload into a trashed or detached folder. UUIDs are
+    validated at the API edge; all lookups are scoped to the Telegram account.
+    """
+    names = []
+    visited = set()
+    current = folder_id
+    while current is not None:
+        if current in visited or len(visited) >= 128:
+            raise HTTPException(409, "O caminho da pasta do Drive contém um vínculo inválido.")
+        visited.add(current)
+        node = db.execute(
+            "SELECT parent,name,kind,trashed FROM nodes WHERE account=? AND id=?",
+            (account, current),
+        ).fetchone()
+        if not node or node["kind"] != "folder" or node["trashed"]:
+            raise HTTPException(409, "A pasta escolhida no Meu Drive foi removida ou está na lixeira.")
+        names.append(node["name"])
+        current = node["parent"]
+    return " / ".join(reversed(names))
+
+
+def list_remote_folders(db, account):
+    """List the real folder tree in Meu Drive, not only backup-named roots."""
+    rows = db.execute(
+        "SELECT id,parent,name,created,trashed FROM nodes WHERE account=? AND kind='folder'",
+        (account,),
+    ).fetchall()
+    by_id = {row["id"]: row for row in rows}
+    cache = {}
+    def resolve(folder_id, trail):
+        if folder_id in cache:
+            return cache[folder_id]
+        if folder_id in trail or len(trail) >= 128:
+            return None
+        node = by_id.get(folder_id)
+        if not node or node["trashed"]:
+            return None
+        parent = node["parent"]
+        if parent is None:
+            full = node["name"]
+        else:
+            base = resolve(parent, trail | {folder_id})
+            if base is None:
+                return None
+            full = base + " / " + node["name"]
+        cache[folder_id] = full
+        return full
+    options = []
+    for row in rows:
+        path = resolve(row["id"], set())
+        if path is not None:
+            options.append({
+                "id": row["id"], "name": row["name"],
+                "path": path, "created": row["created"],
+            })
+    return sorted(options, key=lambda item: (item["path"].casefold(), item["id"]))
+
+
+def new_remote_folder_name(name):
+    if not isinstance(name, str):
+        raise HTTPException(422, "Informe o nome da pasta nova no Meu Drive.")
+    name = name.strip()
+    if (not name or name in (".", "..") or len(name) > 180
+        or any(char in name for char in ("/", "\\\\", "\\0"))
+        or any(ord(char) < 32 for char in name)):
+        raise HTTPException(422, "Nome inválido para a nova pasta no Meu Drive.")
+    return name
+
+
 def pending_files(db, folder, files):
     tracked = {
         r["rel_path"]: (r["size"], r["mtime_ns"])
@@ -209,9 +283,26 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
         return {"path": str(root), "files": len(files), "bytes": sum(x[1] for x in files),
                 "over_limit": oversized, "max_file_bytes": MAX_SIZE}
 
+    @router.get("/remote-folders")
+    async def remote_folders():
+        """Show all existing folders in Meu Drive, including nested folders."""
+        async with lock:
+            _, account = await authorized_account()
+            channel_id(channel_links, account)
+            with connection() as db:
+                ensure_schema(db)
+                options = list_remote_folders(db, account)
+                mapped = {
+                    row["root_node"]: row["path"] for row in db.execute(
+                        "SELECT path,root_node FROM sync_folders WHERE account=?", (account,)
+                    )
+                }
+            return {"folders": [{**item, "linked_local_path": mapped.get(item["id"])}
+                                for item in options]}
+
     @router.get("/remote-roots")
     async def remote_roots():
-        """Only active top-level backup roots from the authenticated account."""
+        """Backward-compatible legacy backup picker, not used by new desktop UI."""
         async with lock:
             _, account = await authorized_account()
             with connection() as db:
@@ -229,9 +320,19 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
             with connection() as db:
                 ensure_schema(db)
                 rows = db.execute(
-                     "SELECT id,path,enabled,last_run,last_error,mode,root_node FROM sync_folders "
+                    "SELECT id,path,enabled,last_run,last_error,mode,root_node FROM sync_folders "
                     "WHERE account=? ORDER BY path", (account,)).fetchall()
-            return {"folders": [dict(row) for row in rows]}
+                output = []
+                for row in rows:
+                    item = dict(row)
+                    try:
+                        item["remote_path"] = remote_folder_path(db, account, row["root_node"])
+                        item["remote_available"] = True
+                    except HTTPException:
+                        item["remote_path"] = "Pasta do Drive indisponível"
+                        item["remote_available"] = False
+                    output.append(item)
+            return {"folders": output}
 
     @router.post("/folders")
     async def add_folder(body: FolderRequest):
@@ -247,31 +348,44 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                     return {"id": existing["id"], "already_exists": True}
                 timestamp = int(time.time() * 1000)
                 folder_id = str(uuid.uuid4())
+                if bool(body.remote_root_id) == bool(body.remote_folder_name):
+                    raise HTTPException(422, "Escolha uma pasta existente no Meu Drive ou informe o nome de uma nova.")
                 if body.remote_root_id:
                     try:
                         requested_id = str(uuid.UUID(body.remote_root_id))
                     except (TypeError, ValueError, AttributeError) as exc:
-                        raise HTTPException(422, "Pasta remota inválida.") from exc
-                    found = db.execute(
-                        "SELECT id,name FROM nodes WHERE id=? AND account=? AND kind='folder' "
-                        "AND parent IS NULL AND trashed=0",
-                        (requested_id, account),
-                    ).fetchone()
-                    if not found or not found["name"].startswith("Backup • "):
-                        raise HTTPException(409, "Pasta remota não pertence a este Drive.")
-                    node = found["id"]
+                        raise HTTPException(422, "Pasta do Meu Drive inválida.") from exc
+                    remote_path = remote_folder_path(db, account, requested_id)
+                    node = requested_id
                 else:
-                    # Creating a new backup must never modify another root.
+                    name = new_remote_folder_name(body.remote_folder_name)
+                    duplicate = db.execute(
+                        "SELECT id FROM nodes WHERE account=? AND parent IS NULL "
+                        "AND kind='folder' AND trashed=0 AND name=?",
+                        (account, name),
+                    ).fetchone()
+                    if duplicate:
+                        raise HTTPException(409, "Já existe uma pasta com esse nome na raiz do Meu Drive. Selecione-a na lista.")
                     node = str(uuid.uuid4())
                     db.execute(
                         "INSERT INTO nodes (id,account,kind,parent,name,created) VALUES (?,?,?,?,?,?)",
-                        (node, account, "folder", None, "Backup • " + root.name[:160], timestamp),
+                        (node, account, "folder", None, name, timestamp),
+                    )
+                    remote_path = name
+                conflict = db.execute(
+                    "SELECT path FROM sync_folders WHERE account=? AND root_node=?",
+                    (account, node),
+                ).fetchone()
+                if conflict:
+                    raise HTTPException(
+                        409, "Essa pasta do Meu Drive já está vinculada a outra pasta deste computador: " + conflict["path"],
                     )
                 db.execute(
-                    "INSERT INTO sync_folders (id,account,path,root_node) VALUES (?,?,?,?)",
-                    (folder_id, account, str(root), node),
+                    "INSERT INTO sync_folders (id,account,path,root_node,mode) VALUES (?,?,?,?,?)",
+                    (folder_id, account, str(root), node, body.mode),
                 )
-            return {"id": folder_id, "already_exists": False, "enabled": False}
+            return {"id": folder_id, "already_exists": False,
+                    "remote_path": remote_path, "mode": body.mode, "enabled": False}
 
     @router.post("/folders/{folder_id}/preview")
     async def preview_pending(folder_id: str):
@@ -304,6 +418,7 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                                         (folder_id, account)).fetchone()
                     if not folder:
                         raise HTTPException(404, "Pasta de sincronização não encontrada.")
+                    remote_folder_path(db, account, folder["root_node"])
                     root = source_root(folder["path"])
                     files, oversized = await asyncio.to_thread(scan_folder, root)
                     pending = pending_files(db, folder, files)
@@ -419,6 +534,7 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                                         (folder_id, account)).fetchone()
                     if not folder:
                         raise HTTPException(404, "Pasta de sincronização não encontrada.")
+                    remote_folder_path(db, account, folder["root_node"])
                     root = source_root(folder["path"])
                     remote = remote_tree(db, account, folder["root_node"])
                     tracked = {
