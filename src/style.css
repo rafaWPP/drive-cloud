@@ -152,3 +152,60 @@ header .new:hover{background:#dedee1}
 .cloud-table .inline-actions button.danger-action:hover{color:#ff9c9c;background:#512d30}
 .cloud-tile .file-menu button.danger-action{color:#ffabab}
 .cloud-tile .file-menu button.danger-action:hover{background:#503035}
+
+/* V3 consistency: all visual actions follow one semantic token palette */
+:root{
+ --drive-bg:#1c1c1e; --drive-panel:#202022; --drive-control:#343437;
+ --drive-hover:#424245; --drive-line:#373739; --drive-text:#f2f2f3;
+ --drive-muted:#a8a8ac; --drive-blue:#3478e6; --drive-blue-hover:#4388f6;
+ --drive-danger:#d65252; --drive-danger-hover:#bb4444;
+}
+html,body,#root{background:var(--drive-bg)}
+.cloud-page{color:var(--drive-text)}
+.cloud-toolbar .cloud-controls>button{background:var(--drive-control);color:var(--drive-text);border:1px solid #48484b}
+.cloud-toolbar .cloud-controls>button:hover:not(:disabled){background:var(--drive-hover)}
+.cloud-toolbar .cloud-controls>.cloud-primary{background:var(--drive-blue);border-color:var(--drive-blue);color:#fff}
+.cloud-toolbar .cloud-controls>.cloud-primary:hover:not(:disabled){background:var(--drive-blue-hover)}
+.cloud-toolbar .toggle button.chosen{background:#48484a;color:#fff}
+.cloud-table .table-row.selected{background:#173e7a}
+.cloud-table .table-row.selected:hover{background:#1d4889}
+.cloud-table .table-row{border-color:var(--drive-line)}
+.cloud-table .table-head{border-color:var(--drive-line)}
+.cloud-tile.selected{background:#133971;border-color:#377acc}
+.cloud-tile .file-menu button:hover{background:#46464a}
+.cloud-page input[type="checkbox"]{appearance:none;-webkit-appearance:none;width:17px;height:17px;min-width:17px;border:1.5px solid #8c8c90;border-radius:4px;background:#242426;display:inline-grid;place-items:center;margin:0;vertical-align:middle;cursor:pointer;transition:background .12s,border-color .12s}
+.cloud-page input[type="checkbox"]:hover{border-color:#c8c8cc;background:#303033}
+.cloud-page input[type="checkbox"]:checked{background:#4389ef;border-color:#4389ef}
+.cloud-page input[type="checkbox"]:checked::after{content:'';width:8px;height:5px;transform:rotate(-45deg) translateY(-1px);border-left:2px solid white;border-bottom:2px solid white}
+.cloud-page input[type="checkbox"]:focus-visible{outline:2px solid #88b5ff;outline-offset:3px}
+.cloud-table .table-head>span:first-child{gap:14px}
+.cloud-table .filename{gap:14px}
+.selection-zone{height:53px;position:relative;border-bottom:1px solid var(--drive-line);margin:0 0 10px}
+.selection-zone .bulkbar{margin:0;padding:0 8px;position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;gap:12px;border:0;opacity:0;visibility:hidden;pointer-events:none;transform:none;background:var(--drive-bg);transition:opacity .13s}
+.selection-zone .bulkbar.is-visible{opacity:1;visibility:visible;pointer-events:auto}
+.selection-zone .bulk-actions{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap}
+.selection-zone .bulkbar strong{font-size:12px;white-space:nowrap;font-weight:650;color:#ececef}
+.selection-zone .bulkbar button{margin:0;background:#343437;border:1px solid #47474a;border-radius:8px;color:#ededed;padding:9px 12px;font-size:12px;font-weight:600}
+.selection-zone .bulkbar button:hover{background:#45454a}
+.selection-zone .bulkbar .bulk-primary{background:#ededee;color:#202022;border-color:#ededee}
+.selection-zone .bulkbar .bulk-primary:hover{background:#dcdce0}
+.selection-zone .bulkbar button.danger-action{background:#343437;color:#ff9f9f;border:1px solid #594043}
+.selection-zone .bulkbar button.danger-action:hover{background:#502e32;color:#ffcece}
+.cloud-table .inline-actions .danger-action{color:#c6c6c9}
+.cloud-table .inline-actions .danger-action:hover{color:#ff9a9a;background:#4b2d30}
+.cloud-thumb-photo{position:relative}
+.thumb-dots{display:flex;align-items:center;gap:6px;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+.thumb-dots i{display:block;width:7px;height:7px;border-radius:50%;background:#45454a;animation:drive-dot-sequence 1.35s steps(1,end) infinite}
+.thumb-dots i:nth-child(2){animation-delay:.15s}
+.thumb-dots i:nth-child(3){animation-delay:.30s}
+@keyframes drive-dot-sequence{
+ 0%,9%{background:#45454a}
+ 10%,64%{background:#5a9cff}
+ 65%,100%{background:#45454a}
+}
+@media(max-width:650px){
+ .selection-zone{height:94px}
+ .selection-zone .bulkbar{align-items:flex-start;padding:8px 4px;flex-direction:column-reverse;justify-content:space-around}
+ .selection-zone .bulkbar .bulk-actions{width:100%;overflow-x:auto;flex-wrap:nowrap}
+ .selection-zone .bulkbar button{white-space:nowrap;padding:7px 10px}
+}
