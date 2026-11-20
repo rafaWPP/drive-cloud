@@ -86,6 +86,7 @@ function CloudThumbnail({item,compact=false}){
    return()=>{live=false};
  },[item.id,item.message_id,item.kind,item.name]);
  if(item.kind==='folder')return <div className="cloud-thumb-folder"><Folder size={compact?25:78} fill="#96bcf1" color="#b1d0ff" strokeWidth={1.2}/></div>;
+ if(isCloudVideo(item))return <div className="cloud-thumb-video" aria-label="Vídeo"><Play size={compact?16:32} fill="currentColor"/></div>;
  if(!isCloudImage(item))return <div className="cloud-thumb-fallback"><IconFile item={item} large={!compact}/></div>;
  if(result.failed)return <div className="cloud-thumb-fallback cloud-thumb-retry"><IconFile item={item} large={!compact}/><button className="cloud-preview-retry" title="Tentar carregar miniatura novamente" aria-label={'Recarregar miniatura de '+item.name} onClick={event=>{event.stopPropagation();cloudPreviewCache.delete(item.id+':'+(item.message_id??''));setResult({url:null,failed:false});cachedCloudPreview(item).then(url=>setResult({url,failed:false})).catch(()=>setResult({url:null,failed:true}))}}><RefreshCw size={compact?12:16}/></button></div>;
  return <div className="cloud-thumb-photo">{!result.url&&<div className="dc-thumb-placeholder" role="status" aria-label="Preparando miniatura"><DriveCloudLoader size={30} label="Preparando miniatura"/></div>}{result.url&&<img src={result.url} alt={item.name}/>}</div>
@@ -99,17 +100,40 @@ if(!toast)return null;
 const Icon=toast.kind==='error'?X:toast.kind==='info'?Cloud:Check;
 return <div className={'dc-toast '+(closing?'dc-toast-out':'')} role="status" aria-live="polite"><span className={'dc-toast-symbol '+toast.kind}><Icon size={18}/></span><div className="dc-toast-message">{toast.message}</div>{toast.undo&&<button className="dc-toast-undo" onClick={()=>{toast.undo();setClosing(true)}}>Desfazer</button>}<button className="dc-toast-close" title="Fechar notificação" aria-label="Fechar notificação" onClick={()=>setClosing(true)}><X size={17}/></button></div>}
 function DriveVideoPlayer({src,name,onError}){
- const videoRef=useRef(null),shellRef=useRef(null),tapRef=useRef(null),skipRef=useRef(null),feedbackTimer=useRef(null),skipTimer=useRef(null);
- const [playing,setPlaying]=useState(false),[waiting,setWaiting]=useState(true);
+ const videoRef=useRef(null),shellRef=useRef(null),seekBarRef=useRef(null),hideControlsTimer=useRef(null),tapRef=useRef(null),skipRef=useRef(null),feedbackTimer=useRef(null),skipTimer=useRef(null);
+ const [playing,setPlaying]=useState(false),[waiting,setWaiting]=useState(true),[controlsVisible,setControlsVisible]=useState(true);
  const [current,setCurrent]=useState(0),[duration,setDuration]=useState(0);
  const [volume,setVolume]=useState(1),[muted,setMuted]=useState(false),[volumeOpen,setVolumeOpen]=useState(false);
  const [full,setFull]=useState(false),[canPip,setCanPip]=useState(false),[pip,setPip]=useState(false),[quality,setQuality]=useState('');
  const [skipIndicator,setSkipIndicator]=useState(null),[centerFeedback,setCenterFeedback]=useState(null);
  const stamp=n=>Number.isFinite(n)?Math.floor(n/3600)>0?[Math.floor(n/3600),Math.floor(n%3600/60),Math.floor(n%60)].map(x=>String(x).padStart(2,'0')).join(':'):[Math.floor(n/60),Math.floor(n%60)].map(x=>String(x).padStart(2,'0')).join(':'):'0:00';
  const clearTap=()=>{if(tapRef.current?.timer)clearTimeout(tapRef.current.timer);tapRef.current=null};
+ const syncSeekBar=()=>{
+  const v=videoRef.current, bar=seekBarRef.current;
+  if(!v||!bar||!Number.isFinite(v.duration)||v.duration<=0)return;
+  const progress=Math.max(0,Math.min(100,v.currentTime/v.duration*100));
+  bar.value=String(v.currentTime);
+  bar.style.setProperty('--progress',progress+'%');
+ };
+ const scheduleControlsHide=()=>{
+  clearTimeout(hideControlsTimer.current);
+  if(videoRef.current&&!videoRef.current.paused&&!videoRef.current.seeking&&!waiting&&!volumeOpen){
+   hideControlsTimer.current=setTimeout(()=>{
+    if(!document.activeElement?.matches?.(':focus-visible'))setControlsVisible(false)
+   },2600);
+  }
+ };
+ const revealControls=()=>{setControlsVisible(true);scheduleControlsHide()};
+ useEffect(()=>{
+  let raf=0;
+  if(playing){const tick=()=>{syncSeekBar();raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}
+  else syncSeekBar();
+  return()=>cancelAnimationFrame(raf);
+ },[playing,duration]);
+ useEffect(()=>{revealControls();return()=>clearTimeout(hideControlsTimer.current)},[playing,waiting,volumeOpen]);
  const flashCenter=kind=>{clearTimeout(feedbackTimer.current);setCenterFeedback(kind);feedbackTimer.current=setTimeout(()=>setCenterFeedback(null),620)};
  const toggle=()=>{const v=videoRef.current;if(!v)return;if(v.paused){v.play().then(()=>flashCenter('play')).catch(()=>{})}else{v.pause();flashCenter('pause')}};
- const seek=value=>{const v=videoRef.current;if(v&&Number.isFinite(v.duration)&&v.duration>0){v.currentTime=Math.max(0,Math.min(v.duration,Number(value)))}};
+ const seek=value=>{const v=videoRef.current;if(v&&Number.isFinite(v.duration)&&v.duration>0){v.currentTime=Math.max(0,Math.min(v.duration,Number(value)));setCurrent(v.currentTime);syncSeekBar();revealControls()}};
  const skip=side=>{
   const v=videoRef.current;
   if(!v||!Number.isFinite(v.duration)||v.duration<=0)return;
@@ -147,9 +171,9 @@ function DriveVideoPlayer({src,name,onError}){
   const onEnter=()=>setPip(true),onLeave=()=>setPip(false);
   v?.addEventListener('enterpictureinpicture',onEnter);
   v?.addEventListener('leavepictureinpicture',onLeave);
-  return()=>{document.removeEventListener('fullscreenchange',listener);v?.removeEventListener('enterpictureinpicture',onEnter);v?.removeEventListener('leavepictureinpicture',onLeave);clearTap();clearTimeout(skipTimer.current);clearTimeout(feedbackTimer.current)};
+  return()=>{document.removeEventListener('fullscreenchange',listener);v?.removeEventListener('enterpictureinpicture',onEnter);v?.removeEventListener('leavepictureinpicture',onLeave);clearTap();clearTimeout(skipTimer.current);clearTimeout(feedbackTimer.current);clearTimeout(hideControlsTimer.current)};
  },[]);
- return <div ref={shellRef} className="dc-video-player dc-video-player-youtube" tabIndex={0} aria-label={'Player de vídeo: '+name} onKeyDown={e=>{
+ return <div ref={shellRef} className={'dc-video-player dc-video-player-youtube '+(controlsVisible?'controls-visible':'controls-hidden')} tabIndex={0} aria-label={'Player de vídeo: '+name} onPointerMove={revealControls} onPointerDown={revealControls} onFocusCapture={revealControls} onKeyDown={e=>{revealControls();
   if(e.target.tagName==='INPUT'||e.target.tagName==='BUTTON')return;
   if(e.key===' '||e.key==='k'){e.preventDefault();toggle()}
   else if(e.key==='ArrowRight'){e.preventDefault();skip('right')}
@@ -157,15 +181,15 @@ function DriveVideoPlayer({src,name,onError}){
   else if(e.key==='f'){e.preventDefault();fullscreen()}
   else if(e.key==='m'){e.preventDefault();const v=videoRef.current;if(v){v.muted=!v.muted;setMuted(v.muted)}}
  }}>
-  <video ref={videoRef} src={src} playsInline preload="metadata" onLoadStart={()=>setWaiting(true)} onWaiting={()=>setWaiting(true)} onCanPlay={()=>setWaiting(false)} onPlaying={()=>{setPlaying(true);setWaiting(false)}} onPause={()=>setPlaying(false)} onTimeUpdate={e=>setCurrent(e.currentTarget.currentTime)} onLoadedMetadata={onMetadata} onDurationChange={e=>setDuration(e.currentTarget.duration)} onError={onError}/>
+  <video ref={videoRef} src={src} playsInline preload="metadata" onLoadStart={()=>setWaiting(true)} onWaiting={()=>setWaiting(true)} onCanPlay={()=>setWaiting(false)} onPlaying={()=>{setPlaying(true);setWaiting(false)}} onPause={()=>setPlaying(false)} onTimeUpdate={e=>{setCurrent(e.currentTarget.currentTime);syncSeekBar()}} onSeeked={()=>{syncSeekBar();revealControls()}} onLoadedMetadata={onMetadata} onDurationChange={e=>setDuration(e.currentTarget.duration)} onError={onError}/>
   <div className="dc-video-gesture-layer" aria-label="Toque duas vezes à esquerda para voltar 10 segundos ou à direita para avançar" onPointerUp={handleGesture} onDoubleClick={e=>e.preventDefault()}/>
   {waiting&&<div className="dc-video-buffer" aria-label="Carregando vídeo"><span className="dc-video-spinner"/></div>}
   {!playing&&!waiting&&<button type="button" className="dc-video-big-play" aria-label="Reproduzir vídeo" onClick={toggle}><Play size={28} fill="currentColor"/></button>}
   {centerFeedback&&playing&&<div className="dc-video-center-feedback" aria-hidden="true">{centerFeedback==='pause'?<Pause size={29} fill="currentColor"/>:<Play size={29} fill="currentColor"/>}</div>}
   {skipIndicator&&<div key={skipIndicator.side+'-'+skipIndicator.amount} className={'dc-video-skip-feedback '+(skipIndicator.side==='left'?'dc-video-skip-left':'dc-video-skip-right')} aria-live="polite"><span>{skipIndicator.side==='left'?'−':'+'}{skipIndicator.amount}s</span></div>}
-  <div className="dc-video-controls">
+  <div className="dc-video-controls" onPointerDown={()=>{clearTimeout(hideControlsTimer.current);setControlsVisible(true)}} onPointerUp={scheduleControlsHide}>
    <div className="dc-video-above-progress"><span className="dc-video-timestamp">{stamp(current)} / {stamp(duration)}</span><button type="button" aria-label={full?'Sair da tela cheia':'Tela cheia'} onClick={fullscreen}>{full?<Minimize size={20}/>:<Maximize size={20}/>}</button></div>
-   <input className="dc-video-seek" aria-label="Progresso do vídeo" type="range" min="0" max={duration||1} step=".1" value={Math.min(current,duration||1)} onChange={e=>seek(e.target.value)} style={{'--progress':(duration?100*current/duration:0)+'%'}}/>
+   <input ref={seekBarRef} className="dc-video-seek" aria-label="Progresso do vídeo" type="range" min="0" max={duration||1} step=".05" defaultValue={0} onChange={e=>seek(e.target.value)} />
    <div className="dc-video-control-row">
     <button type="button" aria-label={playing?'Pausar':'Reproduzir'} onClick={toggle}>{playing?<Pause size={20} fill="currentColor"/>:<Play size={20} fill="currentColor"/>}</button>
     {quality&&<span className="dc-video-quality" title="Qualidade original do arquivo; troca de resolução não disponível">{quality}</span>}
