@@ -751,3 +751,9 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .dc-less-motion *, .dc-less-motion *::before,.dc-less-motion *::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
 @media(max-width:640px){.telegram-panel{padding:17px}.telegram-panel .telegram-header{flex-wrap:wrap}.tg-connection-tag{margin-left:55px}.dc-dashboard-grid{grid-template-columns:1fr}.dc-module-section{padding:15px}.public-share-card{margin:23px auto;padding:19px}.public-share-meta{flex-direction:column}.share-mode-grid{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.dc-tree-children,.share-dialog{transition:none;animation:none}}
+
+.public-share-image{display:flex;align-items:center;justify-content:center;margin:16px 0 20px;padding:12px;min-height:120px;max-height:410px;background:#18191b;border:1px solid #39393f;border-radius:11px;overflow:hidden}
+.public-share-image img{max-width:100%;max-height:380px;object-fit:contain;border-radius:5px}
+.dc-usage-noquota{font-size:10px;color:#a5a5ad;line-height:1.55;margin:8px 0 12px;padding-bottom:10px;border-bottom:1px solid #36363b}
+.dc-usage-breakdown{flex-wrap:wrap;justify-content:flex-start;gap:8px 14px}
+.dc-usage-breakdown span{white-space:normal}
