@@ -1,0 +1,58 @@
+name: Linux Desktop (Tauri)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/tauri-desktop-linux
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'backend/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - 'index.html'
+      - '.github/workflows/linux-desktop.yml'
+jobs:
+  package-linux:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Dependências Linux para Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
+      - name: Instalar dependências do frontend
+        run: npm install
+      - name: Empacotar o backend Telegram (sem Python no computador do cliente)
+        run: |
+          python -m pip install -r backend/requirements.txt pyinstaller
+          python -m PyInstaller --noconfirm --clean --onefile \
+            --name drive-cloud-backend \
+            --paths backend \
+            --hidden-import server \
+            --collect-submodules pillow_jxl \
+            --collect-submodules telethon \
+            --distpath build/desktop-sidecar \
+            backend/desktop_entry.py
+          mkdir -p src-tauri/binaries
+          cp build/desktop-sidecar/drive-cloud-backend src-tauri/binaries/drive-cloud-backend-x86_64-unknown-linux-gnu
+          chmod 755 src-tauri/binaries/drive-cloud-backend-x86_64-unknown-linux-gnu
+      - name: Gerar ícones a partir da logo do projeto
+        run: npx tauri icon public/drive-cloud-logo.svg
+      - name: Gerar instalador .deb
+        run: npx tauri build --bundles deb
+      - name: Publicar artefato de teste
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-cloud-linux-deb-experimental
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error

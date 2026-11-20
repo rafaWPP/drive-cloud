@@ -20,7 +20,7 @@ from fastapi.responses import Response, FileResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
-DB_PATH = Path(__file__).resolve().parent / ".data" / "files.sqlite3"
+DB_PATH = (Path(os.environ["DRIVE_CLOUD_DATA_DIR"]).expanduser() if os.environ.get("DRIVE_CLOUD_DATA_DIR") else Path(__file__).resolve().parent / ".data") / "files.sqlite3"
 MAX_SIZE = 20 * 1024 * 1024  # Initial bounded MVP, not a large-file backup tool.
 # Transient progress is local to the running backend process.
 UPLOAD_PROGRESS = {}

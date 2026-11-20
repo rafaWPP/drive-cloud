@@ -18,7 +18,7 @@ from telethon import TelegramClient, errors
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
-DATA = ROOT / ".data"
+DATA = Path(os.environ["DRIVE_CLOUD_DATA_DIR"]).expanduser() if os.environ.get("DRIVE_CLOUD_DATA_DIR") else ROOT / ".data"
 DATA.mkdir(mode=0o700, exist_ok=True)
 try:
     DATA.chmod(0o700)
@@ -28,7 +28,7 @@ except OSError:
 API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
 API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
 app = FastAPI(title="Drive Cloud - Telegram local", docs_url=None, redoc_url=None)
-ALLOWED = {"http://127.0.0.1:5173", "http://localhost:5173"}
+ALLOWED = {"http://127.0.0.1:5173", "http://localhost:5173", "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
 app.add_middleware(CORSMiddleware, allow_origins=list(ALLOWED), allow_credentials=False,
                    allow_methods=["GET", "HEAD", "POST", "PATCH", "DELETE"], allow_headers=["Content-Type", "Range"],
                    expose_headers=["Content-Length", "Content-Range", "Accept-Ranges", "Content-Disposition"])
