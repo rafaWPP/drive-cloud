@@ -205,7 +205,8 @@ def build_share_router(authorized_account, channel_links, lock):
         ext=name.rsplit(".",1)[-1] if "." in name else ""
         supported={"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png",
                    "webp":"image/webp","gif":"image/gif",
-                   "mp4":"video/mp4","webm":"video/webm","m4v":"video/mp4"}
+                   "mp4":"video/mp4","webm":"video/webm","m4v":"video/mp4",
+                   "jxl":"image/jpeg","bmp":"image/jpeg","tif":"image/jpeg","tiff":"image/jpeg"}
         return supported.get(ext)
 
     async def send_media(link,root,request:Request,item_id=None):
@@ -225,7 +226,7 @@ def build_share_router(authorized_account, channel_links, lock):
         if not media_type or item["kind"]!="file":
             raise HTTPException(415,"Tipo de mídia não suportado para incorporação.")
         if item["size"]>MAX_PUBLIC_ZIP:
-            raise HTTPException(413,"Incorporação local limitada a 50 MB por arquivo.")
+            raise HTTPException(413,"Prévia local limitada a 50 MB por arquivo.")
         async with lock:
             client,account=await authorized_account()
             if account!=link["owner"]:
@@ -236,10 +237,12 @@ def build_share_router(authorized_account, channel_links, lock):
             data=await client.download_media(msg,file=bytes)
         if data is None:
             raise HTTPException(502,"Falha ao recuperar mídia.")
+        if item["name"].lower().endswith((".jxl",".bmp",".tif",".tiff")):
+            data=prepare_image(data,1800)
         if len(data)>MAX_PUBLIC_ZIP:
             raise HTTPException(413,"Arquivo grande demais para incorporação local.")
         total=len(data)
-        headers={"Cache-Control":"no-store","Accept-Ranges":"bytes",
+        headers={"Cache-Control":"private, no-store","Accept-Ranges":"bytes",
                  "X-Content-Type-Options":"nosniff"}
         byte_range=request.headers.get("range")
         if byte_range:
