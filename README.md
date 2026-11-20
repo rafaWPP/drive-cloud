@@ -212,3 +212,16 @@ O próximo passo de recuperação foi implementado: a tela **Meu Drive** oferece
 A importação recupera **apenas os metadados do catálogo** (pastas, nomes, referências e favoritos). Não restaura conteúdo excluído permanentemente do canal Telegram, nem traz arquivos de outra conta ou de outro canal. Recomenda-se manter uma cópia segura do arquivo exportado. Ainda não é sincronização automática entre dispositivos, e referências importadas pressupõem que as mensagens continuem disponíveis no Telegram.
 
 Para atualizar, execute `git pull origin main`, **reinicie o backend** (nova rota `POST /api/cloud/catalog/import`) e recarregue o navegador. Teste primeiro com uma exportação do seu próprio catálogo, sem excluir arquivos.
+
+## Modal Mover para — explorador de pastas
+
+A janela **Mover para** agora segue o mesmo tema grafite e o mesmo efeito de abertura discreta do modal de exclusão, mas sem ícone grande centralizado. Inclui:
+- navegação por subpastas com clique;
+- botão Voltar, breadcrumbs clicáveis e opção de mover para a raiz;
+- criação de pastas dentro da própria janela, escolhendo a pasta recém-criada como destino;
+- indicação explícita do destino e botões Cancelar/Mover aqui;
+- ocultação de pastas selecionadas e de descendentes, para evitar destinos inválidos.
+
+A operação altera apenas o campo `parent` no catálogo SQLite; os arquivos não precisam ser enviados ao Telegram novamente. A API já impede mover uma pasta para dentro dela mesma ou de descendentes. Para receber as mudanças no frontend, use `git pull origin main` e `Ctrl+Shift+R`.
+
+**Validação:** os arquivos foram atualizados no GitHub, mas a compilação no PC do usuário ainda precisa ser conferida.
