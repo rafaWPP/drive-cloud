@@ -858,3 +858,69 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 .share-dialog .move-footer button.move-confirm{display:flex;align-items:center;gap:8px}
 @media(max-width:680px){.public-drive-wrap{width:calc(100% - 22px);margin:17px auto}.public-drive-intro{padding:16px;gap:11px;flex-wrap:wrap}.public-drive-intro h1{font-size:19px}.public-drive-download{width:100%}.public-drive-toolbar{flex-wrap:wrap}.public-drive-tools{flex-wrap:wrap}.public-drive-search{order:3;max-width:none;flex-basis:100%}.public-drive-footer{flex-direction:column;gap:7px}.public-drive-files.as-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding:9px;gap:9px}.share-dialog .share-mode-grid{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.public-file-overlay,.public-file-preview{animation:none}}
+
+/* V14 — flat modern surfaces: separation by surface tone, not colored outlines. */
+.tile,.cloud-tile,.dc-module-card,.dc-module-section,.dc-module-note,
+.telegram-panel,.tg-channel-line,.share-dialog,.share-dialog-file,.share-local-note,
+.share-mode-grid button,.public-drive-intro,.public-drive-files,.public-drive-entry,
+.public-share-card,.dc-storage-summary,.dc-confirm-dialog,.folder-create-dialog,
+.file-manager-dialog,.cloud-card-action,.share-result,.share-existing,
+.public-drive-files.as-grid .public-drive-entry{
+  border-color:transparent!important;
+}
+.tile,.cloud-tile,.dc-module-card,.public-drive-intro,.share-dialog-file{box-shadow:none}
+.tile:hover,.cloud-tile:hover,.dc-module-card:hover{border-color:transparent!important}
+.public-drive-intro{background:#252527}
+.public-drive-files.as-grid{border:none;background:transparent;padding:0;gap:16px;max-height:none;grid-template-columns:repeat(auto-fill,minmax(225px,1fr));overflow:visible}
+.public-drive-files.as-grid .public-drive-entry{
+ background:transparent;min-height:0;padding:0;border:0;border-radius:0;position:relative;
+}
+.public-drive-files.as-grid .public-drive-entry:hover{background:transparent}
+.public-drive-files.as-grid .public-drive-open{padding:0;gap:10px;align-items:stretch}
+.public-drive-files.as-grid .public-drive-entry-icon{
+ width:100%;height:176px;border-radius:11px;background:#141416;
+ display:grid;place-items:center;overflow:hidden;
+}
+.public-drive-files.as-grid .public-drive-entry-icon>svg{width:64px;height:64px}
+.public-drive-files.as-grid .public-drive-entry-info{align-items:flex-start;text-align:left;padding:0 6px 8px}
+.public-drive-files.as-grid .public-drive-entry-info strong{font-size:12px}
+.public-drive-files.as-grid .public-drive-entry-action{
+ position:absolute;right:9px;top:139px;margin:0;background:#303036df;border-radius:8px;color:#f4f4f6;width:30px;height:30px;
+}
+.public-drive-files.as-grid .public-drive-entry-action:hover{background:#43434b}
+.public-drive-files.as-list{border:0;background:transparent}
+.public-drive-files.as-list .public-drive-entry{background:#252527;border-bottom:1px solid #323238;margin-bottom:3px;border-radius:7px}
+.public-drive-files.as-list .public-drive-entry:hover{background:#2d2d30}
+.public-drive-entry-icon{overflow:hidden}
+.public-media-thumbnail{display:block;width:100%;height:100%;object-fit:cover;object-position:center;background:#171719;pointer-events:none}
+.public-drive-files.as-list .public-drive-entry-icon{width:52px;height:43px;border-radius:7px}
+.public-drive-files.as-grid .public-drive-entry-icon:has(.public-media-thumbnail){background:#101013}
+.public-file-preview-content video,.public-share-image video{
+ width:100%;max-width:100%;max-height:calc(94vh - 115px);object-fit:contain;background:#0e0e10;border-radius:8px;
+}
+.public-share-image{border:0;background:#111113}
+.tg-account-avatar{position:relative;overflow:hidden}
+.tg-account-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.share-mode-grid button{background:#2d2d31}
+.share-mode-grid button.chosen{border:0!important;background:#33425a;box-shadow:none}
+.share-mode-grid button:hover{border-color:transparent!important}
+.share-embed-choice{display:flex;align-items:center;gap:12px;text-align:left;width:100%;padding:13px 14px;background:#303034;border:0;border-radius:10px;color:#e8e8eb}
+.share-embed-choice>svg:first-child{color:#a8c6ee;flex-shrink:0}
+.share-embed-choice>svg:last-child{color:#b3b3bd;margin-left:auto}
+.share-embed-choice span{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.share-embed-choice strong{font-size:12px;font-weight:700}
+.share-embed-choice small{font-size:10px;color:#aaaab3}
+.share-embed-choice.chosen{background:#33425a}
+.share-embed-choice:hover{background:#383b43}
+.share-embed-snippet{margin-top:13px;display:flex;flex-direction:column;gap:8px}
+.share-embed-snippet label{font-size:11px;color:#c5e5d4}
+.share-embed-snippet textarea{resize:none;min-height:78px;border:0;border-radius:8px;background:#1d2b25;color:#e5efe9;font-size:11px;padding:11px;line-height:1.6}
+.share-embed-snippet button{align-self:flex-start}
+.dc-embedded-media{height:100vh;width:100vw;overflow:hidden;display:grid;place-items:center;background:transparent}
+.dc-embedded-media>img,.dc-embedded-media>video{display:block;width:100%;height:100%;object-fit:contain;background:transparent}
+.dc-embed-fail{font-size:13px;color:#eee;background:#28282d;padding:18px;border-radius:9px}
+@media(max-width:640px){
+ .public-drive-files.as-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .public-drive-files.as-grid .public-drive-entry-icon{height:135px}
+ .public-drive-files.as-grid .public-drive-entry-action{top:99px}
+}
