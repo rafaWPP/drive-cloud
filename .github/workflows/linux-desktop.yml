@@ -17,6 +17,10 @@ on:
       - 'package.json'
       - 'index.html'
       - '.github/workflows/linux-desktop.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   package-linux:
     runs-on: ubuntu-22.04
