@@ -41,6 +41,10 @@ qr_task = None
 qr_state = 'idle'
 qr_error = None
 
+class CredentialsIn(BaseModel):
+    api_id: int = Field(gt=0, le=2147483647)
+    api_hash: str = Field(min_length=32, max_length=32, pattern=r"^[a-fA-F0-9]{32}$")
+
 class PhoneIn(BaseModel):
     phone: str = Field(min_length=8, max_length=25)
 
@@ -91,6 +95,39 @@ async def status():
         except Exception:
             return {"connected": False, "configured": True, "error": "Não foi possível consultar o Telegram"}
 
+
+@app.post("/api/telegram/credentials")
+async def save_credentials(payload: CredentialsIn):
+    """Store user-supplied Telegram app keys on this device only.
+
+    No secret is returned to the UI or written to logs. The installed app
+    uses its own persistent DATA directory; the developer backend also
+    supports this without changing backend/.env.
+    """
+    global API_ID, API_HASH, client
+    async with lock:
+        if client is not None and client.is_connected() and await client.is_user_authorized():
+            raise HTTPException(409, detail="Desconecte e saia da conta Telegram antes de alterar as credenciais.")
+        new_hash = payload.api_hash.strip().lower()
+        config_path = DATA / ".env"
+        temp_path = DATA / ".env.tmp"
+        try:
+            with temp_path.open("x", encoding="utf-8") as stream:
+                os.chmod(temp_path, 0o600)
+                stream.write(f"TELEGRAM_API_ID={payload.api_id}\\nTELEGRAM_API_HASH={new_hash}\\n".replace("\\n", "\n"))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temp_path, config_path)
+            os.chmod(config_path, 0o600)
+        except OSError as exc:
+            temp_path.unlink(missing_ok=True)
+            raise HTTPException(500, detail="Não foi possível salvar as credenciais neste dispositivo.") from exc
+        if client is not None:
+            await client.disconnect()
+            client = None
+        API_ID = payload.api_id
+        API_HASH = new_hash
+        return {"configured": True, "connected": False}
 
 @app.get("/api/telegram/avatar")
 async def telegram_avatar():
