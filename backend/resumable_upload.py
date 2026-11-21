@@ -17,9 +17,10 @@ from pydantic import BaseModel, Field
 from telethon.tl.types import DocumentAttributeFilename
 
 from storage_api import DB_PATH, MAX_SIZE, connection, parent_valid, channel_id, update_upload_progress
+from telegram_limits import upload_limit, readable_limit
 
 CHUNK_SIZE = 1024 * 1024
-MAX_STAGED_BYTES = 4 * MAX_SIZE
+MAX_STAGED_BYTES = 8 * 1024 * 1024 * 1024  # total across active staged uploads
 MAX_ACTIVE_SESSIONS = 16
 STAGE_DIR = DB_PATH.parent / "resumable_staging"
 STAGE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -124,8 +125,11 @@ def build_resumable_router(authorized_account, channel_links, lock):
         check_name(body.name)
         upload_id = str(body.upload_id)
         async with lock:
-            _, account = await authorized_account()
+            client, account = await authorized_account()
             channel = channel_id(channel_links, account)
+            max_size = await upload_limit(client)
+            if body.size > max_size:
+                raise HTTPException(413, "Limite desta conta Telegram: " + readable_limit(max_size) + " por arquivo.")
             with connection() as db:
                 schema(db)
                 parent = str(body.parent) if body.parent is not None else None
