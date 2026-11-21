@@ -1,10 +1,12 @@
-"""Telegram account upload size limits.
+"""Conservative MTProto file size limits per Telegram account tier.
 
-Keep a small margin below the nominal limit for consistency across clients.
-These limits apply to each Telegram document, not an entire backup folder.
+Maximum individual document size is bounded by the number of 512 KiB parts
+the Telegram server accepts: 4000 Free and 8000 Premium. Leave one part of
+headroom; larger backup archives need a separate multi-message format.
 """
-FREE_MAX_FILE = 2 * 1024 * 1024 * 1024 - 1024 * 1024
-PREMIUM_MAX_FILE = 4 * 1024 * 1024 * 1024 - 1024 * 1024
+PART_BYTES = 512 * 1024
+FREE_MAX_FILE = 3999 * PART_BYTES
+PREMIUM_MAX_FILE = 7999 * PART_BYTES
 
 async def upload_limit(client):
     user = await client.get_me()
