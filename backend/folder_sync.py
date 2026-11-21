@@ -339,8 +339,8 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
     async def add_folder(body: FolderRequest):
         root = source_root(body.path)
         async with lock:
-            _, account = await authorized_account()
-            channel_id(channel_links, account)
+            client, account = await authorized_account()
+            channel = channel_id(channel_links, account)
             with connection() as db:
                 ensure_schema(db)
                 existing = db.execute("SELECT id FROM sync_folders WHERE account=? AND path=?",
@@ -385,8 +385,20 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                     "INSERT INTO sync_folders (id,account,path,root_node,mode,enabled) VALUES (?,?,?,?,?,?)",
                     (folder_id, account, str(root), node, body.mode, int(body.automatic)),
                 )
+            # A folder created from this PC must also become discoverable by
+            # the other devices. On failure, preserve local data and report
+            # that the portable Telegram catalog still needs saving.
+            catalog_snapshot_saved = True
+            if not body.remote_root_id:
+                try:
+                    with connection() as db:
+                        await send_catalog_snapshot(client, db, account, channel)
+                except Exception:
+                    catalog_snapshot_saved = False
             return {"id": folder_id, "already_exists": False,
-                    "remote_path": remote_path, "mode": body.mode, "enabled": body.automatic}
+                    "remote_path": remote_path, "mode": body.mode,
+                    "catalog_snapshot_saved": catalog_snapshot_saved,
+                    "enabled": body.automatic}
 
     @router.post("/folders/{folder_id}/preview")
     async def preview_pending(folder_id: str):
