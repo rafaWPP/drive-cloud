@@ -140,7 +140,7 @@ pub async fn upload_dropped_files(
         let client = reqwest::blocking::Client::builder()
             .no_proxy() // Source files stay on this computer and the local connector.
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(2 * 60 * 60))
+            .timeout(Duration::from_secs(12 * 60 * 60))
             .build()
             .map_err(|_| "Não foi possível iniciar os uploads.".to_string())?;
 
