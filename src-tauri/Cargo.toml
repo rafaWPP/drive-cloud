@@ -1,6 +1,6 @@
 [package]
 name = "drive-cloud"
-version = "0.1.17"
+version = "0.1.18"
 description = "Drive Cloud desktop"
 authors = ["Drive Cloud"]
 edition = "2021"
