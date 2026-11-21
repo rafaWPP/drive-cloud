@@ -29,6 +29,15 @@ MAX_MANIFEST_BYTES = 64 * 1024
 READ_BYTES = 1024 * 1024
 
 
+def private_staging_root():
+    """Store temporary parts on the app data disk, not on a possibly tiny /tmp."""
+    root = (Path(os.environ["DRIVE_CLOUD_DATA_DIR"]).expanduser()
+            if os.environ.get("DRIVE_CLOUD_DATA_DIR")
+            else Path(__file__).resolve().parent / ".data")
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return root
+
+
 def digest_file(path):
     value = hashlib.sha256()
     with Path(path).open("rb") as source:
@@ -63,7 +72,7 @@ async def send_document(client, channel, path, name, mime, *, progress=None, tra
     with source.open("rb") as input_file:
         for index in range(count):
             expected = min(PART_BYTES, st.st_size - sent_total)
-            with tempfile.TemporaryDirectory(prefix=".dc-part-") as tmp:
+            with tempfile.TemporaryDirectory(prefix=".dc-part-", dir=private_staging_root()) as tmp:
                 part = Path(tmp) / ("drive-cloud-part-" + upload_id + "-" + str(index + 1) + ".bin")
                 digest = hashlib.sha256()
                 remaining = expected
@@ -147,6 +156,8 @@ async def download_document(client, channel, message_id, size, output_path):
     if not message or not message.media:
         raise HTTPException(404, "Arquivo ou manifesto indisponível no Telegram.")
     destination = Path(output_path)
+    if size < 0 or size > MAX_FILE_BYTES:
+        raise HTTPException(413, "Arquivo remoto acima do limite de 20 GB.")
     if not (message.message or "").startswith(MANIFEST_MARKER):
         if getattr(message.file, "size", None) != size:
             raise HTTPException(502, "Tamanho remoto diferente do catálogo.")
@@ -168,7 +179,7 @@ async def download_document(client, channel, message_id, size, output_path):
             received = 0
             # Stage only one part at a time; a file-like seek must never
             # overwrite already verified earlier bytes in the destination.
-            with tempfile.TemporaryDirectory(prefix=".dc-restore-") as tmp:
+            with tempfile.TemporaryDirectory(prefix=".dc-restore-", dir=private_staging_root()) as tmp:
                 part_path = Path(tmp) / "part.bin"
                 with part_path.open("xb") as part_out:
                     os.chmod(part_path, 0o600)
