@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from storage_api import DB_PATH, MAX_SIZE
+from multipart_telegram import MAX_FILE_BYTES, download_document
 
 MAX_REMOTE_ITEMS = 10000
 MAX_DOWNLOADS_PER_RUN = 3
@@ -164,23 +165,14 @@ def install_download(downloaded_file, destination, root, node_id):
 
 
 async def get_remote_file(client, channel, item):
-    """Download to an application-private temporary file, capped before transfer."""
-    if item["size"] > MAX_SIZE:
-        raise HTTPException(413, "Arquivo remoto acima de 512 MB.")
-    msg = await client.get_messages(channel, ids=item["message_id"])
-    if not msg or not msg.media:
-        raise HTTPException(404, "Arquivo remoto indisponível no canal Telegram.")
-    if getattr(getattr(msg, "file", None), "size", 0) > MAX_SIZE:
-        raise HTTPException(413, "Tamanho remoto acima do limite.")
+    """Restore both legacy and multipart files with integrity checking."""
+    if item["size"] > MAX_FILE_BYTES:
+        raise HTTPException(413, "Arquivo remoto acima do limite inicial de 20 GB.")
     with tempfile.NamedTemporaryFile(prefix=".dc-reconcile-", dir=str(DB_PATH.parent), delete=False) as temp:
         temp_path = Path(temp.name)
     os.chmod(temp_path, 0o600)
     try:
-        saved = await client.download_media(msg, file=str(temp_path))
-        if not saved or not temp_path.exists():
-            raise HTTPException(502, "Falha ao baixar arquivo remoto.")
-        if temp_path.stat().st_size != item["size"]:
-            raise HTTPException(502, "O tamanho do arquivo baixado não confere com o catálogo.")
+        await download_document(client, channel, item["message_id"], item["size"], temp_path)
         return temp_path
     except Exception:
         temp_path.unlink(missing_ok=True)
