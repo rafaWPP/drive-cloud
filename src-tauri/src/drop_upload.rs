@@ -152,7 +152,14 @@ mod tests {
 
     #[test]
     fn accepts_user_file_without_reading_its_contents() {
-        let base = std::env::temp_dir();
+        // On Windows, temp_dir() normally lives under AppData, which is
+        // deliberately blocked for native drag/drop to protect credentials.
+        // Use the test working directory for an ordinary, allowed file.
+        let base = if cfg!(windows) {
+            std::env::current_dir().unwrap()
+        } else {
+            std::env::temp_dir()
+        };
         let file = base.join(format!("dc-drag-{}.txt", uuid::Uuid::new_v4()));
         fs::write(&file, b"demo").unwrap();
         let internal = base.join("nonexistent-dc-internal-data");
