@@ -12,7 +12,7 @@ use std::time::Duration;
 
 // Upper bound for Telegram Premium. The backend checks the account's
 // actual 2 GB or 4 GB allowance before accepting a file.
-const MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024 - 1024 * 1024;
+const MAX_BYTES: u64 = 7999 * 512 * 1024;
 const MAX_DROP_FILES: usize = 50;
 
 #[derive(Serialize)]
