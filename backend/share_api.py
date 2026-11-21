@@ -247,6 +247,8 @@ def build_share_router(authorized_account, channel_links, lock):
             if account!=link["owner"]:raise HTTPException(403,"Conta do Telegram indisponível.")
             cid=channel_id(channel_links,account)
             if root["kind"]=="file":
+                if int(root["size"])>MAX_PUBLIC_ZIP:
+                    raise HTTPException(413,"Arquivo acima do limite do compartilhamento local.")
                 msg=await client.get_messages(cid,ids=root["message_id"])
                 if not msg or not msg.media:raise HTTPException(404,"Arquivo ausente do canal.")
                 data=await client.download_media(msg,file=bytes)
@@ -424,6 +426,8 @@ def build_share_router(authorized_account, channel_links, lock):
         # For images, preserve the existing short-lived RAM cache. Conversion
         # is only needed for formats browsers cannot display natively.
         if data is None:
+            if int(item["size"])>MAX_PUBLIC_ZIP:
+                raise HTTPException(413,"Imagem grande demais para a visualização local.")
             data=await client.download_media(msg,file=bytes)
             if data is None:
                 raise HTTPException(502,"Falha ao recuperar imagem.")
@@ -484,6 +488,8 @@ def build_share_router(authorized_account, channel_links, lock):
             with connection() as db:
                 item=scoped_file(db,root,account,file_id)
             if not item:raise HTTPException(404,"Arquivo não incluído neste link.")
+            if int(item["size"])>MAX_PUBLIC_ZIP:
+                raise HTTPException(413,"Arquivo acima do limite do compartilhamento local.")
             msg=await client.get_messages(channel_id(channel_links,account),ids=item["message_id"])
             if not msg or not msg.media:raise HTTPException(404,"Arquivo ausente.")
             data=await client.download_media(msg,file=bytes)

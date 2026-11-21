@@ -4,9 +4,11 @@ on:
   pull_request:
     branches:
       - main
+      - feature/tauri-desktop-linux
   push:
     branches:
       - feature/tauri-desktop-linux
+      - feature/catalog-telegram-sync
     paths:
       - 'src/**'
       - 'public/**'
@@ -15,6 +17,10 @@ on:
       - 'package.json'
       - 'index.html'
       - '.github/workflows/linux-desktop.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   package-linux:
     runs-on: ubuntu-22.04
@@ -44,6 +50,15 @@ jobs:
           assert.match(source, /let backendOrigin='http:\/\/127\.0\.0\.1:8000';/);
           assert.doesNotMatch(source, /let backendOrigin=backendOrigin/);
           assert.match(source, /backendOrigin = await invoke\('backend_origin'\)/);
+          assert.ok(source.includes('!/^[0-9]+$/.test(apiId.trim())'), 'API ID must accept decimal digits');
+          assert.match(source, /await openUrl\("https:\/\/my\.telegram\.org\/apps"\)/);
+          const backend = readFileSync('backend/server.py', 'utf8');
+          assert.ok(backend.indexOf('load_dotenv(DATA / ".env", override=True)') < backend.indexOf('API_ID = int(os.environ.get('), 'Stored Telegram credentials must load before API initialization');
+          const tauriConfig = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+          assert.equal(tauriConfig.app.windows[0].dragDropEnabled, true, 'Desktop must enable native OS drag/drop');
+          assert.ok(source.includes('getCurrentWebview().onDragDropEvent'), 'Desktop must listen for native OS file drop');
+          const style = readFileSync('src/style.css', 'utf8');
+          assert.match(style, /main>header \.avatar\{margin-left:auto/, 'Profile avatar must remain pinned to right');
           console.log('Desktop frontend origin initialization OK');
           NODE
       - name: Validar sintaxe do backend
@@ -80,8 +95,12 @@ jobs:
             exit 1
           fi
           grep -q '"configured":false' /tmp/drive-cloud-status.json
+      - name: Testar conector empacotado após fechar e reabrir Linux
+        run: python backend/tests/check_sidecar_lifecycle.py build/desktop-sidecar/drive-cloud-backend
       - name: Gerar ícones a partir da logo do projeto
         run: npx tauri icon public/drive-cloud-logo.svg
+      - name: Verificar proteção de downloads nativos
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
       - name: Gerar instalador .deb
         run: npx tauri build --bundles deb
       - name: Publicar artefato de teste

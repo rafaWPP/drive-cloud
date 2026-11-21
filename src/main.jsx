@@ -1,36 +1,93 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
+import PublicSharingSetup from './PublicSharingSetup';
 import{createRoot}from'react-dom/client';
 import{createPortal}from'react-dom';
 import{Play,Pause,Volume2,VolumeX,Maximize,Minimize,Cloud,Home,Folder,Image,DatabaseBackup,Clock3,Star,Users,RefreshCw,Trash2,Settings,Search,Plus,Upload,FolderPlus,Grid2X2,List,ChevronRight,HardDrive,WifiOff,FileText,FileArchive,File,Video,Download,MoreHorizontal,Code,X,ArrowLeft,Pencil,MoveRight,Eye,RotateCcw,Check,ChevronDown,CircleAlert}from'lucide-react';
 import{all,save,read,erase}from'./storage';
 import './style.css';
 import {invoke} from '@tauri-apps/api/core';
+import {getCurrentWebview} from '@tauri-apps/api/webview';
+import {openUrl} from '@tauri-apps/plugin-opener';
+import {open as openNativeDialog} from '@tauri-apps/plugin-dialog';
 let backendOrigin='http://127.0.0.1:8000';
 const uid=()=>crypto.randomUUID();
+const MAX_FILE_BYTES = 20*1024*1024*1024; // Multipart files are split automatically into Telegram documents.
 const size=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
 const date=n=>new Date(n).toLocaleDateString('pt-BR');
 function IconFile({item,large=false}){const n=large?56:26;if(item.kind==='folder')return <Folder size={n} fill="#8db8fc" color="#a8cbff" strokeWidth={1.4}/>;if(item.type?.startsWith('image/'))return <Image size={n} color="#c3a4ff"/>;if(item.type?.startsWith('video/'))return <Video size={n} color="#70caa8"/>;if(/zip|tar|gz|rar/i.test(item.name))return <FileArchive size={n} color="#e5bd78"/>;if(item.name.toLowerCase().endsWith('.pdf'))return <FileText size={n} color="#fa929e"/>;return <File size={n} color="#b8b8ce"/>}
-function TelegramSettings({onToast}){
+function TelegramSettings({onToast,onboarding=false,onReady}){
 const [status,setStatus]=useState(null),[phone,setPhone]=useState(''),[code,setCode]=useState(''),[password,setPassword]=useState(''),[step,setStep]=useState('qr-choice'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[qrImage,setQrImage]=useState('');
 const [storage,setStorage]=useState(null),[storageBusy,setStorageBusy]=useState(false),[storageError,setStorageError]=useState('');
+const [recoveryOptions,setRecoveryOptions]=useState(null),[recoverySelected,setRecoverySelected]=useState('');
+const [recoveryConfirmed,setRecoveryConfirmed]=useState(false),[recoveryBusy,setRecoveryBusy]=useState(false),[recoveryError,setRecoveryError]=useState('');
+
 const [apiId,setApiId]=useState(''),[apiHash,setApiHash]=useState(''),[savingApi,setSavingApi]=useState(false),[apiError,setApiError]=useState(''),[showApiHash,setShowApiHash]=useState(false);
 const endpoint=backendOrigin;
-async function call(path,data){const response=await fetch(endpoint+path,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},...(data!==undefined?{body:JSON.stringify(data)}:{})});const result=await response.json();if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Falha na conexão');return result}
-async function refresh(){try{const r=await call('/api/telegram/status');setStatus(r);setStep(r.connected?'connected':'qr-choice')}catch{setStatus({offline:true,connected:false})}}
-useEffect(()=>{let active=true;let attempts=0;let timer;async function check(){if(!active)return;try{const result=await call('/api/telegram/status');if(!active)return;setStatus(result);setStep(result.connected?'connected':'qr-choice')}catch{if(!active)return;setStatus({offline:true,connected:false});if(++attempts<20)timer=setTimeout(check,1500)}}check();return()=>{active=false;clearTimeout(timer)}},[]);
-useEffect(()=>{if(step!=='connected'||!status?.connected)return;let cancelled=false;
+async function call(path,data){
+ const response=await fetch(endpoint+path,{method:data===undefined?'GET':'POST',headers:{'Content-Type':'application/json'},...(data!==undefined?{body:JSON.stringify(data)}:{})});
+ const result=await response.json().catch(()=>null);
+ if(!response.ok)throw Error(typeof result?.detail==='string'?result.detail:'Erro HTTP '+response.status+' ao acessar o Telegram.');
+ if(!result)throw Error('Resposta inválida do conector local (HTTP '+response.status+').');
+ return result;
+}
+async function refresh(){try{const r=await call('/api/telegram/status');if(r.error){setStatus({...r,offline:true});return}setStatus(r);setStep(r.connected?'connected':'qr-choice')}catch(e){setStatus({offline:true,detail:e.message,connected:false})}}
+useEffect(()=>{let active=true;let attempts=0;let timer;async function check(){if(!active)return;try{const result=await call('/api/telegram/status');if(!active)return;if(result.error){setStatus({...result,offline:true});if(++attempts<20)timer=setTimeout(check,1500);return}setStatus(result);setStep(result.connected?'connected':'qr-choice')}catch(e){if(!active)return;setStatus({offline:true,detail:e.message,connected:false});if(++attempts<20)timer=setTimeout(check,1500)}}check();return()=>{active=false;clearTimeout(timer)}},[]);
+useEffect(()=>{if(step!=='connected'||!status?.connected){setStorage(null);return}let cancelled=false;
 (async()=>{setStorageBusy(true);setStorageError('');try{
+  // This existing endpoint reuses the registered private channel, or creates
+  // one automatically on the first successful Telegram login.
   const result=await call('/api/telegram/storage/ensure',{});
+  if(!result.ready)throw Error(result.detail||'O canal privado não foi confirmado pelo Telegram.');
   if(!cancelled)setStorage(result);
-}catch(e){if(!cancelled)setStorageError(e.message)}
+}catch(e){if(!cancelled){setStorageError(e.message);onToast?.({kind:'error',message:'Canal privado: '+e.message,duration:9000})}}
 finally{if(!cancelled)setStorageBusy(false)}
 })();
 return()=>{cancelled=true};
 },[step,status?.connected,status?.id]);
+const readinessRef=useRef(false);
+useEffect(()=>{
+ if(onboarding&&status?.connected&&storage?.ready&&!readinessRef.current){
+  readinessRef.current=true;
+  onReady?.();
+ }
+ if(!status?.connected||!storage?.ready)readinessRef.current=false;
+},[onboarding,status?.connected,storage?.ready,onReady]);
 useEffect(()=>{if(step!=='qr')return;let stopped=false;const timer=setInterval(async()=>{try{const r=await call('/api/telegram/qr/status');if(stopped)return;if(r.step==='connected'){setStatus({...r,configured:true});setStep('connected')}else if(r.step==='password')setStep('qr-password');else if(r.step==='expired'||r.step==='error'){setStep('qr-expired');if(r.detail)setError(r.detail)}}catch(e){if(!stopped)setError(e.message)}},1400);return()=>{stopped=true;clearInterval(timer)}},[step]);
+useEffect(()=>{
+ if(!storageError||!status?.connected){
+  setRecoveryOptions(null);setRecoveryConfirmed(false);setRecoverySelected('');
+  return;
+ }
+ let cancelled=false;
+ (async()=>{
+  try{
+   const options=await call('/api/telegram/storage/recovery/options');
+   if(!cancelled){setRecoveryOptions(options);setRecoverySelected('');setRecoveryConfirmed(false)}
+  }catch{
+   if(!cancelled)setRecoveryOptions(null);
+  }
+ })();
+ return()=>{cancelled=true};
+},[storageError,status?.connected,status?.id]);
+async function recoverStorage(action){
+ if(!recoveryOptions?.eligible||!recoveryConfirmed||recoveryBusy)return;
+ setRecoveryBusy(true);setRecoveryError('');
+ try{
+  const recovered=await call('/api/telegram/storage/recovery',{
+   action,expected_channel_id:recoveryOptions.expected_channel_id,
+   channel_id:action==='link'?recoverySelected:null,confirmed:true
+  });
+  if(!recovered?.ready)throw Error('O Telegram não confirmou o canal privado.');
+  setStorage(recovered);setStorageError('');
+  setRecoveryOptions(null);setRecoverySelected('');setRecoveryConfirmed(false);
+  onToast?.({kind:'success',message:recovered.created?'Novo canal privado criado com sucesso.':'Canal privado existente vinculado.',duration:6500});
+  onReady?.();
+ }catch(e){setRecoveryError(e.message);onToast?.({kind:'error',message:'Recuperação do canal: '+e.message,duration:9000})}
+ finally{setRecoveryBusy(false)}
+}
 async function saveTelegramApi(event){
  event.preventDefault();
- if(!/^\\d+$/.test(apiId.trim())||!Number.isSafeInteger(Number(apiId))||Number(apiId)<1){setApiError('Informe um API ID numérico válido.');return}
+ if(!/^[0-9]+$/.test(apiId.trim())||!Number.isSafeInteger(Number(apiId))||Number(apiId)<1||Number(apiId)>2147483647){setApiError('Informe o App api_id numérico que aparece em my.telegram.org (somente números).');return}
  if(!/^[a-fA-F0-9]{32}$/.test(apiHash.trim())){setApiError('O API Hash precisa conter 32 caracteres hexadecimais.');return}
  setSavingApi(true);setApiError('');
  try{
@@ -41,9 +98,9 @@ async function saveTelegramApi(event){
  }catch(err){setApiError(err.message)}finally{setSavingApi(false)}
 }
 async function perform(path,data){setBusy(true);setError('');try{const r=await call('/api/telegram/'+path,data);if(r.image){setQrImage(r.image);setStep('qr')}else if(r.step)setStep(r.step);if(r.connected){setStatus({...r,configured:true});setPassword('');setCode('');onToast?.({kind:'success',message:'Telegram conectado com sucesso'})}else if(path==='logout'||path==='disconnect'){setStorage(null);setStorageError('');setQrImage('');await refresh();onToast?.({kind:'info',message:path==='logout'?'Sessão do Telegram encerrada':'Conexão encerrada'})}}catch(e){setError(e.message);onToast?.({kind:'error',message:e.message,duration:6500})}finally{setBusy(false)}}
-return <section className="telegram-panel"><div className="telegram-header"><div className="tg-header-icon"><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/></div><div><h2>{step==='connected'?'Conta conectada':'Conectar Telegram'}</h2><p>{step==='connected'?'Sua conta autoriza o armazenamento privado do Drive Cloud.':'Autorize a conta pelo QR Code do Telegram.'}</p></div><span className={status?.connected?'tg-connection-tag active':'tg-connection-tag'}>{status?.connected?'Conectado':'Desconectado'}</span></div>
+return <section className={'telegram-panel'+(onboarding?' dc-ob-telegram-panel':'')}><div className="telegram-header"><div className="tg-header-icon"><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/></div><div><h2>{step==='connected'?'Conta conectada':'Conectar Telegram'}</h2><p>{step==='connected'?'Sua conta autoriza o armazenamento privado do Drive Cloud.':'Autorize a conta pelo QR Code do Telegram.'}</p></div><span className={status?.connected?'tg-connection-tag active':'tg-connection-tag'}>{status?.connected?'Conectado':'Desconectado'}</span></div>
 {status&&!status.offline&&!status.configured&&<div className="tg-api-setup">
- <div className="tg-api-alert"><CircleAlert size={20}/><div><strong>Configure seu acesso à API do Telegram</strong><p>Para conectar sua conta, crie gratuitamente suas credenciais pessoais no portal oficial do Telegram. O Drive Cloud não utiliza as credenciais do desenvolvedor.</p><a href="https://my.telegram.org/apps" target="_blank" rel="noopener noreferrer">Abrir site oficial do Telegram ↗</a></div></div>
+ <div className="tg-api-alert"><CircleAlert size={20}/><div><strong>Configure seu acesso à API do Telegram</strong><p>Para conectar sua conta, crie gratuitamente suas credenciais pessoais no portal oficial do Telegram. O Drive Cloud não utiliza as credenciais do desenvolvedor.</p><button className="tg-api-open-link" type="button" onClick={async()=>{try{if(window.__TAURI_INTERNALS__)await openUrl("https://my.telegram.org/apps");else window.open("https://my.telegram.org/apps","_blank","noopener,noreferrer")}catch(e){setApiError("Não foi possível abrir o navegador: "+String(e))}}}>Abrir site oficial do Telegram ↗</button></div></div>
  <details className="tg-api-instructions"><summary>Como obter meu API ID e API Hash?</summary><ol><li>Acesse <strong>my.telegram.org</strong> e entre com o número da sua conta Telegram.</li><li>Selecione <strong>API development tools</strong>.</li><li>Se ainda não tiver um aplicativo cadastrado, preencha o nome, nome curto e demais dados solicitados e clique em <strong>Create application</strong>.</li><li>Copie <strong>App api_id</strong> e <strong>App api_hash</strong> para os campos abaixo.</li></ol><p>Não compartilhe o API Hash nem códigos de login. O Telegram pode permitir apenas um cadastro de API por número.</p></details>
  <form className="tg-api-form" onSubmit={saveTelegramApi}>
   <label htmlFor="dc-api-id">API ID</label>
@@ -55,11 +112,30 @@ return <section className="telegram-panel"><div className="telegram-header"><div
   <small>As credenciais ficam armazenadas localmente neste dispositivo, não são enviadas ao servidor do Drive Cloud. O API Hash é um segredo: evite compartilhá-lo.</small>
  </form>
  </div>}
-{status?.offline?<div className="tg-warning">Não foi possível conectar ao serviço local do Drive Cloud. Verifique se outra instância está aberta ou se a porta 8000 está ocupada. O aplicativo tentará conectar automaticamente; se continuar, consulte o diagnóstico de inicialização.</div>:status&&!status.configured?<div className="tg-warning">Para conectar o Telegram, configure suas credenciais de API abaixo. Não é necessário iniciar Python manualmente.</div>:step==='connected'?<div className="tg-connected-card">
+{status?.offline?<div className="tg-warning" role="alert">Não foi possível verificar sua conexão com o Telegram. {status.detail||status.error||'O conector pode estar temporariamente indisponível.'} <button type="button" className="tg-back" onClick={refresh}>Tentar novamente</button></div>:status&&!status.configured?<div className="tg-warning">Para conectar o Telegram, configure suas credenciais de API abaixo. Não é necessário iniciar Python manualmente.</div>:step==='connected'?<div className="tg-connected-card">
 <div className="tg-account-line"><div className="tg-account-avatar">{(status?.name||'T').slice(0,1).toUpperCase()}{status?.connected&&<img src={backendOrigin+'/api/telegram/avatar?account='+encodeURIComponent(status.id||'')} alt="" onError={event=>{event.currentTarget.style.display='none'}}/>}</div><div><strong>{status?.name||'Telegram'}</strong><small>{status?.username?'@'+status.username:'Perfil conectado ao Drive Cloud'}</small></div><span className="tg-account-online"><Check size={15}/> Ativa</span></div>
-<div className="tg-channel-line"><div className="tg-channel-icon"><Folder size={20}/></div><div><strong>{storageBusy?'Verificando canal privado...':storage?.ready?storage.title:'Canal privado não configurado'}</strong><small>{storage?.ready?'Canal privado conectado e verificado.':storageError||'Configure um canal para armazenar seus arquivos.'}</small></div>{storage?.ready&&<span className="tg-channel-ok"><Check size={17}/></span>}</div>
-{!storage?.ready&&!storageBusy&&<button className="tg-setup-button" disabled={storageBusy} onClick={async()=>{setStorageBusy(true);setStorageError('');try{setStorage(await call('/api/telegram/storage/ensure',{}))}catch(e){setStorageError(e.message)}finally{setStorageBusy(false)}}}>Preparar canal de armazenamento</button>}
-<div className="tg-connected-actions"><button disabled={busy} onClick={()=>perform('disconnect',{})}>Desconectar backend</button><button disabled={busy} onClick={()=>{if(confirm('Revogar a sessão do Telegram neste computador?'))perform('logout',{})}}>Sair do Telegram</button></div></div>:<div className="tg-form">
+<div className="tg-channel-line"><div className="tg-channel-icon"><Folder size={20}/></div><div><strong>{storageBusy?'Verificando canal privado...':storage?.ready?storage.title:'Canal privado não configurado'}</strong><small>{storage?.ready?'Canal privado conectado e verificado.':storageBusy?'Procurando um canal existente e verificando acesso...':storageError?'Não foi possível preparar o canal. Veja os detalhes abaixo.':'Vamos localizar ou criar o canal privado automaticamente.'}</small></div>{storage?.ready&&<span className="tg-channel-ok"><Check size={17}/></span>}</div>
+{storageError&&<div className="tg-storage-error" role="alert"><CircleAlert size={19}/><div><strong>Falha ao preparar ou verificar o canal</strong><p>{storageError}</p><small>A conexão com a conta não será encerrada e nenhum arquivo ou canal será apagado.</small></div></div>}
+{storageError&&recoveryOptions?.eligible&&<div className="tg-channel-recovery">
+ <div className="tg-channel-recovery-heading"><FolderPlus size={19}/><strong>Recuperar armazenamento</strong></div>
+ <p>O canal privado vinculado não foi encontrado. Você pode criar outro canal, mas <strong>os arquivos excluídos do Telegram não serão recuperados automaticamente.</strong></p>
+ {(recoveryOptions.catalog_items>0||recoveryOptions.sync_folders>0)&&<p>O catálogo anterior possui <strong>{recoveryOptions.catalog_items} registro(s)</strong> e <strong>{recoveryOptions.sync_folders} pasta(s) sincronizadas</strong>. Eles serão mantidos no histórico local, separados do novo canal, para evitar arquivos quebrados ou envios ao destino errado.</p>}
+ {recoveryOptions.candidates?.length>0&&<div className="tg-recovery-candidates">
+   <label htmlFor="dc-recovery-channel">Outro canal privado encontrado na conta</label>
+   <select id="dc-recovery-channel" value={recoverySelected} onChange={e=>setRecoverySelected(e.target.value)}>
+    <option value="">Selecione um canal para reutilizar</option>
+    {recoveryOptions.candidates.map(c=><option key={c.channel_id} value={c.channel_id}>{c.title}</option>)}
+   </select>
+   <small>Para evitar duplicados, vincule um canal existente antes de tentar criar outro.</small>
+ </div>}
+ <label className="tg-recovery-confirm"><input type="checkbox" checked={recoveryConfirmed} disabled={recoveryBusy} onChange={e=>setRecoveryConfirmed(e.target.checked)}/><span>Entendi que um novo canal não restaura arquivos apagados e que os registros antigos serão preservados separadamente.</span></label>
+ {recoveryError&&<p className="tg-recovery-failure" role="alert">{recoveryError}</p>}
+ {recoveryOptions.candidates?.length>0?
+  <button type="button" className="tg-setup-button" disabled={!recoveryConfirmed||!recoverySelected||recoveryBusy} onClick={()=>recoverStorage('link')}>{recoveryBusy?'Vinculando...':'Usar canal existente'}</button>:
+  <button type="button" className="tg-setup-button" disabled={!recoveryConfirmed||recoveryBusy} onClick={()=>recoverStorage('create')}>{recoveryBusy?'Criando canal...':'Criar novo canal privado'}</button>}
+</div>}
+{!storage?.ready&&!storageBusy&&!recoveryOptions?.eligible&&<button className="tg-setup-button" disabled={storageBusy} onClick={async()=>{setStorageBusy(true);setStorageError('');try{const result=await call('/api/telegram/storage/ensure',{});if(!result.ready)throw Error(result.detail||'O Telegram não confirmou o canal.');setStorage(result)}catch(e){setStorageError(e.message);onToast?.({kind:'error',message:'Canal privado: '+e.message,duration:9000})}finally{setStorageBusy(false)}}}>{storageError?'Tentar preparar canal novamente':'Preparar canal de armazenamento'}</button>}
+<div className="tg-connected-actions"><button disabled={busy} onClick={()=>perform('disconnect',{})}>Desconectar backend</button><button disabled={busy} onClick={()=>{if(confirm('Revogar a sessão do Telegram neste computador?'))perform('logout',{})}}>Sair do Telegram</button></div></div>:status?.configured?<div className="tg-form">
 {step==='qr-choice'?<><p className="tg-note">No celular: Telegram → Configurações → Dispositivos → Conectar dispositivo.</p><button disabled={busy||!status?.configured} onClick={()=>perform('qr/start',{})}>Gerar QR Code</button><button className="tg-back" onClick={()=>setStep('phone')}>Entrar com telefone</button></>:null}
 {step==='qr'?<><div className="tg-qr"><img src={qrImage} alt="QR Code temporário para conectar sua conta do Telegram"/></div><p className="tg-note">Abra o Telegram no celular, entre em Dispositivos e escaneie o código. Aguardando autorização...</p><button className="tg-back" onClick={()=>perform('qr/start',{})}>Gerar novo QR Code</button><button className="tg-back" onClick={()=>setStep('phone')}>Usar telefone</button></>:null}
 {step==='qr-expired'?<><div className="tg-warning">O QR Code expirou ou não pôde ser validado.</div><button disabled={busy} onClick={()=>perform('qr/start',{})}>Gerar outro QR Code</button><button className="tg-back" onClick={()=>setStep('phone')}>Usar telefone</button></>:null}
@@ -67,8 +143,42 @@ return <section className="telegram-panel"><div className="telegram-header"><div
 {step==='phone'?<><label>Telefone com DDI</label><input autoComplete="tel" placeholder="+5511999999999" value={phone} onChange={e=>setPhone(e.target.value)}/><button disabled={busy||!status?.configured} onClick={()=>perform('send-code',{phone})}>Enviar código de verificação</button><button className="tg-back" onClick={()=>setStep('qr-choice')}>Usar QR Code</button></>:null}
 {step==='code'?<><label>Código recebido no Telegram</label><input autoComplete="one-time-code" inputMode="numeric" placeholder="Código de login" value={code} onChange={e=>setCode(e.target.value)}/><button disabled={busy} onClick={()=>perform('verify-code',{code})}>Confirmar código</button><button className="tg-back" onClick={()=>setStep('phone')}>Voltar</button></>:null}
 {step==='password'?<><label>Senha de verificação em duas etapas</label><input type="password" autoComplete="off" placeholder="Sua senha 2FA" value={password} onChange={e=>setPassword(e.target.value)}/><button disabled={busy} onClick={()=>perform('verify-password',{password})}>Autorizar</button></>:null}
-</div>}
+</div>:null}
 <p className="tg-security-note"><CircleAlert size={15}/> A sessão fica neste computador. Não compartilhe o QR Code, códigos, senha 2FA ou os arquivos de sessão.</p></section>
+}
+
+
+function TelegramOnboarding({stage,detail,onReady,onToast}){
+ // A failed session verification never counts as a completed Telegram login.
+ const active=stage==='credentials'?0:(stage==='account'||stage==='offline'||stage==='telegram-error')?1:2;
+ const labels=['Credenciais','Conta Telegram','Canal privado'];
+ return <div className="dc-onboard-screen">
+  <div className="dc-onboard-frame">
+   <aside className="dc-onboard-intro">
+    <div className="dc-onboard-brand"><span><img src="/drive-cloud-logo.svg?v=20261120b" alt=""/></span><strong>Drive Cloud</strong></div>
+    <div className="dc-onboard-main">
+     <div className="dc-onboard-kicker"><Cloud size={15}/> CONFIGURAÇÃO INICIAL</div>
+     <h1>Seu Drive começa com o Telegram.</h1>
+     <p>Configure seu acesso uma única vez. Depois, seus arquivos ficam organizados em um espaço privado conectado à sua conta.</p>
+     <div className="dc-onboard-timeline" aria-label="Etapas da conexão">
+      {labels.map((label,index)=><div className={'dc-onboard-timeline-item'+(index===active?' is-active':index<active?' is-done':'')} key={label}>
+       <span>{index<active?<Check size={15}/>:index+1}</span>
+       <div><strong>{label}</strong><small>{index===0?'Salve API ID e API Hash':index===1?'Entre por QR Code ou telefone':'Preparação automática do armazenamento'}</small></div>
+      </div>)}
+     </div>
+    </div>
+    <div className="dc-onboard-trust"><Check size={15}/> Conexão feita diretamente com sua conta Telegram.</div>
+   </aside>
+   <main className="dc-onboard-action">
+    <div className="dc-onboard-title">
+     <small>PASSO {active+1} DE 3</small>
+     <h2>{stage==='offline'?'Conector indisponível':stage==='telegram-error'?'Falha ao verificar sua conta':active===0?'Prepare seu acesso':active===1?'Conecte sua conta':'Preparando seu espaço'}</h2>
+     <p>{stage==='offline'||stage==='telegram-error'?'Não conseguimos confirmar a conexão agora. Isso não significa que sua conta foi desconectada.':active===0?'Informe suas credenciais pessoais da API do Telegram. Elas serão salvas apenas neste dispositivo.':active===1?'Use o QR Code do aplicativo Telegram ou seu número de telefone.': 'Vamos vincular ou criar seu canal privado automaticamente, com a logo do Drive Cloud e sem duplicar arquivos.'}</p>
+    </div>
+    {stage==='offline'||stage==='telegram-error'?<div className="dc-onboard-offline" role="alert"><CircleAlert size={20}/><strong>{stage==='telegram-error'?'Não foi possível verificar a sessão Telegram':'Não foi possível conectar ao serviço local'}</strong><p>{detail||'Verifique a conexão e tente novamente. Sua configuração foi preservada.'}</p><button type="button" onClick={onReady}>Tentar novamente</button></div>:<><TelegramSettings key={stage} onboarding onReady={onReady} onToast={onToast}/>{stage==='storage'&&detail&&<p className="dc-onboard-channel-hint" role="status">{detail}</p>}</>}
+   </main>
+  </div>
+ </div>;
 }
 
 const isCloudImage=item=>item.kind==='file'&&(item.mime?.startsWith('image/')||/\.(jxl|jpe?g|png|gif|webp|bmp|tiff?)$/i.test(item.name));
@@ -373,21 +483,32 @@ function DriveMenuSelect({value,onChange,options,label,icon:Icon,disabled=false}
   </div>,document.body)}
  </div>;
 }
-function ShareDialog({item,onClose,onToast}){
+function ShareDialog({item,onClose,onToast,onConfigureSharing}){
  const [mode,setMode]=useState(item.kind==='folder'?'view':'download'),[expires,setExpires]=useState('168'),[busy,setBusy]=useState(false),[created,setCreated]=useState(null),[existing,setExisting]=useState([]),[error,setError]=useState('');
  const embeddable=item.kind==='file'&&/\.(png|jpe?g|gif|webp|mp4|webm|m4v)$/i.test(item.name);
  const modes=[{value:'view',label:'Visualizar e baixar',hint:'Abrir arquivos e navegar nas pastas'},{value:'download',label:'Somente download',hint:'Baixar o arquivo ou ZIP diretamente'},...(embeddable?[{value:'embed',label:'Integração (embed)',hint:'Incorporar mídia em outro sistema'}]:[])];
  const expiryOptions=[{value:'1',label:'1 hora'},{value:'24',label:'24 horas'},{value:'168',label:'7 dias'},{value:'0',label:'Nunca expira',hint:'Até você revogar o link manualmente'}];
  const isPermanent=t=>Number(t)>=253402300799;
+ const isDesktop=!!window.__TAURI_INTERNALS__;
+ // A tauri:// URL is not a shareable internet address. The embedded backend
+ // listens only on loopback; making it public would expose Telegram credentials.
+ const canCreateLocalTestLink=!isDesktop && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(window.location.origin);
+
  async function refreshLinks(){try{const r=await fetch(backendOrigin+'/api/share');if(!r.ok)return;const data=await r.json();setExisting((data.links||[]).filter(x=>x.item_id===item.id&&!x.revoked&&x.expires>Date.now()/1000))}catch{}}
  useEffect(()=>{refreshLinks()},[item.id]);
  async function createLink(){
+  if(!canCreateLocalTestLink){
+   setError('Compartilhamento público indisponível: esta instalação não tem um serviço HTTPS de compartilhamento. Nenhum endereço tauri:// é válido fora do aplicativo.');
+   return;
+  }
   if(busy)return;
   setBusy(true);setError('');
   try{
    const response=await fetch(backendOrigin+'/api/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_id:item.id,mode,expires_hours:Number(expires)})});
    const result=await response.json();if(!response.ok)throw Error(result.detail||'Não foi possível criar o link.');
    const route=(mode==='embed'?'/embed/d/':item.kind==='folder'?'/folder/d/':'/file/d/');
+   // Only the browser's actual local HTTP origin can make a localhost
+   // development link. Never export tauri:// or pretend this is public.
    setCreated({...result,url:window.location.origin+route+encodeURIComponent(result.token),selectedMode:mode});
    await refreshLinks();
    onToast?.({kind:'success',message:'Link criado com sucesso.'});
@@ -397,18 +518,20 @@ function ShareDialog({item,onClose,onToast}){
  async function revoke(id){try{const response=await fetch(backendOrigin+'/api/share/'+id,{method:'DELETE'});if(!response.ok)throw Error('Falha ao revogar.');if(created?.id===id)setCreated(null);await refreshLinks();onToast?.({kind:'success',message:'Link revogado.'})}catch(e){setError(e.message)}}
  const iframe=created?.selectedMode==='embed'?'<iframe src="'+created.url+'" width="640" height="360" loading="lazy" allow="fullscreen" style="border:0;border-radius:12px" title="Mídia compartilhada"></iframe>':'';
  return <div className="move-backdrop" role="presentation" onClick={()=>!busy&&onClose()}><section className="move-dialog share-dialog dc-share-v2" role="dialog" aria-modal="true" aria-labelledby="share-dialog-title" onClick={e=>e.stopPropagation()}>
-  <header className="move-dialog-header"><div className="share-dialog-heading"><span className="share-dialog-heading-icon"><Users size={21}/></span><div><h3 id="share-dialog-title">Compartilhar {item.kind==='folder'?'pasta':'arquivo'}</h3><p>Crie um link de acesso ao conteúdo</p></div></div><button type="button" className="move-close" aria-label="Fechar" onClick={onClose}><X size={19}/></button></header>
+  <header className="move-dialog-header"><div className="share-dialog-heading"><span className="share-dialog-heading-icon"><Users size={21}/></span><div><h3 id="share-dialog-title">Compartilhar {item.kind==='folder'?'pasta':'arquivo'}</h3><p>{canCreateLocalTestLink?'Link de teste somente neste computador':'Compartilhamento por link externo ainda não configurado'}</p></div></div><button type="button" className="move-close" aria-label="Fechar" onClick={onClose}><X size={19}/></button></header>
   <div className="share-dialog-body">
    <div className="share-dialog-file"><span className="share-dialog-file-icon">{item.kind==='folder'?<Folder size={22}/>:<File size={22}/>}</span><div><strong title={item.name}>{item.name}</strong><small>{item.kind==='folder'?'Pasta compartilhada':'Arquivo compartilhado'}</small></div></div>
-   <div className="dc-share-field"><label>Tipo de link</label><DriveMenuSelect label="Tipo de link" value={mode} onChange={v=>{setMode(v);setCreated(null)}} options={modes} icon={Eye}/></div>
-   <div className="dc-share-field"><label>Acesso geral</label><DriveMenuSelect label="Acesso geral" value="anyone" onChange={()=>{}} options={[{value:'anyone',label:'Qualquer pessoa com o link',hint:'Acesso pelo endereço compartilhado'},{value:'restricted',label:'Restrito (em desenvolvimento)',hint:'Exige autenticação do destinatário',disabled:true}]} icon={Users}/><small className="dc-share-hint">Este link funciona somente neste computador. Acesso restrito por usuário ainda não está disponível.</small></div>
+   {!canCreateLocalTestLink&&<div className="dc-share-unavailable" role="status"><CircleAlert size={21}/><div><strong>Link público ainda não disponível</strong><p>O Drive Cloud funciona conectado ao Telegram por um serviço local protegido. Para compartilhar com outras pessoas, é necessário um serviço de compartilhamento HTTPS separado e seguro. Não vamos criar um link <code>tauri://localhost</code> que não abre em outros aparelhos.</p><small>Você ainda pode baixar o arquivo e enviá-lo diretamente. Os links antigos podem ser revogados abaixo.</small><button type="button" className="dc-module-primary" onClick={()=>{onClose();onConfigureSharing?.()}}>Configurar compartilhamento público</button></div></div>}
+   {canCreateLocalTestLink&&<><div className="dc-share-field"><label>Tipo de link</label><DriveMenuSelect label="Tipo de link" value={mode} onChange={v=>{setMode(v);setCreated(null)}} options={modes} icon={Eye}/></div>
+   <div className="dc-share-field"><label>Acesso geral</label><DriveMenuSelect label="Acesso geral" value="anyone" onChange={()=>{}} options={[{value:'anyone',label:'Somente neste computador',hint:'Link de teste em localhost, sem acesso pela internet'},{value:'restricted',label:'Restrito (em desenvolvimento)',hint:'Exige autenticação do destinatário',disabled:true}]} icon={Users}/><small className="dc-share-hint">Este link funciona somente neste computador. Acesso restrito por usuário ainda não está disponível.</small></div>
    <div className="dc-share-field"><label>O link expira em</label><DriveMenuSelect label="Validade do link" value={expires} onChange={v=>{setExpires(v);setCreated(null)}} options={expiryOptions} icon={Clock3}/><small className="dc-share-hint">{expires==='0'?'O link continuará ativo até ser revogado.':'Você poderá revogar o link antes do prazo.'}</small></div>
    {created&&<div className="share-result"><label><Check size={15}/> Link criado</label><div><input value={created.url} aria-label="Endereço do compartilhamento" readOnly onFocus={e=>e.target.select()}/><button type="button" onClick={()=>copy(created.url)}><Check size={15}/> Copiar</button></div>{iframe&&<div className="share-embed-snippet"><label>Usar este link em outro sistema</label><textarea aria-label="Código de incorporação" readOnly value={iframe} onFocus={e=>e.target.select()}/><button type="button" onClick={()=>copy(iframe)}><Code size={15}/> Copiar código</button></div>}</div>}
+   </>}
    {error&&<div className="public-share-error"><CircleAlert size={16}/>{error}</div>}
    {!!existing.length&&<section className="share-existing"><strong>Links ativos</strong>{existing.map(link=><div key={link.id}><span>{link.mode==='download'?'Download':link.mode==='embed'?'Integração':'Visualização'} · {isPermanent(link.expires)?'Nunca expira':'Até '+new Date(link.expires*1000).toLocaleDateString('pt-BR')}</span><button type="button" onClick={()=>revoke(link.id)}>Revogar</button></div>)}</section>}
-   <div className="share-local-note"><CircleAlert size={16}/> Os links gerados funcionam somente neste computador. Para compartilhar pela internet será necessário um serviço HTTPS seguro.</div>
+   <div className="share-local-note"><CircleAlert size={16}/> Links de teste só funcionam no navegador local enquanto o servidor estiver ligado. Para acesso pela internet, será necessário um serviço HTTPS seguro independente.</div>
   </div>
-  <footer className="move-footer"><button type="button" onClick={onClose}>Concluir</button><button type="button" className="move-confirm" disabled={busy} onClick={createLink}><Plus size={16}/>{busy?'Criando...':'Criar link'}</button></footer>
+  <footer className="move-footer"><button type="button" onClick={onClose}>Concluir</button>{canCreateLocalTestLink&&<button type="button" className="move-confirm" disabled={busy} onClick={createLink}><Plus size={16}/>{busy?'Criando...':'Criar link local de teste'}</button>}</footer>
  </section></div>;
 }
 function DriveCloudLoader({size=58,label='Carregando...'}) {
@@ -437,8 +560,9 @@ function DriveLoadingSkeleton({layout='grid',home=false}){
  <div className="dc-loading-caption"><DriveCloudLoader size={48} label="Preparando seus arquivos"/> <span>Preparando seus arquivos...</span></div>
  </div>
 }
-function CloudFiles({mode='files',globalSearch='',onToast,onDeletionProgress,createFolderToken=0,onCatalogChange,onFolderChange,folderTarget,onInitialReady,onNavigateFolder}){
+function CloudFiles({mode='files',globalSearch='',onToast,onDeletionProgress,createFolderToken=0,onCatalogChange,onFolderChange,folderTarget,onInitialReady,onNavigateFolder,onConfigureSharing}){
 const [preview,setPreview]=useState(null),[previewError,setPreviewError]=useState(false),[trayVisible,setTrayVisible]=useState(true),[cancelRequested,setCancelRequested]=useState(false),[nodes,setNodes]=useState([]),[folder,setFolder]=useState(null),[layout,setLayout]=useState(readDriveLayout),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[selected,setSelected]=useState([]),[menu,setMenu]=useState(null),[moveTargets,setMoveTargets]=useState(null),[moveDestination,setMoveDestination]=useState(''),[moveNewFolder,setMoveNewFolder]=useState(false),[moveFolderName,setMoveFolderName]=useState(''),[folderDialog,setFolderDialog]=useState(false),[folderName,setFolderName]=useState(''),[folderBusy,setFolderBusy]=useState(false),[drag,setDrag]=useState(false),[jobs,setJobs]=useState([]),[panel,setPanel]=useState(false),[tab,setTab]=useState('all'),[deleteConfirm,setDeleteConfirm]=useState(null),[deleteJob,setDeleteJob]=useState(null),[catalogCheck,setCatalogCheck]=useState(null),[catalogBusy,setCatalogBusy]=useState(false),[zipProgress,setZipProgress]=useState(null),[shareItem,setShareItem]=useState(null);
+const [pendingResumable,setPendingResumable]=useState([]);
 const uploader=useRef(null),catalogPicker=useRef(null),active=useRef(null),cancelAll=useRef(false),cancelDeletion=useRef(false);
 useEffect(()=>{onDeletionProgress?.(deleteJob?{...deleteJob,cancel:stopDeletion}:null)},[deleteJob]);
 const trash=mode==='trash';
@@ -450,9 +574,48 @@ useEffect(()=>{if(folderTarget){setFolder(folderTarget.id||null);setSelected([])
 useEffect(()=>{onFolderChange?.(folder)},[folder]);
 useEffect(()=>{onCatalogChange?.(nodes)},[nodes]);
 const base=backendOrigin+'/api/cloud';
+async function refreshPendingResumable(){
+ try{
+  const response=await fetch(base+'/resumable/pending',{cache:'no-store'});
+  if(response.ok)setPendingResumable((await response.json()).uploads||[]);
+ }catch{}
+}
+useEffect(()=>{refreshPendingResumable()},[]);
+async function discardResumable(item){
+ if(!item.discardable)return;
+ if(!confirm('Descartar a parte local de '+item.name+'? Isso apaga apenas o upload incompleto deste dispositivo, sem excluir arquivos do Telegram.'))return;
+ try{
+  const response=await fetch(base+'/resumable/'+encodeURIComponent(item.id),{method:'DELETE'});
+  if(!response.ok){const data=await response.json().catch(()=>({}));throw Error(data.detail||'Não foi possível descartar o upload')}
+  await refreshPendingResumable();
+  onToast?.({kind:'success',message:'Parte local descartada. Seus arquivos no Telegram foram preservados.'});
+ }catch(e){onToast?.({kind:'error',message:e.message})}
+}
+
 async function request(path,options){const r=await fetch(base+path,options);if(!r.ok){let detail='Erro HTTP '+r.status;try{const e=await r.json();detail=typeof e.detail==='string'?e.detail:detail}catch{}throw Error(detail)}return r}
 async function reload(){try{const r=await request('/items');setNodes((await r.json()).items);setError('')}catch(e){setError(e.message)}finally{setLoading(false)}}
 useEffect(()=>{reload()},[]);
+// Background folder synchronization writes directly to the backend catalog.
+// Keep Meu Drive fresh without requiring a manual "Atualizar" click.
+// Poll silently to avoid repetitive toast errors if Telegram is offline.
+useEffect(()=>{
+ let active=true;
+ const update=async()=>{
+  if(document.hidden)return;
+  try{
+   const response=await fetch(base+'/items',{cache:'no-store'});
+   if(response.ok){
+    const data=await response.json();
+    if(active&&Array.isArray(data.items))setNodes(data.items);
+   }
+  }catch{}
+ };
+ const timer=setInterval(update,12000);
+ const onFocus=()=>{void update()};
+ window.addEventListener('focus',onFocus);
+ window.addEventListener('drive-cloud-catalog-updated',onFocus);
+ return()=>{active=false;clearInterval(timer);window.removeEventListener('focus',onFocus);window.removeEventListener('drive-cloud-catalog-updated',onFocus)};
+},[base]);
 useEffect(()=>{if(!loading)onInitialReady?.()},[loading,onInitialReady]);
 useEffect(()=>{if(notice){onToast?.({kind:'success',message:notice});setNotice('')}},[notice]);
 useEffect(()=>{if(error){onToast?.({kind:'error',message:error,duration:6500});setError('')}},[error]);
@@ -464,12 +627,93 @@ const homeRecent=nodes.filter(i=>!i.trashed&&i.kind==='file').sort((a,b)=>b.crea
 const homeFavorites=nodes.filter(i=>!i.trashed&&i.starred).sort((a,b)=>b.created-a.created).slice(0,5);
 const chosen=visible.filter(i=>selected.includes(i.id));
 const setJob=(id,values)=>setJobs(j=>j.map(x=>x.id===id?{...x,...values}:x));
+async function runResumableUpload(entry){
+ const file=entry.file;
+ // A stable sample fingerprint binds a resumed local staging session to the
+ // same filename, size, modification time and start/end bytes.
+ const head=await file.slice(0,65536).arrayBuffer();
+ const tail=await file.slice(Math.max(0,file.size-65536)).arrayBuffer();
+ const metadata=new TextEncoder().encode([file.name,file.size,file.lastModified].join(':'));
+ const sample=new Uint8Array(metadata.byteLength+head.byteLength+tail.byteLength);
+ sample.set(metadata,0);
+ sample.set(new Uint8Array(head),metadata.byteLength);
+ sample.set(new Uint8Array(tail),metadata.byteLength+head.byteLength);
+ const hex=bytes=>Array.from(new Uint8Array(bytes),n=>n.toString(16).padStart(2,'0')).join('');
+ const signature=hex(await crypto.subtle.digest('SHA-256',sample));
+ const key='dc-resume:'+signature+':'+(entry.parent||'root');
+ let uploadId;
+ try{uploadId=localStorage.getItem(key)}catch{}
+ if(!uploadId)uploadId=crypto.randomUUID();
+ const remember=id=>{try{localStorage.setItem(key,id)}catch{}};
+ const forget=()=>{try{localStorage.removeItem(key)}catch{}};
+ const json=async(response,context)=>{
+  const value=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(typeof value.detail==='string'?value.detail:context+' (HTTP '+response.status+')');
+  return value;
+ };
+ const begin=async(id)=>json(await fetch(base+'/resumable/start',{
+  method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({upload_id:id,name:file.name,size:file.size,
+    mime:file.type||'application/octet-stream',signature,parent:entry.parent||null}),
+ }),"Não foi possível iniciar a retomada");
+ let state;
+ try{state=await begin(uploadId)}
+ catch(error){
+  if(!/ID de upload pertence a outro arquivo|outro arquivo, pasta ou conta/.test(error.message))throw error;
+  forget();uploadId=crypto.randomUUID();state=await begin(uploadId);
+ }
+ remember(uploadId);
+ if(state.completed){forget();return}
+ let offset=state.offset||0;
+ const controller=new AbortController();
+ active.current=controller;
+ try{
+  while(offset<file.size){
+   if(cancelAll.current)throw Error('Envio pausado; escolha o mesmo arquivo novamente para retomar.');
+   const slice=file.slice(offset,Math.min(file.size,offset+(state.max_chunk_size||1048576)));
+   const data=await slice.arrayBuffer();
+   const checksum=hex(await crypto.subtle.digest('SHA-256',data));
+   const response=await fetch(base+'/resumable/'+encodeURIComponent(uploadId)+'/chunk?offset='+offset+'&checksum='+checksum,{
+    method:'PUT',headers:{'Content-Type':'application/octet-stream'},body:data,signal:controller.signal,
+   });
+   if(response.status===409){
+    const refreshed=await json(await fetch(base+'/resumable/'+encodeURIComponent(uploadId)),'Não foi possível retomar');
+    if(refreshed.offset>offset){offset=refreshed.offset;continue}
+   }
+   const dataResponse=await json(response,'Erro ao enviar parte');
+   if(dataResponse.offset<=offset)throw Error('A parte não avançou; confira a conexão local.');
+   offset=dataResponse.offset;
+   setJob(entry.id,{progress:Math.round(offset/file.size*72),
+    detail:'Enviando ao conector local ('+Math.round(offset/file.size*100)+'%)'});
+  }
+  setJob(entry.id,{progress:73,detail:'Conector completo. Enviando arquivo ao Telegram...'});
+  let pollTimer;
+  try{
+   pollTimer=setInterval(async()=>{
+    try{
+     const response=await fetch(base+'/upload-progress/'+encodeURIComponent(uploadId),{cache:'no-store'});
+     if(!response.ok)return;
+     const p=await response.json();
+     if(p.stage==='telegram'&&p.total>0){
+      setJob(entry.id,{progress:Math.min(98,Math.round(73+25*p.sent/p.total)),
+       detail:'Transferindo ao Telegram...'});
+     }
+    }catch{}
+   },600);
+   const result=await json(await fetch(base+'/resumable/'+encodeURIComponent(uploadId)+'/complete',{
+    method:'POST',signal:controller.signal,
+   }),'Falha ao confirmar envio no Telegram');
+   if(!result.completed)throw Error('O envio ainda não foi confirmado.');
+  }finally{if(pollTimer)clearInterval(pollTimer)}
+  forget();
+ }finally{if(active.current===controller)active.current=null}
+}
 function addFiles(inputFiles){
  const files=Array.from(inputFiles||[]);if(!files.length)return;
- const valid=files.filter(file=>file.size<=20*1024*1024);
- const rejected=files.filter(file=>file.size>20*1024*1024);
+ const valid=files.filter(file=>file.size<=MAX_FILE_BYTES);
+ const rejected=files.filter(file=>file.size>MAX_FILE_BYTES);
  if(rejected.length){
-   onToast?.({kind:'error',message:rejected.length===1?'Arquivo excede o limite atual de 20 MB: '+rejected[0].name:rejected.length+' arquivos excedem o limite atual de 20 MB.',duration:6500});
+   onToast?.({kind:'error',message:rejected.length===1?'Arquivo acima do limite inicial de 20 GB: '+rejected[0].name:rejected.length+' arquivos excedem o limite inicial de 20 GB.',duration:6500});
  }
  if(!valid.length){
    // Validation errors show only a toast. Never open an empty transfer window.
@@ -479,7 +723,7 @@ function addFiles(inputFiles){
  }
  cancelAll.current=false;
  setCancelRequested(false);
- const entries=valid.map(file=>({id:crypto.randomUUID(),file,name:file.name,destination:uploadDestination,progress:0,status:'queued'}));
+ const entries=valid.map(file=>({id:crypto.randomUUID(),file,name:file.name,parent:folder||null,destination:uploadDestination,progress:0,status:'queued'}));
  setJobs(j=>[...j,...entries]);setTrayVisible(true);setPanel(false);
  runQueue(entries);
 }
@@ -491,7 +735,9 @@ async function runQueue(entries){
   setTrayVisible(true);
   let pollTimer=null, polling=false, finished=false;
   try{
-   await new Promise((resolve,reject)=>{
+   if(entry.file.size>=8*1024*1024){
+    await runResumableUpload(entry);
+   }else await new Promise((resolve,reject)=>{
     const xhr=new XMLHttpRequest();
     active.current=xhr;
     xhr.open('POST',base+'/upload');
@@ -532,7 +778,7 @@ async function runQueue(entries){
     const body=new FormData();
     body.append('file',entry.file);
     body.append('upload_id',entry.id);
-    if(folder)body.append('parent',folder);
+    if(entry.parent)body.append('parent',entry.parent);
     xhr.send(body);
    });
    finished=true;
@@ -547,6 +793,7 @@ async function runQueue(entries){
    if(pollTimer)clearInterval(pollTimer);
    active.current=null;
    await reload();
+   await refreshPendingResumable();
   }
  }
  setBusy(false);
@@ -593,7 +840,30 @@ async function downloadFolderZip(item){
   }
  }catch(e){setZipProgress(null);onToast?.({kind:'error',message:'Falha ao compactar pasta: '+e.message,duration:6500})}
 }
-async function download(item){if(item.kind==='folder')return downloadFolderZip(item);try{setError('');const r=await request('/download/'+encodeURIComponent(item.id));const blob=await r.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=item.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),15000);onToast?.({kind:'success',message:'Download iniciado: '+item.name})}catch(e){setError(e.message)}}
+async function download(item){
+ if(item.kind==='folder')return downloadFolderZip(item);
+ try{
+  setError('');
+  if(window.__TAURI_INTERNALS__){
+   // The native side saves directly to disk, without creating a large WebView Blob.
+   const path=await invoke('download_cloud_file',{
+    fileId:item.id,suggestedName:item.name,expectedSize:Number(item.size)||0
+   });
+   if(path)onToast?.({kind:'success',message:'Arquivo salvo no computador: '+item.name});
+  }else{
+   // In the browser, let the browser stream to its own download manager.
+   const a=document.createElement('a');
+   a.href=base+'/download/'+encodeURIComponent(item.id);
+   a.download=item.name;
+   document.body.append(a);a.click();a.remove();
+   onToast?.({kind:'info',message:'Download iniciado no navegador: '+item.name});
+  }
+ }catch(e){
+  const message=typeof e==='string'?e:e?.message||String(e);
+  setError(message);
+  onToast?.({kind:'error',message:'Falha no download: '+message,duration:6500});
+ }
+}
 async function open(item){if(item.kind==='folder'){if(mode!=='files'){onNavigateFolder?.(item.id)}else setFolder(item.id);setSelected([]);setMenu(null)}else if(isCloudImage(item)||isCloudVideo(item)){setPreview(item);setPreviewError(false);setMenu(null)}else await download(item)}
 async function patch(item,data){const r=await request('/items/'+encodeURIComponent(item.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});await r.json()}
 async function action(kind,targets){setMenu(null);if(!targets.length)return;try{if(kind==='download'){for(const item of targets)await download(item);return}
@@ -708,7 +978,61 @@ const forbiddenMoveFolder=id=>{
 };
 const availableMoveFolders=nodes.filter(x=>x.kind==='folder'&&!x.trashed&&(x.parent||'')===moveDestination&&!forbiddenMoveFolder(x.id)).sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
 
-return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.dataTransfer?.types?.includes('Files'))setDrag(true)}} onDragOver={e=>e.preventDefault()} onDragLeave={e=>{const b=e.currentTarget.getBoundingClientRect();if(e.clientX<=b.left||e.clientX>=b.right||e.clientY<=b.top||e.clientY>=b.bottom)setDrag(false)}} onDrop={e=>{e.preventDefault();setDrag(false);if(e.dataTransfer?.files?.length)addFiles(e.dataTransfer.files)}}>
+const [nativeDropBusy,setNativeDropBusy]=useState(false);
+async function uploadNativeDrop(paths){
+ if(!paths?.length||mode==='trash')return;
+ if(busy||nativeDropBusy){
+  onToast?.({kind:'info',message:'Aguarde o envio atual terminar antes de arrastar outros arquivos.'});
+  return;
+ }
+ setNativeDropBusy(true);
+ setDrag(false);
+ onToast?.({kind:'info',message:'Preparando '+paths.length+' arquivo(s) arrastado(s) para envio...'});
+ try{
+  const results=await invoke('upload_dropped_files',{paths,parent:folder||null});
+  const success=results.filter(item=>item.ok);
+  const failures=results.filter(item=>!item.ok);
+  if(success.length)onToast?.({kind:'success',message:success.length+' arquivo(s) enviado(s) pelo arrastar e soltar.'});
+  if(failures.length){
+   const sample=failures.slice(0,2).map(item=>item.name+': '+item.detail).join('; ');
+   setError('Falha em '+failures.length+' arquivo(s): '+sample);
+   onToast?.({kind:'error',message:sample,duration:9000});
+  }
+  await reload();
+ }catch(e){
+  const message=typeof e==='string'?e:e?.message||String(e);
+  setError(message);
+  onToast?.({kind:'error',message:'Falha ao arrastar arquivo: '+message,duration:9000});
+ }finally{setNativeDropBusy(false);setDrag(false)}
+}
+useEffect(()=>{
+ if(!window.__TAURI_INTERNALS__)return;
+ let alive=true,release=null;
+ getCurrentWebview().onDragDropEvent(event=>{
+  if(!alive)return;
+  const payload=event.payload;
+  if(payload.type==='enter'&&mode!=='trash')setDrag(true);
+  if(payload.type==='leave')setDrag(false);
+  if(payload.type==='drop'){
+   setDrag(false);
+   if(mode!=='trash'&&payload.paths?.length)uploadNativeDrop(payload.paths);
+  }
+ }).then(unlisten=>{
+  if(alive)release=unlisten;
+  else unlisten();
+ }).catch(e=>{if(alive)onToast?.({kind:'error',message:'Arrastar arquivos indisponível: '+String(e)})});
+ return()=>{alive=false;if(release)release();setDrag(false)};
+},[folder,mode,busy,nativeDropBusy]);
+
+
+return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.dataTransfer?.types?.includes('Files'))setDrag(true)}} onDragOver={e=>e.preventDefault()} onDragLeave={e=>{const b=e.currentTarget.getBoundingClientRect();if(e.clientX<=b.left||e.clientX>=b.right||e.clientY<=b.top||e.clientY>=b.bottom)setDrag(false)}} onDrop={e=>{e.preventDefault();setDrag(false);if(!window.__TAURI_INTERNALS__&&e.dataTransfer?.files?.length)addFiles(e.dataTransfer.files)}}>
+{nativeDropBusy&&<div className="dc-native-drop-progress" role="status"><RefreshCw size={17} className="dc-spin"/> Enviando arquivos arrastados ao Telegram. Aguarde a confirmação.</div>}
+{pendingResumable.length>0&&<div className="dc-resume-banner"><div className="dc-resume-heading"><RefreshCw size={17}/><strong>Uploads pendentes neste computador</strong><small>{pendingResumable.length} arquivo(s)</small></div>
+ <p>Para retomar um envio pausado, selecione novamente o mesmo arquivo na mesma pasta. Arquivos com envio incerto ao Telegram não serão reenviados automaticamente.</p>
+ {pendingResumable.slice(0,5).map(item=><div className="dc-resume-item" key={item.id}><span><strong title={item.name}>{item.name}</strong><small>{item.state==='staging'?Math.round(100*item.offset/Math.max(1,item.size))+'% recebido no conector':'Verificação do Telegram pendente'}</small></span>
+  {item.discardable&&<button type="button" onClick={()=>discardResumable(item)}>Descartar parte local</button>}</div>)}
+ <button type="button" className="dc-resume-repick" onClick={()=>uploader.current?.click()}>Escolher arquivo para retomar</button></div>}
+
 {mode==='home'&&!queryText&&!loading&&<div className="home-sections">
 <section><div className="home-section-title"><Clock3 size={17}/><h3>Recentes</h3><span>Últimos arquivos enviados</span></div><div className="home-quick-list">{homeRecent.length?homeRecent.map(item=><button key={item.id} onClick={()=>open(item)}><span className="home-quick-thumb"><CloudThumbnail item={item} compact/></span><span className="home-quick-name">{item.name}</span><small>{date(item.created)}</small></button>):<p>Seus arquivos recentes aparecerão aqui.</p>}</div></section>
 <section><div className="home-section-title"><Star size={17}/><h3>Favoritos</h3><span>Acesso rápido</span></div><div className="home-quick-list">{homeFavorites.length?homeFavorites.map(item=><button key={item.id} onClick={()=>open(item)}><span className="home-quick-thumb"><CloudThumbnail item={item} compact/></span><span className="home-quick-name">{item.name}</span><Star size={15} fill="#e2c16f" color="#e2c16f"/></button>):<p>Marque arquivos com a estrela para acessá-los rapidamente.</p>}</div></section>
@@ -729,9 +1053,9 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
  <div className="upload-head">
   <div className="upload-title">
    <div className={'dc-upload-title-visual '+uploadStatus} aria-hidden="true"><Folder size={21} strokeWidth={1.95}/></div>
-   <div><b aria-live="polite">{uploadStatus==='sending'?'Fazendo upload de '+uploadingNow+' '+(uploadingNow===1?'item':'itens'):uploadStatus==='failed'?failures+' '+(failures===1?'upload com falha':'uploads com falha'):uploadStatus==='complete'?completed+(completed===1?' upload concluído':' uploads concluídos'):uploadStatus==='cancelling'?'Cancelando envios...':'Transferências canceladas'}</b>{panel&&<small>{uploadStatus==='complete'?'Arquivos salvos no Drive':uploadStatus==='sending'?'Transferindo arquivos para o Telegram':'Gerenciador de transferências'}</small>}</div>
+   <div><b aria-live="polite">{uploadStatus==='sending'?'Fazendo upload de '+uploadingNow+' '+(uploadingNow===1?'item':'itens'):uploadStatus==='failed'?failures+' '+(failures===1?'upload com falha':'uploads com falha'):uploadStatus==='complete'?completed+(completed===1?' upload concluído':' uploads concluídos'):uploadStatus==='cancelling'?'Pausando envios...':'Transferências interrompidas'}</b>{panel&&<small>{uploadStatus==='complete'?'Arquivos salvos no Drive':uploadStatus==='sending'?'Transferindo arquivos para o Telegram':'Gerenciador de transferências'}</small>}</div>
   </div>
-  <div className="upload-head-actions">{busy&&!cancelRequested&&uploadingNow>0&&<button className="upload-cancel-all" onClick={stopUploads}>Cancelar envios</button>}<button type="button" className="upload-icon-button" aria-label={panel?'Recolher':'Expandir'} onClick={()=>setPanel(v=>!v)}><ChevronDown size={18} style={{transform:panel?'rotate(0deg)':'rotate(180deg)'}}/></button><button type="button" className="upload-icon-button" aria-label="Fechar transferências" onClick={()=>setTrayVisible(false)}><X size={18}/></button></div>
+  <div className="upload-head-actions">{busy&&!cancelRequested&&uploadingNow>0&&<button className="upload-cancel-all" onClick={stopUploads}>Pausar envios</button>}<button type="button" className="upload-icon-button" aria-label={panel?'Recolher':'Expandir'} onClick={()=>setPanel(v=>!v)}><ChevronDown size={18} style={{transform:panel?'rotate(0deg)':'rotate(180deg)'}}/></button><button type="button" className="upload-icon-button" aria-label="Fechar transferências" onClick={()=>setTrayVisible(false)}><X size={18}/></button></div>
  </div>
  {!panel&&featuredJob&&<div className="dc-compact-upload-item">
   <span className="dc-compact-upload-icon file" aria-hidden="true">{jobIcon(featuredJob)}</span>
@@ -746,7 +1070,7 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
  <div className="upload-total-meter"><span style={{width:(jobs.reduce((sum,j)=>sum+(j.status==='completed'?100:j.progress||0),0)/Math.max(1,jobs.length))+'%'}}/></div>
  <div className="upload-tabs">{[['all','Todos'],['pending','Em andamento'],['completed','Concluídos'],['failed','Falhas']].map(([id,label])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</div>
  <div className="upload-items">{filteredJobs.length?filteredJobs.map(job=><div className="upload-job" key={job.id}><span className="upload-job-icon dc-file-glyph" aria-hidden="true">{jobIcon(job)}</span><div className="upload-job-main"><div className="upload-job-top"><span title={job.name}>{job.name}</span><small>{size(job.file.size)}</small></div><div className="upload-job-status"><span>{job.status==='completed'?'Concluído':job.status==='failed'?'Falhou':job.status==='queued'?'Na fila':job.status==='cancelled'?'Cancelado':'Enviando...'}</span><span>{job.progress||0}%</span></div><div className="upload-meter"><span style={{width:(job.progress||0)+'%'}}/></div><small className="upload-detail">{job.detail||'Aguardando envio'}</small><small className="dc-upload-path" title={job.destination||'Meu Drive'}><Folder size={12}/>{job.destination||'Meu Drive'}</small></div></div>):<div className="upload-empty-filter">Nenhuma transferência nesta categoria.</div>}</div>
- <div className="upload-foot"><span>O Telegram confirma quando o arquivo termina de subir.</span>{!busy&&<button type="button" onClick={()=>{setJobs([]);setTrayVisible(false)}}>Limpar</button>}</div></>}
+ <div className="upload-foot"><span>{jobs.some(x=>x.file?.size>=8*1024*1024&&['failed','cancelled'].includes(x.status))?'Para retomar um arquivo grande, escolha novamente o mesmo arquivo. O envio local continuará do último bloco confirmado.':'O Telegram confirma quando o arquivo termina de subir.'}</span>{!busy&&<button type="button" onClick={()=>{setJobs([]);setTrayVisible(false)}}>Limpar</button>}</div></>}
 </div>}
 {zipProgress&&<div className="zip-progress-tray" role="status" aria-live="polite"><span className="zip-progress-icon"><FileArchive size={20}/></span><div className="zip-progress-text"><strong>Preparando pasta em ZIP</strong><small title={zipProgress.name}>{zipProgress.name}</small><div className="zip-progress-track"><span style={{width:(zipProgress.state==='ready'?100:Math.min(95,Math.round(95*(zipProgress.processed_bytes||0)/Math.max(1,zipProgress.total_bytes||1))))+'%'}}/></div><small>{zipProgress.phase==='compressing'?'Compactando arquivos...':'Baixando arquivos do Telegram...'} {zipProgress.processed_bytes||0?size(zipProgress.processed_bytes):'0 B'} de {size(zipProgress.total_bytes||0)} • {zipProgress.done||0}/{zipProgress.count||0} itens</small></div></div>}
 {deleteConfirm&&<div className="dc-confirm-backdrop" role="presentation" onClick={()=>!busy&&setDeleteConfirm(null)}><div className="dc-confirm-dialog" role="alertdialog" aria-modal="true" aria-label="Confirmar exclusão" onClick={e=>e.stopPropagation()}><span className="dc-confirm-icon"><CircleAlert size={65} strokeWidth={1.9}/></span><h3>{deleteConfirm.kind==='permanent'?'Excluir definitivamente?':'Mover para a lixeira?'}</h3><div className={deleteConfirm.kind==='permanent'?'dc-confirm-warning':'dc-confirm-note'}><CircleAlert size={17}/><p>{deleteConfirm.kind==='permanent'?`Esta ação não pode ser desfeita. ${deleteConfirm.targets.length} item(ns) serão apagados do Telegram, incluindo arquivos dentro das pastas.`:`${deleteConfirm.targets.length} item(ns) serão movidos para a lixeira e poderão ser restaurados depois.`}</p></div><div className="dc-confirm-buttons"><button disabled={busy} onClick={()=>setDeleteConfirm(null)}>Cancelar</button><button className="dc-confirm-danger" disabled={busy} onClick={confirmDeletion}>{busy?'Excluindo...':deleteConfirm.kind==='permanent'?'Excluir para sempre':'Mover para lixeira'}</button></div></div></div>}
@@ -756,7 +1080,7 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
 <div className="folder-create-body"><label htmlFor="drive-folder-name">Nome da pasta</label><input id="drive-folder-name" autoFocus maxLength={180} value={folderName} onChange={e=>setFolderName(e.target.value)} placeholder="Digite um nome para a pasta"/><span>Ela será criada {folder?'dentro da pasta atual':'na raiz do Meu Drive'}.</span></div>
 <div className="move-footer"><button type="button" disabled={folderBusy} onClick={()=>setFolderDialog(false)}>Cancelar</button><button className="move-confirm" type="submit" disabled={folderBusy||!folderName.trim()}>{folderBusy?'Criando...':'Criar pasta'}</button></div>
 </form></div></div>}
-{shareItem&&<ShareDialog item={shareItem} onClose={()=>setShareItem(null)} onToast={onToast}/>}
+{shareItem&&<ShareDialog item={shareItem} onClose={()=>setShareItem(null)} onToast={onToast} onConfigureSharing={onConfigureSharing}/>}
 {catalogCheck&&<div className="move-backdrop" role="presentation" onClick={()=>!catalogBusy&&setCatalogCheck(null)}><div className="move-dialog" role="dialog" aria-modal="true" aria-label="Restaurar catálogo de arquivos" onClick={e=>e.stopPropagation()}><div className="move-dialog-header"><div><h3>Restaurar catálogo</h3><p title={catalogCheck.file.name}>{catalogCheck.file.name}</p></div><button className="move-close" title="Fechar" disabled={catalogBusy} onClick={()=>setCatalogCheck(null)}><X size={19}/></button></div><div className="catalog-review"><div><strong>{catalogCheck.result.checked}</strong><span>Registros verificados</span></div><div><strong>{catalogCheck.result.new_items}</strong><span>Para recuperar</span></div><div><strong>{catalogCheck.result.existing_items}</strong><span>Já existentes</span></div></div><p className="catalog-notice">A conta e o canal Telegram foram conferidos. Somente registros ausentes serão adicionados ao catálogo local. Esta operação não recupera arquivos excluídos do Telegram e não sobrescreve registros atuais.</p><div className="move-footer"><button disabled={catalogBusy} onClick={()=>setCatalogCheck(null)}>Cancelar</button><button className="move-confirm" disabled={catalogBusy||!catalogCheck.result.new_items} onClick={restoreCatalog}><DatabaseBackup size={16}/>{catalogBusy?'Restaurando...':'Restaurar registros'}</button></div></div></div>}
 {moveTargets&&<div className="move-backdrop" role="presentation" onClick={()=>{if(!busy)setMoveTargets(null)}}>
 <div className="move-dialog file-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="move-manager-title" onClick={e=>e.stopPropagation()}>
@@ -788,11 +1112,13 @@ return <section className="cloud-page" onDragEnter={e=>{e.preventDefault();if(e.
 <div className="preview-topbar"><div>{isCloudVideo(preview)?<Play size={19}/>:<Image size={19}/>}<strong title={preview.name}>{preview.name}</strong><span>{size(preview.size)}</span></div><div className="preview-top-actions"><button onClick={()=>download(preview)}><Download size={16}/> Baixar</button><button title="Fechar prévia" aria-label="Fechar prévia" onClick={()=>setPreview(null)}><X size={20}/></button></div></div>
 <div className="preview-stage">{previewError?<div className="preview-failed"><CircleAlert size={43}/><p>Não foi possível abrir a prévia.</p><button onClick={()=>download(preview)}>Baixar arquivo original</button></div>:isCloudVideo(preview)?<SharedMediaDisplay key={preview.id} src={backendOrigin+'/api/cloud/media/'+encodeURIComponent(preview.id)} statusUrl={backendOrigin+'/api/cloud/media-status/'+encodeURIComponent(preview.id)} name={preview.name} video/>:<DriveImagePreview key={preview.id} src={backendOrigin+'/api/cloud/preview/'+encodeURIComponent(preview.id)+'?full=true'} name={preview.name} onError={()=>setPreviewError(true)}/>}</div>
 <div className="preview-foot">{isCloudVideo(preview)?'Player Drive Cloud • Original preservado no Telegram':'Pré-visualização otimizada • JXL convertido apenas na prévia • Original preservado no Telegram'}</div></div></div>}
-<p className="cloud-disclaimer">Arquivos são armazenados no canal privado; pastas e referências ficam no SQLite deste computador. O limite atual é de 20 MB por arquivo; ainda não há criptografia própria ou recuperação automática do catálogo. Não use como cópia única de backups.</p>
+<p className="cloud-disclaimer">Arquivos são armazenados no canal privado; pastas e referências ficam no SQLite deste computador. Arquivos acima do limite do Telegram são divididos automaticamente em partes; limite inicial de 20 GB; ainda não há criptografia própria nem recuperação automática de conflitos do catálogo. Não use como cópia única de backups.</p>
 </section>
 }
 function BackupPages({section,onToast}){
  const [status,setStatus]=useState(null),[history,setHistory]=useState([]),[loading,setLoading]=useState(false),[frequency,setFrequency]=useState('off'),[error,setError]=useState('');
+ const [remoteSnapshot,setRemoteSnapshot]=useState(null),[remoteBusy,setRemoteBusy]=useState(false),[remoteError,setRemoteError]=useState('');
+ const [restorePreview,setRestorePreview]=useState(null);
  const base=backendOrigin+'/api/backup';
  async function req(path,method='GET',body){
   const r=await fetch(base+path,{method,...(body?{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
@@ -802,18 +1128,270 @@ function BackupPages({section,onToast}){
  useEffect(()=>{refresh()},[]);
  async function snapshot(){setLoading(true);try{const result=await req('/run','POST');await refresh();onToast?.({kind:'success',message:'Catálogo salvo: '+result.item_count+' registros.'})}catch(e){setError(e.message)}finally{setLoading(false)}}
  async function schedule(value){setLoading(true);try{await req('/schedule','POST',{frequency:value});await refresh();onToast?.({kind:'success',message:value==='off'?'Agendamento desativado':'Agendamento de catálogo salvo'})}catch(e){setError(e.message)}finally{setLoading(false)}}
+ async function fetchRemoteInfo(){
+  setRemoteBusy(true);setRemoteError('');
+  try{
+   const response=await fetch(backendOrigin+'/api/cloud/catalog/telegram/latest');
+   if(response.status===404){setRemoteSnapshot(null);return}
+   const data=await response.json();
+   if(!response.ok)throw Error(data.detail||'Falha ao localizar catálogo no Telegram');
+   setRemoteSnapshot(data);
+  }catch(e){setRemoteError(e.message)}finally{setRemoteBusy(false)}
+ }
+ async function restoreFromTelegram(dryRun=true){
+  setRemoteBusy(true);setRemoteError('');
+  try{
+   const download=await fetch(backendOrigin+'/api/cloud/catalog/telegram/download',{cache:'no-store'});
+   if(!download.ok){const detail=await download.json().catch(()=>({}));throw Error(detail.detail||'Não foi possível recuperar a cópia do Telegram')}
+   const blob=await download.blob();
+   const form=new FormData();
+   form.append('file',blob,'drive-cloud-telegram-catalog.json');
+   form.append('dry_run',String(dryRun));
+   const result=await fetch(backendOrigin+'/api/cloud/catalog/import',{method:'POST',body:form});
+   const data=await result.json().catch(()=>({}));
+   if(!result.ok)throw Error(data.detail||'Não foi possível validar os dados da cópia');
+   if(dryRun){setRestorePreview(data)}
+   else {setRestorePreview(null);onToast?.({kind:'success',message:data.imported+' itens recuperados. Reabra Meu Drive para atualizar a lista.'})}
+  }catch(e){setRestorePreview(null);setRemoteError(e.message)}finally{setRemoteBusy(false)}
+ }
+ async function saveRemoteSnapshot(){
+  setRemoteBusy(true);setRemoteError('');
+  try{
+   const response=await fetch(backendOrigin+'/api/cloud/catalog/telegram/snapshot',{method:'POST'});
+   const data=await response.json();
+   if(!response.ok)throw Error(data.detail||'Falha ao salvar catálogo no Telegram');
+   await fetchRemoteInfo();
+   onToast?.({kind:'success',message:'Cópia da organização salva no seu Telegram.'});
+  }catch(e){setRemoteError(e.message)}finally{setRemoteBusy(false)}
+ }
  return <div className="dc-module-page"><div className="dc-module-note"><DatabaseBackup size={19}/><div><strong>Backup do catálogo</strong><p>Estas cópias guardam a organização, as pastas e as referências aos arquivos do Telegram. Não são cópias dos arquivos. Para guardar arquivos offline, baixe as pastas em ZIP.</p></div></div>
  {error&&<div className="public-share-error">{error}</div>}
+ {(section==='backups'||section==='backupHistory')&&<div className="dc-module-section"><div><h3>Catálogo no Telegram</h3><p>Salve no seu canal privado uma cópia da organização das pastas e das referências dos arquivos. Esta cópia não substitui arquivos locais nem ativa sincronização automática.</p></div>
+ <div className="dc-schedule-controls"><button className="dc-module-primary" disabled={remoteBusy} onClick={saveRemoteSnapshot}><DatabaseBackup size={17}/>{remoteBusy?'Aguarde...':'Salvar catálogo no Telegram'}</button><button disabled={remoteBusy} onClick={fetchRemoteInfo}>Verificar cópia no Telegram</button><button disabled={remoteBusy} onClick={()=>restoreFromTelegram(true)}>Analisar recuperação</button>{restorePreview&&<div className="dc-remote-restore-preview"><strong>Recuperação sem exclusões</strong><p>{restorePreview.checked} itens verificados • {restorePreview.new_items} itens ausentes neste computador • {restorePreview.existing_items} já existentes.</p><small>A recuperação adiciona apenas itens ausentes e não apaga ou sobrescreve arquivos. Confira se a conta e o canal são os corretos.</small><button className="dc-module-primary" disabled={remoteBusy||!restorePreview.new_items} onClick={()=>restoreFromTelegram(false)}>Confirmar recuperação de {restorePreview.new_items} itens</button></div>}{remoteSnapshot&&<p>Última cópia: {remoteSnapshot.items} itens • {remoteSnapshot.exported_at?new Date(remoteSnapshot.exported_at).toLocaleString('pt-BR'):'data indisponível'}. <a href={backendOrigin+'/api/cloud/catalog/telegram/download'} download="drive-cloud-telegram-catalog.json">Baixar JSON</a></p>}{remoteError&&<p className="public-share-error">{remoteError}</p>}</div>
+ <small>A recuperação manual adiciona somente itens ausentes. A sincronização automática e a resolução de conflitos entre dispositivos ainda não estão disponíveis.</small>
+ </div>}
+
  {section==='backups'&&<div className="dc-dashboard-grid"><div className="dc-module-card"><div className="dc-module-card-top"><DatabaseBackup size={20}/><span>Último backup</span></div><strong>{status?.last_backup?new Date(status.last_backup.created*1000).toLocaleString('pt-BR'):'Nenhum backup ainda'}</strong><small>{status?.last_backup?status.last_backup.item_count+' registros protegidos':'Crie o primeiro snapshot local do catálogo.'}</small></div><div className="dc-module-card"><div className="dc-module-card-top"><Clock3 size={20}/><span>Agendamento</span></div><strong>{frequency==='daily'?'Diário':frequency==='weekly'?'Semanal':'Desativado'}</strong><small>{status?.next_run?'Próxima execução: '+new Date(status.next_run*1000).toLocaleString('pt-BR'):'Executa enquanto o backend local estiver ligado.'}</small></div><div className="dc-module-card"><div className="dc-module-card-top"><List size={20}/><span>Histórico</span></div><strong>{history.length} snapshots</strong><small>Últimas cópias do catálogo neste computador.</small></div></div>}
  {(section==='backups'||section==='backupSchedule')&&<div className="dc-module-section"><div><h3>Backup do catálogo</h3><p>Faça uma cópia agora ou programe snapshots automáticos.</p></div><button className="dc-module-primary" disabled={loading} onClick={snapshot}><DatabaseBackup size={17}/>{loading?'Processando...':'Criar backup agora'}</button><div className="dc-schedule-controls"><label htmlFor="backup-frequency">Frequência</label><select className="dc-native-select" id="backup-frequency" disabled={loading||!status} value={frequency} onChange={e=>schedule(e.target.value)}><option value="off">Desativado</option><option value="daily">Diariamente</option><option value="weekly">Semanalmente</option></select><small>O computador e o backend precisam permanecer ligados para executar no horário programado.</small></div></div>}
  {(section==='backups'||section==='backupHistory')&&<div className="dc-module-section"><div><h3>Histórico de backups</h3><p>Baixe o JSON para guardar uma cópia fora do computador.</p></div><div className="dc-history-list">{history.length?history.map(x=><div className="dc-history-row" key={x.id}><DatabaseBackup size={19}/><div><strong>{new Date(x.created*1000).toLocaleString('pt-BR')}</strong><small>{x.item_count} registros • {size(x.bytes)} • {x.source==='scheduled'?'Automático':'Manual'}</small></div><a href={base+'/history/'+encodeURIComponent(x.id)+'/download'} title="Baixar snapshot"><Download size={17}/> Baixar</a></div>):<p className="dc-empty-message">Ainda não existem cópias do catálogo.</p>}</div></div>}</div>
 }
-function SyncPages({section}){
- const [lastSeen,setLastSeen]=useState('');
- useEffect(()=>{setLastSeen(new Date().toLocaleString('pt-BR'))},[]);
- return <div className="dc-module-page"><div className="dc-module-note"><RefreshCw size={20}/><div><strong>Sincronização entre dispositivos</strong><p>O Drive Cloud usa o Telegram como armazenamento, mas a sincronização automática entre computadores e celulares ainda exige um agente local e um catálogo sincronizado seguro. Não há sincronização automática ativa nesta versão.</p></div></div>
- <div className="dc-dashboard-grid"><div className="dc-module-card"><div className="dc-module-card-top"><HardDrive size={20}/><span>Este dispositivo</span></div><strong>Computador local</strong><small>Interface aberta em {lastSeen||'agora'}</small></div><div className="dc-module-card"><div className="dc-module-card-top"><RefreshCw size={20}/><span>Sincronização</span></div><strong>Não configurada</strong><small>Nenhuma pasta do sistema está sendo sincronizada automaticamente.</small></div></div>
- <div className="dc-module-section"><h3>{section==='devices'?'Dispositivos':section==='syncActivity'?'Atividades':'Pastas sincronizadas'}</h3><p>{section==='devices'?'Somente o dispositivo local está disponível nesta fase. Nenhum outro aparelho foi autorizado para sincronização.':section==='syncActivity'?'Não existem execuções de sincronização automática para apresentar.':'Na próxima fase, um aplicativo/agente Linux poderá selecionar pastas locais, detectar mudanças e enviar versões dos arquivos ao Drive.'}</p><div className="dc-plan-steps"><span><Check size={16}/> Armazenamento Telegram conectado ao Meu Drive</span><span><Clock3 size={16}/> Próximo: agente local de sincronização</span><span><Clock3 size={16}/> Depois: dispositivos adicionais e histórico de versões</span></div></div></div>
+// Reuse the last successful folder snapshot when navigating away and back.
+// Cache by Telegram account: never display another account's directory paths.
+const syncFolderSnapshots = new Map();
+function SyncPages({section,onToast,accountId}){
+ const cacheKey=accountId||'unknown';
+ const [folders,setFolders]=useState(()=>syncFolderSnapshots.get(cacheKey)||[]),[initialLoading,setInitialLoading]=useState(()=>!syncFolderSnapshots.has(cacheKey)),[activityIds,setActivityIds]=useState([]),[refreshPending,setRefreshPending]=useState(false),[path,setPath]=useState(''),[preview,setPreview]=useState(null),[busy,setBusy]=useState(false),[running,setRunning]=useState(null),[error,setError]=useState(''),[lastResult,setLastResult]=useState(null);
+ const [remoteFolders,setRemoteFolders]=useState([]),[selectedRoot,setSelectedRoot]=useState(''),[remoteName,setRemoteName]=useState(''),[newMode,setNewMode]=useState('backup'),[autoStart,setAutoStart]=useState(false),[pullPreview,setPullPreview]=useState(null),[pullResult,setPullResult]=useState(null);
+ async function request(endpoint,method='GET',payload){
+  const response=await fetch(backendOrigin+'/api/sync'+endpoint,{method,headers:payload?{'Content-Type':'application/json'}:undefined,body:payload?JSON.stringify(payload):undefined});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'Falha no serviço de sincronização.');
+  return data;
+ }
+ async function refresh(silent=false){
+  if(!silent)setRefreshPending(true);
+  try{
+   const [data,remote]=await Promise.all([request('/folders'),request('/remote-folders')]);
+   const next=data.folders||[];
+   syncFolderSnapshots.set(cacheKey,next);
+   setFolders(next);
+   setRemoteFolders(remote.folders||[]);
+   setInitialLoading(false);
+   if(!silent)setError('');
+  }catch(e){
+   // An upload holds the backend account lock. Never replace a successful
+   // folder snapshot with an empty array during transient failures.
+   if(!silent)setError(e.message);
+  }finally{if(!silent)setRefreshPending(false)}
+ }
+ useEffect(()=>{
+  let live=true;
+  let previousActive=false;
+  let pendingRequest=false;
+  let listingRequest=false;
+  async function pollActivity(){
+   if(!live||pendingRequest)return;
+   pendingRequest=true;
+   try{
+    const r=await fetch(backendOrigin+'/api/sync/activity',{cache:'no-store'});
+    if(r.ok){
+     const data=await r.json();
+     if(!live)return;
+     const active=Array.isArray(data.active_folder_ids)?data.active_folder_ids:[];
+     setActivityIds(active);
+     if(previousActive&&active.length===0&&!listingRequest){
+      listingRequest=true;
+      refresh(true).finally(()=>{listingRequest=false});
+      window.dispatchEvent(new Event('drive-cloud-catalog-updated'));
+     }
+     previousActive=active.length>0;
+    }
+   }catch{}finally{pendingRequest=false}
+  }
+  void refresh(true);
+  void pollActivity();
+  const activityTimer=setInterval(pollActivity,2500);
+  const listTimer=setInterval(()=>{
+   if(!live||listingRequest||previousActive)return;
+   listingRequest=true;
+   refresh(true).finally(()=>{listingRequest=false});
+  },15000);
+  return()=>{live=false;clearInterval(activityTimer);clearInterval(listTimer)};
+ },[cacheKey]);
+ async function browseFolder(){
+  setError('');setPreview(null);
+  try{
+   if(!window.__TAURI_INTERNALS__){setError('Para escolher uma pasta do computador, abra o aplicativo instalado.');return}
+   const selected=await openNativeDialog({directory:true,multiple:false,title:'Escolher pasta para backup no Telegram'});
+   if(typeof selected==='string'){setPath(selected);setRemoteName(selected.split(/[\\/]/).filter(Boolean).at(-1)||'Minha pasta');setPreview(null)}
+  }catch(e){setError('Não foi possível abrir o seletor de pastas: '+String(e))}
+ }
+ async function analyzeAndSync(){
+  const localPath=path.trim();
+  if(!localPath){setError('Escolha uma pasta do computador antes de sincronizar.');return}
+  const name=(remoteName||'').trim();
+  if(!selectedRoot&&!name){setError('Selecione uma pasta no Meu Drive ou informe um nome para a nova pasta.');return}
+  if(newMode==='two-way'&&!confirm('Ativar sincronização em duas direções? Arquivos do Telegram podem ser baixados para o computador. Versões diferentes serão preservadas, sem exclusão automática. Recomenda-se testar primeiro com arquivos descartáveis.'))return;
+  setBusy(true);setError('');setPreview(null);setLastResult(null);
+  try{
+   // Validate directory before creating any persistent pairing.
+   const checked=await request('/folders/preview','POST',{path:localPath});
+   const result=await request('/folders','POST',{
+    path:checked.path,remote_root_id:selectedRoot||null,
+    remote_folder_name:selectedRoot?null:name,
+    mode:newMode,automatic:autoStart
+   });
+   if(result.already_exists){
+    setError('Esta pasta do computador já está vinculada. Remova o vínculo antigo antes de alterá-lo.');
+    return;
+   }
+   setPath('');setSelectedRoot('');setRemoteName('');setNewMode('backup');setAutoStart(false);
+   await refresh();
+   window.dispatchEvent(new Event('drive-cloud-catalog-updated'));
+   if(result.catalog_snapshot_saved===false){
+    onToast?.({kind:'info',message:'Vínculo criado, mas o catálogo remoto não foi atualizado. Verifique Backups e salve o catálogo no Telegram.',duration:9000});
+   }
+   // Start the first batch immediately. Subsequent batches follow the
+   // optional automatic schedule, or can be started with "Sincronizar agora".
+   try{
+    const synced=await request('/folders/'+encodeURIComponent(result.id)+'/run','POST');
+    setLastResult({path:checked.path,...synced});
+    await refresh();
+    window.dispatchEvent(new Event('drive-cloud-catalog-updated'));
+    onToast?.({kind:'success',message:'Pastas vinculadas. '+synced.sent+' arquivo(s) enviado(s) no primeiro ciclo.'+(synced.remaining_estimate?' Ainda restam arquivos para os próximos ciclos.':'')+(autoStart?' Sincronização automática ativada.':''),duration:8000});
+   }catch(syncError){
+    setError('O vínculo foi salvo, mas a primeira sincronização falhou: '+syncError.message+'. Use "Sincronizar agora" nas pastas configuradas.');
+   }
+  }catch(e){setError(e.message)}finally{setBusy(false)}
+ }
+ async function runOne(folder){
+  setRunning(folder.id);setError('');setLastResult(null);
+  try{
+   const check=await request('/folders/'+encodeURIComponent(folder.id)+'/preview','POST');
+   if(!check.pending&&folder.mode!=='two-way'){onToast?.({kind:'info',message:'Nenhuma alteração pendente nesta pasta.'});return}
+   const response=await request('/folders/'+encodeURIComponent(folder.id)+'/run','POST');
+   setLastResult({path:folder.path,...response});
+   onToast?.({kind:'success',message:response.sent+' arquivo(s) enviados'+(response.remote?', '+response.remote.downloaded+' recuperados e '+response.remote.conflicts+' conflitos preservados':'')+'. '+(response.remaining_estimate?'Execute novamente para continuar.':'')+(response.sent&&!response.catalog_snapshot_saved?' Atenção: catálogo remoto não foi atualizado; tente salvar em Backups.':'')});
+   await refresh();
+   window.dispatchEvent(new Event('drive-cloud-catalog-updated'));
+  }catch(e){setError(e.message)}finally{setRunning(null)}
+ }
+ async function updateCatalog(){
+  setBusy(true);setError('');setPullPreview(null);
+  try{
+   const result=await request('/catalog/refresh','POST');
+   await refresh();
+   window.dispatchEvent(new Event('drive-cloud-catalog-updated'));
+   onToast?.({kind:'success',message:result.items_added+' registros recuperados do catálogo Telegram. '+(result.metadata_differences_preserved?'Mudanças divergentes foram preservadas localmente.':'')});
+  }catch(e){setError(e.message)}finally{setBusy(false)}
+ }
+ async function previewRemote(folder){
+  setRunning(folder.id);setError('');setPullPreview(null);setPullResult(null);
+  try{
+   await request('/catalog/refresh','POST');
+   const result=await request('/folders/'+encodeURIComponent(folder.id)+'/remote/preview','POST');
+   setPullPreview({folder,...result});
+   await refresh();
+  }catch(e){setError(e.message)}finally{setRunning(null)}
+ }
+ async function pullRemote(folder){
+  setRunning(folder.id);setError('');setPullResult(null);
+  try{
+   const result=await request('/folders/'+encodeURIComponent(folder.id)+'/pull','POST');
+   setPullResult({folder,...result});setPullPreview(null);
+   onToast?.({kind:'success',message:result.downloaded+' arquivos recuperados; '+result.conflicts+' cópias de conflito preservadas.'});
+   await refresh();
+  }catch(e){setError(e.message)}finally{setRunning(null)}
+ }
+ async function setMode(folder,mode){
+  if(mode==='two-way'&&!confirm('Ativar sincronização bidirecional para esta pasta? Arquivos remotos podem ser baixados para o PC, mas não serão sobrescritos: versões diferentes são preservadas. Use primeiro com arquivos de teste.'))return;
+  setBusy(true);setError('');
+  try{
+   await request('/folders/'+encodeURIComponent(folder.id)+'/mode','POST',{mode});
+   await refresh();
+   onToast?.({kind:'info',message:mode==='two-way'?'Modo bidirecional ativado.':'Modo backup ativado.'});
+  }catch(e){setError(e.message)}finally{setBusy(false)}
+ }
+ async function removeOne(folder){
+  if(!confirm('Remover esta pasta do monitoramento? Os arquivos já enviados ao Telegram serão preservados.'))return;
+  setBusy(true);setError('');
+  try{await request('/folders/'+encodeURIComponent(folder.id),'DELETE');await refresh();
+   onToast?.({kind:'success',message:'Pasta desconectada do backup. Os arquivos no Telegram foram preservados.'});
+  }catch(e){setError(e.message)}finally{setBusy(false)}
+ }
+ async function toggleAuto(folder,enabled){
+  setBusy(true);setError('');
+  try{await request('/folders/'+encodeURIComponent(folder.id)+'/automatic','POST',{enabled});await refresh();
+   onToast?.({kind:'info',message:enabled?'Backup automático ativado para esta pasta.':'Backup automático pausado.'});
+  }catch(e){setError(e.message)}finally{setBusy(false)}
+ }
+ return <div className="dc-module-page">
+  <div className="dc-module-note"><RefreshCw size={20}/><div><strong>Suas pastas, no PC e no Meu Drive</strong><p>Vincule uma pasta do computador a qualquer pasta do Meu Drive, como no Google Drive. <b>Backup</b> envia alterações do PC; <b>Duas direções</b> também recupera arquivos do Drive sem sobrescrever divergências. Marque <b>Automático</b> para verificar a cada dois minutos. Nesta versão, exclusões não são propagadas automaticamente.</p></div></div>
+  {error&&<div className="public-share-error" role="alert">{error}</div>}
+  {section==='sync'&&<div className="dc-module-section dc-local-folder-setup"><h3>Vincular duas pastas</h3><p>Escolha uma pasta do computador e a pasta correspondente dentro do Meu Drive. Depois defina se deseja apenas backup ou sincronização nas duas direções.</p>
+   <div className="dc-folder-connection">
+    <div className="dc-sync-local-side">
+     <div className="dc-sync-side-heading"><HardDrive size={17}/><strong>1. Pasta do computador</strong></div>
+     <div className="dc-folder-path-row"><input aria-label="Pasta do computador" value={path} onChange={e=>{const value=e.target.value;setPath(value);setRemoteName(value.split(/[\\/]/).filter(Boolean).at(-1)||'');setPreview(null)}} placeholder="Escolha uma pasta do PC"/><button type="button" disabled={busy} onClick={browseFolder}><Folder size={15}/> Procurar</button></div>
+    </div>
+    <div className="dc-sync-link-line"><RefreshCw size={18}/><span>Vincular</span></div>
+    <div className="dc-sync-drive-side">
+     <div className="dc-sync-side-heading"><Cloud size={17}/><strong>2. Pasta no Meu Drive</strong></div>
+     <DriveMenuSelect label="Escolher pasta no Meu Drive" value={selectedRoot} onChange={setSelectedRoot}
+      disabled={busy||!!running} icon={Folder}
+      options={[{value:'',label:'Criar nova pasta no Meu Drive',hint:'Nova pasta na raiz do Drive'},
+       ...remoteFolders.map(folder=>({value:folder.id,label:'Meu Drive / '+folder.path,
+        hint:folder.linked_local_path?'Já vinculada neste computador: '+folder.linked_local_path:'Usar esta pasta do Meu Drive',
+        disabled:!!folder.linked_local_path}))]}/>
+     {!selectedRoot&&<label className="dc-new-remote-folder-name">Nome da nova pasta no Meu Drive
+      <input type="text" value={remoteName} maxLength={180} onChange={e=>setRemoteName(e.target.value)} placeholder="Ex.: Documentos, Fotos ou Projetos" disabled={busy}/>
+     </label>}
+     <small>Você pode escolher qualquer pasta existente, inclusive subpastas. Isso não cria outro canal no Telegram.</small>
+    </div>
+   </div>
+   <button type="button" className="dc-module-primary" disabled={busy||!!running||!path.trim()||(!selectedRoot&&!remoteName.trim())} onClick={analyzeAndSync}><RefreshCw size={16}/> {busy?'Analisando e sincronizando...':'Analisar e sincronizar'}</button>
+   <button type="button" className="dc-sync-refresh" disabled={busy||!!running} onClick={updateCatalog}><RefreshCw size={15}/> Atualizar pastas do Drive (outros computadores)</button>
+   <div className="dc-sync-setup-options"><label className="dc-sync-setup-mode">3. Como sincronizar?
+    <DriveMenuSelect label="Como sincronizar" value={newMode} onChange={setNewMode} disabled={busy} icon={RefreshCw}
+     options={[{value:'backup',label:'Somente backup (PC → Meu Drive)',hint:'Enviar arquivos novos e alterados do computador'},
+      {value:'two-way',label:'Duas direções (PC ↔ Meu Drive)',hint:'Também recuperar arquivos do Drive, preservando conflitos'}]}/>
+   </label>
+   <label className="dc-sync-auto-label"><input type="checkbox" checked={autoStart} disabled={busy} onChange={e=>setAutoStart(e.target.checked)}/> Sincronizar automaticamente a cada 2 minutos</label>
+   </div>
+  </div>}
+  <div className="dc-module-section"><h3>{section==='devices'?'Pastas neste dispositivo':section==='syncActivity'?'Atividade de backup':'Pastas configuradas'}</h3><p>O Drive Cloud envia e recupera até três arquivos por execução; no modo duas direções, consulta os snapshots do catálogo e preserva arquivos divergentes com nomes diferentes. O monitoramento automático roda a cada dois minutos quando ativado.</p>
+   <div className="dc-folder-sync-list">{initialLoading&&!folders.length?<p className="dc-empty-message" role="status"><RefreshCw size={15} className="dc-sync-spinning"/> Carregando pastas configuradas... Se houver uma transferência em andamento, elas aparecerão ao finalizar a consulta.</p>:folders.length?folders.map(folder=><div className="dc-folder-sync-item" key={folder.id}><div className="dc-folder-sync-title"><Folder size={19}/><div><strong>{folder.path.split(/[\\/]/).filter(Boolean).at(-1)||folder.path}</strong><small title={folder.path}>PC: {folder.path}</small><small className={'dc-sync-mapped-destination'+(!folder.remote_available?' is-missing':'')} title={folder.remote_path}>Meu Drive: {folder.remote_path}</small></div></div>
+    <div className="dc-folder-sync-actions"><span>{activityIds.includes(folder.id)?<span className="dc-sync-running-indicator" role="status"><RefreshCw size={13} className="dc-sync-spinning"/> Sincronizando automaticamente...</span>:running===folder.id?<span className="dc-sync-running-indicator" role="status"><RefreshCw size={13} className="dc-sync-spinning"/> Sincronizando agora...</span>:folder.enabled?'Sincronização automática ativada':'Sincronização automática desativada'}{folder.last_run?' • Última execução: '+new Date(folder.last_run*1000).toLocaleString('pt-BR'):''}</span><button disabled={!!running||busy||activityIds.length>0} onClick={()=>runOne(folder)}>{running===folder.id||activityIds.includes(folder.id)?'Sincronizando...':'Sincronizar agora'}</button><button type="button" disabled={!!running||busy||activityIds.length>0} onClick={()=>previewRemote(folder)}>Recuperar do Telegram</button><div className="dc-sync-mode"><span>Modo</span><DriveMenuSelect label={'Modo de sincronização de '+folder.path}
+      value={folder.mode||'backup'} onChange={value=>setMode(folder,value)} disabled={!!running||busy||activityIds.length>0} icon={RefreshCw}
+      options={[{value:'backup',label:'Backup (PC → Telegram)',hint:'Enviar arquivos novos e alterados do computador'},
+       {value:'two-way',label:'Duas direções (PC ↔ Telegram)',hint:'Enviar alterações e recuperar arquivos remotos sem sobrescrever'}]}/></div><label><input type="checkbox" disabled={!!running||busy||activityIds.length>0} checked={!!folder.enabled} onChange={e=>toggleAuto(folder,e.target.checked)}/> Automático</label><button type="button" disabled={!!running||busy||activityIds.length>0} onClick={()=>removeOne(folder)}>Remover da lista</button></div>
+    {folder.last_error&&<small className="dc-sync-error">{folder.last_error}</small>}</div>):<p className="dc-empty-message">Nenhuma pasta configurada neste dispositivo.</p>}</div>
+   {pullPreview&&<div className="dc-folder-preview"><strong>Recuperação de {pullPreview.folder.path.split(/[\\/]/).filter(Boolean).at(-1)}</strong><p>{pullPreview.pending} arquivo(s) para verificar • até {pullPreview.conflicts_possible} possíveis conflitos • {pullPreview.over_limit} acima do limite.</p><small>O Drive Cloud preserva as versões locais. Arquivos divergentes serão salvos com o sufixo (Telegram-...). Não haverá exclusões.</small><button className="dc-module-primary" onClick={()=>pullRemote(pullPreview.folder)} disabled={!!running||busy||!pullPreview.pending}>Confirmar recuperação</button></div>}
+   {pullResult&&<p className="dc-sync-result">Recuperação: {pullResult.downloaded} baixados, {pullResult.identical} iguais, {pullResult.conflicts} conflitos preservados. {pullResult.remaining_estimate} pendentes estimados.</p>}
+   {lastResult&&<p className="dc-sync-result">{lastResult.sent} arquivo(s) enviados da pasta {lastResult.path}. {lastResult.remaining_estimate} pendentes estimados. As exclusões locais não afetam o Telegram.</p>}
+  </div>
+  {section==='devices'&&<div className="dc-module-note"><HardDrive size={18}/><div><strong>Outros dispositivos</strong><p>A sincronização em duas direções já permite recuperar arquivos do catálogo e guardar cópias de conflitos. Para usar dois computadores, recupere primeiro o catálogo em Backups e vincule a mesma pasta remota. Sincronização contínua de catálogos entre aparelhos ainda está em desenvolvimento.</p></div></div>}
+ </div>
 }
 function SettingsPages({section,onToast}){
  const [compact,setCompact]=useState(()=>localStorage.getItem('dc-compact')==='true');
@@ -830,6 +1408,7 @@ function SettingsPages({section,onToast}){
  return <div className="dc-module-page">
  {section==='settings'&&<div className="dc-dashboard-grid"><div className="dc-module-card"><div className="dc-module-card-top"><Cloud size={20}/><span>Armazenamento</span></div><strong>Telegram privado</strong><small>Controle de conexão e canal no menu Conexão Telegram.</small></div><div className="dc-module-card"><div className="dc-module-card-top"><DatabaseBackup size={20}/><span>Backups</span></div><strong>Snapshots locais</strong><small>Configure cópias de segurança do catálogo em Backups.</small></div><div className="dc-module-card"><div className="dc-module-card-top"><Users size={20}/><span>Compartilhamentos</span></div><strong>{links.filter(x=>!x.revoked&&x.expires>Date.now()/1000).length} links ativos</strong><small>Revogue links antes de compartilhar novamente.</small></div></div>}
  {(section==='settings'||section==='preferences')&&<div className="dc-module-section"><h3>Aparência</h3><p>Preferências salvas somente neste navegador.</p><div className="dc-option-row"><span><strong>Visualização de arquivos</strong><small>Modo padrão ao abrir o Meu Drive.</small></span><div className="dc-select-wrap"><select aria-label="Visualização padrão" value={preferredLayout} onChange={e=>changePreferredLayout(e.target.value)}><option value="list">Lista</option><option value="grid">Grade</option></select><ChevronDown size={15}/></div></div><label className="dc-option-row"><span><strong>Interface compacta</strong><small>Reduz espaçamentos das listas e ferramentas.</small></span><input type="checkbox" checked={compact} onChange={e=>changeCompact(e.target.checked)}/></label><label className="dc-option-row"><span><strong>Reduzir animações</strong><small>Transições mais discretas para navegação e modais.</small></span><input type="checkbox" checked={motion} onChange={e=>changeMotion(e.target.checked)}/></label></div>}
+ {(section==='settings'||section==='security'||section==='publicSharing')&&<PublicSharingSetup backendOrigin={backendOrigin}/>}
  {(section==='settings'||section==='security')&&<div className="dc-module-section"><h3>Segurança e compartilhamentos</h3><p>O serviço do Drive Cloud aceita somente conexões locais. Nunca exponha os arquivos de sessão ou a API administrativa na internet.</p>{error&&<p className="public-share-error">{error}</p>}<div className="dc-history-list">{links.filter(x=>!x.revoked&&x.expires>Date.now()/1000).map(x=><div className="dc-history-row" key={x.id}><Users size={18}/><div><strong>{x.name||'Item indisponível'}</strong><small>{x.mode==='download'?'Download':'Compartilhado'} • expira em {new Date(x.expires*1000).toLocaleString('pt-BR')}</small></div><button onClick={()=>revoke(x.id)}>Revogar</button></div>)}{!links.some(x=>!x.revoked&&x.expires>Date.now()/1000)&&<p className="dc-empty-message">Nenhum compartilhamento ativo.</p>}</div></div>}</div>
 }
 function DriveFolderTree({nodes,current,onOpen}){
@@ -880,7 +1459,7 @@ function DriveFolderTree({nodes,current,onOpen}){
  <button className={'dc-tree-root '+(current===null?'active':'')} onClick={()=>onOpen(null)}><Folder size={16}/><span>Raiz do Meu Drive</span></button>
  <div className="dc-tree-list" ref={listRef}>{branch(null,0)}</div></div>
 }
-const DRIVE_PAGES=new Set(['home','recent','starred','cloudFiles','trash','backups','backupHistory','backupSchedule','sync','devices','syncActivity','settings','telegram','security','preferences']);
+const DRIVE_PAGES=new Set(['home','recent','starred','cloudFiles','trash','backups','backupHistory','backupSchedule','sync','devices','syncActivity','settings','telegram','security','preferences','publicSharing']);
 function readDriveLocation(){
  const u=new URL(window.location.href);
  const page=u.searchParams.get('page');
@@ -899,15 +1478,57 @@ function saveDriveLocation(page,folder,replace=false){
 function readDriveLayout(){return localStorage.getItem('dc-file-layout')==='grid'?'grid':'list'}
 function App(){
 const [initialReady,setInitialReady]=useState(false);
+const [connectionGate,setConnectionGate]=useState({checking:true,ready:false,stage:'credentials'});
+
 const initialRoute=useRef(readDriveLocation());
-const driveSections=['cloudFiles','home','recent','starred','trash'];const [createFolderToken,setCreateFolderToken]=useState(0);const [cloudTree,setCloudTree]=useState([]);const [cloudFolder,setCloudFolder]=useState(null);const [folderTarget,setFolderTarget]=useState(()=>initialRoute.current.folder?{id:initialRoute.current.folder,nonce:1}:null);const [deletionProgress,setDeletionProgress]=useState(null);const [toast,setToast]=useState(null);const showToast=t=>setToast({...t,id:crypto.randomUUID()});const [telegramConnected,setTelegramConnected]=useState(false);const [telegramAccountId,setTelegramAccountId]=useState(null);const [driveUsage,setDriveUsage]=useState(null);const[items,setItems]=useState([]),[section,setSection]=useState(()=>initialRoute.current.page),[area,setArea]=useState(()=>({home:'home',recent:'home',starred:'home',cloudFiles:'files',trash:'trash',backups:'backups',backupHistory:'backups',backupSchedule:'backups',sync:'sync',devices:'sync',syncActivity:'sync',settings:'settings',telegram:'settings',security:'settings',preferences:'settings'})[initialRoute.current.page]||'home'),[folder,setFolder]=useState(null),[view,setView]=useState(readDriveLayout),[query,setQuery]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[mobile,setMobile]=useState(false);
+const driveSections=['cloudFiles','home','recent','starred','trash'];const [createFolderToken,setCreateFolderToken]=useState(0);const [cloudTree,setCloudTree]=useState([]);const [cloudFolder,setCloudFolder]=useState(null);const [folderTarget,setFolderTarget]=useState(()=>initialRoute.current.folder?{id:initialRoute.current.folder,nonce:1}:null);const [deletionProgress,setDeletionProgress]=useState(null);const [toast,setToast]=useState(null);const showToast=t=>setToast({...t,id:crypto.randomUUID()});const [telegramConnected,setTelegramConnected]=useState(false);const [telegramAccountId,setTelegramAccountId]=useState(null);const [driveUsage,setDriveUsage]=useState(null);const[items,setItems]=useState([]),[section,setSection]=useState(()=>initialRoute.current.page),[area,setArea]=useState(()=>({home:'home',recent:'home',starred:'home',cloudFiles:'files',trash:'trash',backups:'backups',backupHistory:'backups',backupSchedule:'backups',sync:'sync',devices:'sync',syncActivity:'sync',settings:'settings',telegram:'settings',security:'settings',preferences:'settings',publicSharing:'settings'})[initialRoute.current.page]||'home'),[folder,setFolder]=useState(null),[view,setView]=useState(readDriveLayout),[query,setQuery]=useState(''),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[mobile,setMobile]=useState(false);
 const input=useRef(null);
 const refresh=async()=>setItems(await all());
+async function refreshTelegram(){
+ try{
+  const response=await fetch(backendOrigin+'/api/telegram/status',{cache:'no-store'});
+  if(!response.ok)throw Error('Conector Telegram: HTTP '+response.status);
+  const status=await response.json();
+  if(status.error){
+   setConnectionGate({checking:false,ready:false,stage:'telegram-error',error:status.error});
+   setDriveUsage(null);
+   return;
+  }
+  setTelegramConnected(!!status.connected);
+  setTelegramAccountId(status.connected&&status.id?String(status.id):null);
+  if(!status.configured){
+   setConnectionGate({checking:false,ready:false,stage:'credentials'});
+   setDriveUsage(null);
+   return;
+  }
+  if(!status.connected){
+   setConnectionGate({checking:false,ready:false,stage:'account'});
+   setDriveUsage(null);
+   return;
+  }
+  const linked=await fetch(backendOrigin+'/api/telegram/storage/status',{cache:'no-store'});
+  const storageInfo=await linked.json().catch(()=>({}));
+  if(!linked.ok){
+   setConnectionGate({checking:false,ready:false,stage:'storage',error:storageInfo.detail||'Falha HTTP '+linked.status+' ao verificar o canal privado.'});
+   setDriveUsage(null);
+   return;
+  }
+  setConnectionGate({checking:false,ready:!!storageInfo.ready,stage:'storage',error:storageInfo.detail||''});
+  if(storageInfo.ready){
+   const usage=await fetch(backendOrigin+'/api/cloud/usage');
+   if(usage.ok)setDriveUsage(await usage.json());
+  }else setDriveUsage(null);
+ }catch(e){
+  // A temporary verification failure is not the same as logging out.
+  // Keep the Drive locked, but do not silently turn it into a login prompt.
+  setConnectionGate({checking:false,ready:false,stage:'offline',error:e?.message||'Conector indisponível'});
+  setDriveUsage(null);
+ }
+}
 useEffect(()=>{refresh().catch(e=>setNotice('Falha ao abrir o armazenamento: '+e.message));
-const refreshTelegram=async()=>{try{const status=await fetch(backendOrigin+'/api/telegram/status').then(r=>r.json());setTelegramConnected(!!status.connected);setTelegramAccountId(status.connected&&status.id?String(status.id):null);
-if(status.connected){const response=await fetch(backendOrigin+'/api/cloud/usage');if(response.ok)setDriveUsage(await response.json())}
-else setDriveUsage(null)}catch{setTelegramConnected(false);setTelegramAccountId(null);setDriveUsage(null)}};
-refreshTelegram();const timer=setInterval(refreshTelegram,12000);return()=>clearInterval(timer)},[]);
+refreshTelegram();
+const timer=setInterval(refreshTelegram,12000);
+return()=>clearInterval(timer)},[]);
 function msg(t){showToast({kind:'info',message:t})}
 const groupOf={home:'home',recent:'home',starred:'home',files:'files',cloudFiles:'files',photos:'files',shared:'files',trash:'trash',backups:'backups',backupHistory:'backups',backupSchedule:'backups',sync:'sync',devices:'sync',syncActivity:'sync',settings:'settings',telegram:'settings',security:'settings',preferences:'settings'};
 const defaults={home:'home',files:'cloudFiles',trash:'trash',backups:'backups',sync:'sync',settings:'settings'};
@@ -916,7 +1537,7 @@ useEffect(()=>{const handler=()=>{const loc=readDriveLocation();setArea(groupOf[
 const updateDriveFolder=id=>{setCloudFolder(id);if(initialReady&&section==='cloudFiles')saveDriveLocation('cloudFiles',id)};
 useEffect(()=>{localStorage.setItem('dc-file-layout',view)},[view]);
 const goArea=a=>nav(defaults[a]);
-const visible=useMemo(()=>items.filter(i=>section==='trash'?i.trashed:!i.trashed).filter(i=>{if(section==='home')return i.kind==='file';if(section==='files')return i.parent===folder;if(section==='photos')return i.type?.startsWith('image/');if(section==='backups')return i.kind==='folder'&&i.name==='Backups'||i.name?.toLowerCase().includes('backup');if(section==='recent')return i.kind==='file';if(section==='starred')return i.starred;if(['sync','shared','backupHistory','backupSchedule','devices','syncActivity','settings','telegram','security','preferences'].includes(section))return false;return true}).filter(i=>i.name.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>a.kind===b.kind?a.name.localeCompare(b.name,'pt-BR'):a.kind==='folder'?-1:1),[items,section,folder,query]);
+const visible=useMemo(()=>items.filter(i=>section==='trash'?i.trashed:!i.trashed).filter(i=>{if(section==='home')return i.kind==='file';if(section==='files')return i.parent===folder;if(section==='photos')return i.type?.startsWith('image/');if(section==='backups')return i.kind==='folder'&&i.name==='Backups'||i.name?.toLowerCase().includes('backup');if(section==='recent')return i.kind==='file';if(section==='starred')return i.starred;if(['sync','shared','backupHistory','backupSchedule','devices','syncActivity','settings','telegram','security','preferences','publicSharing'].includes(section))return false;return true}).filter(i=>i.name.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>a.kind===b.kind?a.name.localeCompare(b.name,'pt-BR'):a.kind==='folder'?-1:1),[items,section,folder,query]);
 const trail=[];let f=folder;for(let k=0;f&&k<20;k++){const e=items.find(i=>i.id===f);if(!e)break;trail.unshift(e);f=e.parent}
 async function folderCreate(){const name=window.prompt('Nome da nova pasta:');if(!name?.trim())return;try{await save({id:uid(),name:name.trim(),kind:'folder',parent:section==='files'?folder:null,time:Date.now(),trashed:false,starred:false});await refresh();msg('Pasta criada')}catch(e){msg('Erro: '+e.message)}}
 async function upload(files){if(!files?.length)return;setBusy(true);try{for(const file of files){await save({id:uid(),name:file.name,kind:'file',type:file.type,size:file.size,parent:section==='files'?folder:null,time:Date.now(),trashed:false,starred:false},file)}await refresh();msg(files.length+' arquivo(s) salvo(s) neste navegador')}catch(e){msg('Erro no upload: '+e.message)}finally{setBusy(false);if(input.current)input.current.value=''}}
@@ -929,12 +1550,14 @@ files:[['cloudFiles','Todos os arquivos',Folder]],
 trash:[['trash','Lixeira',Trash2]],
 backups:[['backups','Meus backups',DatabaseBackup],['backupSchedule','Agendamentos',Clock3],['backupHistory','Histórico',List]],
 sync:[['sync','Pastas sincronizadas',RefreshCw],['devices','Dispositivos',HardDrive],['syncActivity','Atividades',Clock3]],
-settings:[['settings','Visão geral',Settings],['telegram','Conexão Telegram',Cloud],['security','Segurança',Star],['preferences','Preferências',Settings]]
+settings:[['settings','Visão geral',Settings],['telegram','Conexão Telegram',Cloud],['publicSharing','Compartilhamento público',Users],['security','Segurança',Star],['preferences','Preferências',Settings]]
 };
 const primary=[['home','Início',Home],['files','Meu Drive',Folder],['trash','Lixeira',Trash2],['backups','Backups',DatabaseBackup],['sync','Sincronização',RefreshCw],['settings','Configurações',Settings]];
 const sections=Object.values(menus).flat();
 const label=sections.find(s=>s[0]===section)?.[1]||'Arquivos';
 const bytes=items.filter(i=>i.kind==='file'&&!i.trashed).reduce((n,i)=>n+(i.size||0),0);
+if(connectionGate.checking)return <div className="dc-onboard-loading" role="status" aria-label="Verificando conexão Telegram"><DriveBrandLoader/><span>Verificando sua conexão...</span></div>;
+if(!connectionGate.ready)return <><TelegramOnboarding stage={connectionGate.stage} detail={connectionGate.error} onReady={refreshTelegram} onToast={showToast}/><DriveToast toast={toast} onDismiss={()=>setToast(null)}/></>;
 return <div className="shell"><aside className="rail"><div className="logo" title="Drive Cloud"><img src="/drive-cloud-logo.svg?v=20261120b" alt="Drive Cloud"/></div>{primary.map(([a,name,Icon])=><button key={a} title={name} aria-label={name} className={area===a?'rail-on':''} onClick={()=>goArea(a)}><Icon size={21}/></button>)}</aside>
 <aside className={'sidebar '+(mobile?'show':'')+(area==='files'?' sidebar-tree':'')}><div className="sidebar-title">{primary.find(p=>p[0]===area)?.[1]||'Meu espaço'}<button className="mobile-x" onClick={()=>setMobile(false)}><X size={19}/></button></div><div className="links">{menus[area].map(([id,name,Icon])=><button key={id} className={section===id?'active':''} onClick={()=>nav(id)}><Icon size={18}/>{name}</button>)}</div>{area==='files'&&<DriveFolderTree nodes={cloudTree} current={cloudFolder} onOpen={id=>{nav('cloudFiles',id)}}/>}<div className="sidebar-bottom"><div className="dc-compact-storage">
 <div className="dc-usage-heading"><HardDrive size={16}/><span>Armazenamento</span></div>
@@ -944,22 +1567,43 @@ return <div className="shell"><aside className="rail"><div className="logo" titl
 </div></div></aside>
 <main><header><button className="mobile-toggle" onClick={()=>setMobile(!mobile)}>☰</button>{section==='cloudFiles'&&<button className="new" title="Criar pasta no Meu Drive" onClick={()=>{nav('cloudFiles');setCreateFolderToken(n=>n+1)}}><Plus size={18}/> Novo</button>}{['cloudFiles','home','recent','starred'].includes(section)&&<div className="search"><Search size={18}/><input placeholder="Buscar arquivos e pastas..." value={query} onChange={e=>setQuery(e.target.value)}/></div>}<span className="avatar" title={telegramConnected?"Conta Telegram conectada":"Drive Cloud"}>DC{telegramConnected&&telegramAccountId&&<img key={telegramAccountId} src={backendOrigin+"/api/telegram/avatar?account="+encodeURIComponent(telegramAccountId)} alt="Foto do perfil Telegram" onError={e=>{e.currentTarget.style.display="none"}}/>}</span></header>
 <div className="content"><div className="heading"><div><h1>{trail.length&&section==='files'?trail.at(-1).name:label}</h1>{!driveSections.includes(section)&&<p>{section==='telegram'?'Gerencie a conta e o canal privado usados pelo Drive.':area==='backups'?'Agendamentos e histórico de cópias do catálogo.':area==='sync'?'Gerencie as opções de sincronização entre dispositivos.':'Preferências e segurança do Drive Cloud.'}</p>}</div></div>
-<div style={{display:driveSections.includes(section)?'block':'none'}}><CloudFiles mode={section==='cloudFiles'?'files':driveSections.includes(section)?section:'files'} globalSearch={query} onToast={showToast} onDeletionProgress={setDeletionProgress} createFolderToken={createFolderToken} onCatalogChange={setCloudTree} onFolderChange={updateDriveFolder} folderTarget={folderTarget} onInitialReady={()=>setInitialReady(true)} onNavigateFolder={id=>nav('cloudFiles',id)}/></div>{section==='telegram'?<TelegramSettings onToast={showToast}/>:['backups','backupSchedule','backupHistory'].includes(section)?<BackupPages section={section} onToast={showToast}/>:['sync','devices','syncActivity'].includes(section)?<SyncPages section={section}/>:['settings','security','preferences'].includes(section)?<SettingsPages section={section} onToast={showToast}/>:!driveSections.includes(section)&&!['backups','backupSchedule','backupHistory','sync','devices','syncActivity','settings','security','preferences'].includes(section)?<><div className="toolbar"><div className="chips"><button onClick={()=>nav('recent')}><Clock3 size={15}/> Recentes</button><button onClick={()=>nav('starred')}><Star size={15}/> Favoritos</button></div><div className="toggle"><button aria-label="Modo grade" className={view==='grid'?'chosen':''} onClick={()=>setView('grid')}><Grid2X2 size={18}/></button><button aria-label="Modo lista" className={view==='list'?'chosen':''} onClick={()=>setView('list')}><List size={18}/></button></div></div>
-{visible.length===0?<div className="empty"><Folder size={50}/><h3>Nenhum arquivo por aqui</h3><p>{['shared','sync','backupHistory','backupSchedule','devices','syncActivity','settings','telegram','security','preferences'].includes(section)?'Este recurso será adicionado em uma próxima etapa.':'Envie arquivos ou crie uma pasta para começar.'}</p></div>:view==='grid'?<div className="grid">{visible.map(i=><article key={i.id} className="tile"><button className="more" aria-label={'Opções de '+i.name} onClick={()=>{const action=window.prompt('Ação: '+(i.trashed?'restaurar, excluir':'abrir, favorito, lixeira'));if(!action)return;if(action==='abrir')open(i);else act(i,({favorito:'star',lixeira:'trash',restaurar:'restore',excluir:'delete'})[action]||action)}}><MoreHorizontal size={20}/></button><div className="tile-icon" onDoubleClick={()=>open(i)}><IconFile item={i} large/></div><button className="tile-name" onClick={()=>open(i)} title={i.name}>{i.name}</button><small>{i.kind==='folder'?'Pasta':size(i.size)} {i.starred?'★':''}</small></article>)}</div>:<div className="table-scroll"><div className="table"><div className="table-head"><span>Nome</span><span>Modificado</span><span>Tamanho</span><span>Ações</span></div>{visible.map(i=><div className="table-row" key={i.id}><button onClick={()=>open(i)}><IconFile item={i}/><span>{i.name} {i.starred?'★':''}</span></button><span>{date(i.time)}</span><span>{i.kind==='folder'?'—':size(i.size)}</span><div className="row-actions">{i.trashed?<><button title="Restaurar" onClick={()=>act(i,'restore')}>↶</button><button title="Excluir definitivamente" onClick={()=>act(i,'delete')}><Trash2 size={16}/></button></>:<><button title="Favorito" onClick={()=>act(i,'star')}><Star size={16} fill={i.starred?'#bca3f2':'none'}/></button><button title="Mover para lixeira" onClick={()=>act(i,'trash')}><Trash2 size={16}/></button></>}</div></div>)}</div></div>}
+<div style={{display:driveSections.includes(section)?'block':'none'}}><CloudFiles mode={section==='cloudFiles'?'files':driveSections.includes(section)?section:'files'} globalSearch={query} onToast={showToast} onDeletionProgress={setDeletionProgress} createFolderToken={createFolderToken} onCatalogChange={setCloudTree} onFolderChange={updateDriveFolder} folderTarget={folderTarget} onInitialReady={()=>setInitialReady(true)} onNavigateFolder={id=>nav('cloudFiles',id)} onConfigureSharing={()=>nav('publicSharing')}/></div>{section==='telegram'?<TelegramSettings onToast={showToast}/>:['backups','backupSchedule','backupHistory'].includes(section)?<BackupPages section={section} onToast={showToast}/>:['sync','devices','syncActivity'].includes(section)?<SyncPages section={section} onToast={showToast} accountId={telegramAccountId}/>:['settings','security','preferences','publicSharing'].includes(section)?<SettingsPages section={section} onToast={showToast}/>:!driveSections.includes(section)&&!['backups','backupSchedule','backupHistory','sync','devices','syncActivity','settings','security','preferences'].includes(section)?<><div className="toolbar"><div className="chips"><button onClick={()=>nav('recent')}><Clock3 size={15}/> Recentes</button><button onClick={()=>nav('starred')}><Star size={15}/> Favoritos</button></div><div className="toggle"><button aria-label="Modo grade" className={view==='grid'?'chosen':''} onClick={()=>setView('grid')}><Grid2X2 size={18}/></button><button aria-label="Modo lista" className={view==='list'?'chosen':''} onClick={()=>setView('list')}><List size={18}/></button></div></div>
+{visible.length===0?<div className="empty"><Folder size={50}/><h3>Nenhum arquivo por aqui</h3><p>{['shared','sync','backupHistory','backupSchedule','devices','syncActivity','settings','telegram','security','preferences','publicSharing'].includes(section)?'Este recurso será adicionado em uma próxima etapa.':'Envie arquivos ou crie uma pasta para começar.'}</p></div>:view==='grid'?<div className="grid">{visible.map(i=><article key={i.id} className="tile"><button className="more" aria-label={'Opções de '+i.name} onClick={()=>{const action=window.prompt('Ação: '+(i.trashed?'restaurar, excluir':'abrir, favorito, lixeira'));if(!action)return;if(action==='abrir')open(i);else act(i,({favorito:'star',lixeira:'trash',restaurar:'restore',excluir:'delete'})[action]||action)}}><MoreHorizontal size={20}/></button><div className="tile-icon" onDoubleClick={()=>open(i)}><IconFile item={i} large/></div><button className="tile-name" onClick={()=>open(i)} title={i.name}>{i.name}</button><small>{i.kind==='folder'?'Pasta':size(i.size)} {i.starred?'★':''}</small></article>)}</div>:<div className="table-scroll"><div className="table"><div className="table-head"><span>Nome</span><span>Modificado</span><span>Tamanho</span><span>Ações</span></div>{visible.map(i=><div className="table-row" key={i.id}><button onClick={()=>open(i)}><IconFile item={i}/><span>{i.name} {i.starred?'★':''}</span></button><span>{date(i.time)}</span><span>{i.kind==='folder'?'—':size(i.size)}</span><div className="row-actions">{i.trashed?<><button title="Restaurar" onClick={()=>act(i,'restore')}>↶</button><button title="Excluir definitivamente" onClick={()=>act(i,'delete')}><Trash2 size={16}/></button></>:<><button title="Favorito" onClick={()=>act(i,'star')}><Star size={16} fill={i.starred?'#bca3f2':'none'}/></button><button title="Mover para lixeira" onClick={()=>act(i,'trash')}><Trash2 size={16}/></button></>}</div></div>)}</div></div>}
 </>:null}<footer>{['cloudFiles','home','recent','starred'].includes(section)?'Arquivos no Telegram • Catálogo armazenado neste dispositivo':'Mantenha outra cópia dos arquivos importantes'} <span>Drive Cloud</span></footer></div></main><input ref={input} type="file" multiple hidden onChange={e=>upload([...e.target.files])}/><DriveToast toast={deletionProgress?null:toast} progress={deletionProgress} onDismiss={()=>setToast(null)}/>{!initialReady&&<div className="dc-initial-splash" role="status" aria-label="Carregando Drive Cloud" aria-busy="true"><DriveBrandLoader/></div>}</div>}
 const params=new URLSearchParams(window.location.search);
 const matchShare=window.location.pathname.match(/^\/(?:file|folder)\/d\/([A-Za-z0-9_-]+)\/?$/),matchEmbed=window.location.pathname.match(/^\/embed\/d\/([A-Za-z0-9_-]+)\/?$/);
 const publicToken=matchShare?.[1]||params.get('share'),embedToken=matchEmbed?.[1]||params.get('embed');
+function DesktopStartup({error,onRetry}){
+ return <div className="dc-onboard-loading dc-desktop-startup" role="alert">
+  <img src="/drive-cloud-logo.svg?v=20261120b" alt="Drive Cloud"/>
+  <strong>Não foi possível iniciar o conector</strong>
+  <p>{error}</p>
+  <small>Se o problema continuar, consulte o arquivo backend-startup.log na pasta de dados do Drive Cloud. Sua sessão do Telegram não foi apagada.</small>
+  <button type="button" onClick={onRetry}>Verificar novamente</button>
+ </div>;
+}
 async function startDriveCloud() {
-  if (window.__TAURI_INTERNALS__) {
-    try {
-      // This is provided by the desktop host, not discovered through random
-      // ports or exposed by a public endpoint.
-      backendOrigin = await invoke('backend_origin');
-    } catch (error) {
-      console.error('Não foi possível descobrir a porta do backend local.', error);
+ const root=createRoot(document.getElementById('root'));
+ if(window.__TAURI_INTERNALS__ && !publicToken && !embedToken){
+  async function launch(){
+   root.render(<div className="dc-onboard-loading" role="status" aria-busy="true"><DriveBrandLoader/><span>Preparando conexão segura do Drive Cloud...</span></div>);
+   try{
+    // Always query the current desktop host instead of falling back to port
+    // 8000: that port may belong to another local process or stale instance.
+    backendOrigin = await invoke('backend_origin');
+    if(!/^http:\/\/127\.0\.0\.1:[0-9]+$/.test(backendOrigin)){
+     throw Error('Endereço do conector local inválido.');
     }
+    await invoke('wait_backend_ready');
+    root.render(<App/>);
+   }catch(error){
+    const message=typeof error==='string'?error:error?.message||String(error);
+    root.render(<DesktopStartup error={message} onRetry={launch}/>);
+   }
   }
-  createRoot(document.getElementById('root')).render(embedToken?<EmbeddedMedia token={embedToken}/>:publicToken?<PublicShareView token={publicToken}/>:<App/>);
+  await launch();
+ }else{
+  root.render(embedToken?<EmbeddedMedia token={embedToken}/>:publicToken?<PublicShareView token={publicToken}/>:<App/>);
+ }
 }
 startDriveCloud();

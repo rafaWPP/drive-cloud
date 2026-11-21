@@ -1,0 +1,90 @@
+name: Windows Desktop (Tauri)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/catalog-telegram-sync
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'backend/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - 'index.html'
+      - '.github/workflows/windows-desktop.yml'
+  pull_request:
+    branches:
+      - main
+      - feature/tauri-desktop-linux
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-windows:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependências do frontend
+        run: npm install --no-audit --no-fund
+      - name: Validar código Python
+        run: python -m compileall -q backend
+      - name: Empacotar conector Telegram para Windows
+        shell: pwsh
+        run: |
+          python -m pip install -r backend/requirements.txt pyinstaller
+          python -m PyInstaller --noconfirm --clean --onefile --name drive-cloud-backend --paths backend --hidden-import server --collect-submodules pillow_jxl --collect-submodules telethon --distpath build/desktop-sidecar backend/desktop_entry.py
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          Copy-Item build/desktop-sidecar/drive-cloud-backend.exe src-tauri/binaries/drive-cloud-backend-x86_64-pc-windows-msvc.exe
+      - name: Verificar conector Windows empacotado
+        shell: pwsh
+        run: |
+          $env:DRIVE_CLOUD_DATA_DIR = Join-Path $env:RUNNER_TEMP 'drive-cloud-test'
+          $env:DRIVE_CLOUD_BACKEND_PORT = '48764'
+          New-Item -ItemType Directory -Force -Path $env:DRIVE_CLOUD_DATA_DIR | Out-Null
+          $process = Start-Process -FilePath (Resolve-Path 'build/desktop-sidecar/drive-cloud-backend.exe') -PassThru -NoNewWindow
+          try {
+            $healthy = $false
+            1..40 | ForEach-Object {
+              if (-not $healthy -and -not $process.HasExited) {
+                try {
+                  $response = Invoke-RestMethod -Uri 'http://127.0.0.1:48764/api/telegram/status' -TimeoutSec 2
+                  if ($null -ne $response.configured) { $healthy = $true }
+                } catch { Start-Sleep -Seconds 1 }
+              }
+            }
+            if (-not $healthy) {
+              $log = Join-Path $env:DRIVE_CLOUD_DATA_DIR 'backend-startup.log'
+              if (Test-Path $log) { Get-Content $log }
+              throw 'Conector Windows não respondeu ao teste local.'
+            }
+          } finally {
+            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
+      - name: Testar conector empacotado após fechar e reabrir Windows
+        run: python backend/tests/check_sidecar_lifecycle.py build/desktop-sidecar/drive-cloud-backend.exe
+      - name: Gerar ícones Windows
+        run: npx tauri icon public/drive-cloud-logo.svg
+      - name: Verificar proteção de downloads nativos
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+      - name: Gerar instalador NSIS (.exe)
+        run: npx tauri build --bundles nsis
+      - name: Disponibilizar instalador Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-cloud-windows-installer
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

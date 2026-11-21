@@ -1441,3 +1441,249 @@ main>header .avatar{width:32px;height:32px;font-size:11px;border-color:#49494d}
 /* Header profile: Telegram photo when available, DC fallback otherwise. */
 main>header .avatar{position:relative;overflow:hidden;flex-shrink:0}
 main>header .avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;background:#38383a}
+
+.tg-api-alert .tg-api-open-link{display:inline-flex;align-items:center;background:#337adc;color:#fff;border:0;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:650;cursor:pointer;text-align:left}
+.tg-api-alert .tg-api-open-link:hover{background:#468be9}
+
+/* Desktop header: the account avatar is pinned to the far right, regardless of search width. */
+main>header{display:flex;align-items:center;width:100%}
+main>header .avatar{margin-left:auto;position:relative;flex:0 0 32px;overflow:hidden}
+main>header .search{flex:1 1 320px;max-width:465px}
+@media(max-width:700px){main>header .avatar{display:grid}}
+
+.dc-remote-restore-preview{display:flex;flex-direction:column;align-items:flex-start;gap:10px;border-radius:10px;padding:14px;background:#272b32;color:#e9eef4}
+.dc-remote-restore-preview p{margin:0;color:#c5d3e6;font-size:12px;line-height:1.6}
+.dc-remote-restore-preview small{color:#abb3bf;line-height:1.5}
+
+/* Native desktop folder backup controls */
+.dc-local-folder-setup{gap:13px}
+.dc-folder-path-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.dc-folder-path-row input{flex:1 1 260px;min-width:160px;background:#22242a;color:#f2f3f5;border:1px solid #47494f;border-radius:8px;padding:11px 12px;font-size:12px}
+.dc-folder-path-row button,.dc-folder-sync-actions button{display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;border:1px solid #55565c;border-radius:8px;padding:10px 13px;background:#34373d;color:#eceff5;font-size:12px;font-weight:650}
+.dc-folder-path-row button:hover,.dc-folder-sync-actions button:hover{background:#424750}
+.dc-folder-preview{display:flex;gap:10px;align-items:flex-start;flex-direction:column;padding:15px;border-radius:10px;background:#272b32}
+.dc-folder-preview strong{font-size:13px;color:#e9f0f9}
+.dc-folder-preview small{font-size:11px;color:#bec7d3}
+.dc-folder-preview button{width:auto}
+.dc-folder-sync-list{display:flex;flex-direction:column;gap:9px;width:100%}
+.dc-folder-sync-item{padding:15px;border-radius:10px;background:#25262b;display:flex;flex-direction:column;gap:12px}
+.dc-folder-sync-title{display:flex;align-items:flex-start;gap:10px;min-width:0;color:#b3ceef}
+.dc-folder-sync-title>div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.dc-folder-sync-title strong{font-size:13px;color:#ebedf3}
+.dc-folder-sync-title small{font-size:11px;color:#aeb5c0;overflow-wrap:anywhere}
+.dc-folder-sync-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.dc-folder-sync-actions>span{font-size:11px;color:#acb6c2;flex:1 1 230px}
+.dc-folder-sync-actions label{display:flex;align-items:center;gap:7px;white-space:nowrap;font-size:12px;color:#d4d9e2}
+.dc-folder-sync-actions input{accent-color:#4787e9}
+.dc-sync-error,.dc-sync-result{color:#ebb2a4;font-size:11px;line-height:1.5}
+
+/* Sync reconciliation: restrained desktop controls and explicit safety preview. */
+.dc-remote-root-selection{display:flex;flex-direction:column;gap:7px;max-width:600px;font-size:12px;color:#dce2eb}
+.dc-remote-root-selection select,.dc-sync-mode select{min-height:35px;background:#292c32;color:#e5eaf2;border:1px solid #4b505a;border-radius:8px;padding:6px 10px;font-size:12px}
+.dc-remote-root-selection small{color:#a9b4c4;font-size:11px;line-height:1.6}
+.dc-sync-mode{display:flex;align-items:center;gap:8px;font-size:11px;color:#abb6c6}
+.dc-folder-preview p{margin:0;color:#cbd8e9;font-size:12px;line-height:1.5}
+
+/* Interrupted upload stages: neutral, compact, with explicit safe cleanup. */
+.dc-resume-banner{display:flex;flex-direction:column;gap:10px;margin:0 0 14px;padding:15px;border:1px solid #373e49;background:#222831;border-radius:10px}
+.dc-resume-heading{display:flex;align-items:center;gap:9px;color:#a7c7f3}
+.dc-resume-heading strong{font-size:13px;color:#e9edf4}
+.dc-resume-heading small{margin-left:auto;font-size:11px;color:#a9b5c5}
+.dc-resume-banner>p{margin:0;color:#b6c0cc;font-size:11px;line-height:1.5}
+.dc-resume-item{display:flex;align-items:center;gap:10px;justify-content:space-between;border-radius:8px;background:#2b3038;padding:9px 11px}
+.dc-resume-item>span{min-width:0;display:flex;flex-direction:column;gap:4px}
+.dc-resume-item strong{font-size:12px;color:#e8edf6;overflow-wrap:anywhere}
+.dc-resume-item small{font-size:11px;color:#9fafc3}
+.dc-resume-item button{background:transparent;color:#d3dae6;border:1px solid #565e6c;border-radius:7px;font-size:11px;padding:7px 10px;white-space:nowrap}
+.dc-resume-repick{align-self:flex-start;border:0;border-radius:8px;padding:9px 13px;background:#337adc;color:white;font-size:12px;font-weight:600}
+
+
+/* First-run Telegram onboarding — native desktop, no gradients. */
+.dc-onboard-screen{min-height:100vh;min-height:100dvh;width:100%;display:flex;align-items:center;justify-content:center;padding:30px;background:#15171b;color:#f3f5f8;overflow-y:auto}
+.dc-onboard-frame{display:grid;grid-template-columns:minmax(310px,.95fr) minmax(390px,1.05fr);width:min(1110px,100%);min-height:650px;border-radius:18px;overflow:hidden;background:#202329;border:1px solid #323945}
+.dc-onboard-intro{display:flex;flex-direction:column;justify-content:space-between;gap:40px;padding:39px 44px;background:#19212c;border-right:1px solid #343d49}
+.dc-onboard-brand{display:flex;align-items:center;gap:12px;font-weight:750;font-size:17px;letter-spacing:-.35px}
+.dc-onboard-brand>span{display:grid;place-items:center;width:38px;height:38px;border-radius:11px;background:#293c55}
+.dc-onboard-brand img{width:29px;height:29px;object-fit:contain}
+.dc-onboard-main{max-width:395px}
+.dc-onboard-kicker{display:inline-flex;align-items:center;gap:7px;margin-bottom:19px;font-size:10px;font-weight:750;letter-spacing:1.5px;color:#96bdf2}
+.dc-onboard-main h1{font-size:clamp(28px,3.1vw,39px);letter-spacing:-1.15px;line-height:1.16;font-weight:750;max-width:360px;margin:0}
+.dc-onboard-main>p{font-size:13px;line-height:1.75;color:#aebac9;max-width:340px;margin:18px 0 28px}
+.dc-onboard-timeline{display:flex;flex-direction:column;gap:17px}
+.dc-onboard-timeline-item{display:flex;gap:13px;align-items:center;color:#8290a1}
+.dc-onboard-timeline-item>span{flex:0 0 30px;height:30px;display:grid;place-items:center;border-radius:50%;border:1px solid #566070;color:#9da9ba;font-size:12px;font-weight:750}
+.dc-onboard-timeline-item>div{display:flex;flex-direction:column;gap:3px}
+.dc-onboard-timeline-item strong{font-size:12px;color:#a8b3c3;font-weight:700}
+.dc-onboard-timeline-item small{font-size:11px;color:#8492a3;line-height:1.45}
+.dc-onboard-timeline-item.is-active>span{background:#347ade;border-color:#347ade;color:white}
+.dc-onboard-timeline-item.is-active strong{color:#eef5ff}
+.dc-onboard-timeline-item.is-done>span{border-color:#3f756b;background:#2b4944;color:#9ce7d3}
+.dc-onboard-timeline-item.is-done strong{color:#c7d8d8}
+.dc-onboard-trust{display:flex;align-items:center;gap:8px;color:#8496a9;font-size:11px;line-height:1.6}
+.dc-onboard-trust svg{flex-shrink:0;color:#8fcaac}
+.dc-onboard-action{padding:39px 42px 31px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.dc-onboard-title small{font-size:10px;letter-spacing:1.3px;font-weight:750;color:#82b6f4}
+.dc-onboard-title h2{font-size:25px;letter-spacing:-.6px;color:#f0f3f8;font-weight:750;margin:11px 0 7px}
+.dc-onboard-title p{font-size:12px;color:#aab5c2;line-height:1.7;margin:0;max-width:440px}
+.dc-ob-telegram-panel.telegram-panel{max-width:none;width:100%;border:0;background:transparent;border-radius:0;box-shadow:none;padding:0;margin:19px 0 0}
+.dc-ob-telegram-panel .telegram-header{display:none}
+.dc-ob-telegram-panel .tg-api-setup{max-width:100%;margin:0;gap:11px}
+.dc-ob-telegram-panel .tg-api-alert{background:#292e35;padding:14px}
+.dc-ob-telegram-panel .tg-api-alert p{line-height:1.55}
+.dc-ob-telegram-panel .tg-api-form{max-width:100%}
+.dc-ob-telegram-panel .tg-api-form input{background:#191e25;border-color:#3c4755}
+.dc-ob-telegram-panel .tg-api-form input:focus{border-color:#4689ee}
+.dc-ob-telegram-panel .tg-api-form>button{background:#3178df;min-height:43px}
+.dc-ob-telegram-panel .tg-api-form small{line-height:1.55}
+.dc-ob-telegram-panel .tg-api-instructions{background:#292e35}
+.dc-ob-telegram-panel .tg-form{max-width:100%;margin-top:16px}
+.dc-ob-telegram-panel .tg-note{margin:4px 0 9px;color:#aeb8c7}
+.dc-ob-telegram-panel .tg-qr{margin:1px 0;background:#fff;border-radius:12px}
+.dc-ob-telegram-panel .tg-connected-card{margin:0}
+.dc-ob-telegram-panel .tg-connected-actions{display:none}
+.dc-ob-telegram-panel .tg-setup-button{width:100%;min-height:43px;margin-top:15px}
+.dc-ob-telegram-panel .tg-security-note{font-size:11px;color:#8996a8;line-height:1.6;margin-top:19px}
+.dc-onboard-loading{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;background:#15171b;color:#aebbca;font-size:12px}
+.dc-onboard-offline{background:#272d36;border-radius:10px;padding:18px;color:#cdd7e5;display:flex;flex-direction:column;gap:11px;margin:25px 0}
+.dc-onboard-offline strong{font-size:14px;color:#eef1f7}
+.dc-onboard-offline p{font-size:12px;line-height:1.6;margin:0}
+.dc-onboard-offline button{align-self:flex-start;background:#347ade;border:0;color:#fff;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer}
+@media(max-width:850px){.dc-onboard-frame{grid-template-columns:1fr;min-height:auto;max-width:620px}.dc-onboard-intro{padding:24px 27px;gap:22px;border-right:0;border-bottom:1px solid #344052}.dc-onboard-main h1{font-size:27px}.dc-onboard-main>p{margin:12px 0 19px}.dc-onboard-timeline{flex-direction:row;gap:10px;flex-wrap:wrap}.dc-onboard-timeline-item{gap:7px}.dc-onboard-timeline-item small{display:none}.dc-onboard-trust{display:none}.dc-onboard-action{padding:25px 27px 32px;justify-content:flex-start}.dc-onboard-screen{align-items:flex-start;padding:17px}}
+@media(max-width:480px){.dc-onboard-intro{padding:21px 19px}.dc-onboard-action{padding:23px 19px 28px}.dc-onboard-main h1{font-size:25px}.dc-onboard-timeline-item strong{font-size:11px}.dc-onboard-timeline-item>span{width:26px;height:26px;flex-basis:26px}.dc-onboard-title h2{font-size:22px}.dc-ob-telegram-panel .tg-api-alert{padding:11px}.dc-onboard-screen{padding:0}.dc-onboard-frame{border:0;border-radius:0;min-height:100dvh}}
+
+
+/* Channel setup failures: visible diagnosis, distinct from an expired login. */
+.tg-storage-error{display:flex;align-items:flex-start;gap:11px;margin:13px 0;padding:13px 14px;background:#332b2e;border:1px solid #76545c;border-radius:9px;color:#f4cad0}
+.tg-storage-error>svg{flex-shrink:0;color:#ec9aa7;margin-top:2px}
+.tg-storage-error>div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.tg-storage-error strong{font-size:12px;color:#ffdae0;font-weight:700}
+.tg-storage-error p{margin:0;font-size:12px;line-height:1.6;color:#f2cbd0;overflow-wrap:anywhere;user-select:text}
+.tg-storage-error small{font-size:10px;line-height:1.5;color:#c9a8af}
+.dc-onboard-channel-hint{padding:11px 12px;border-radius:8px;background:#29323e;border:1px solid #405267;color:#b8cfe5;font-size:11px;line-height:1.6;overflow-wrap:anywhere;margin:10px 0 0}
+
+/* Desktop startup failure is distinct from a Telegram logout. */
+.dc-desktop-startup{padding:32px 24px;text-align:center;gap:15px}
+.dc-desktop-startup>img{height:62px;width:62px;object-fit:contain}
+.dc-desktop-startup strong{color:#f2f5fa;font-size:18px}
+.dc-desktop-startup p{max-width:550px;color:#e0c2c4;font-size:13px;line-height:1.65;margin:0;overflow-wrap:anywhere;user-select:text}
+.dc-desktop-startup small{max-width:480px;color:#9aa9bc;font-size:11px;line-height:1.6}
+.dc-desktop-startup button{margin-top:6px;border:0;border-radius:9px;background:#347be3;color:#fff;padding:11px 19px;font-size:13px;font-weight:700;cursor:pointer}
+
+
+/* Explicit missing-channel recovery: visible, safe, consistent with onboarding. */
+.tg-channel-recovery{display:flex;flex-direction:column;gap:12px;margin:12px 0 16px;padding:16px;background:#25303b;border:1px solid #41556a;border-radius:11px}
+.tg-channel-recovery-heading{display:flex;align-items:center;gap:9px;color:#c7dffa}
+.tg-channel-recovery-heading strong{font-size:13px;color:#f1f5fa}
+.tg-channel-recovery>p{margin:0;font-size:12px;color:#b7c7d8;line-height:1.65}
+.tg-channel-recovery>p strong{color:#f0e5db}
+.tg-recovery-candidates{display:flex;flex-direction:column;gap:7px;padding:12px;border-radius:9px;background:#1e2833}
+.tg-recovery-candidates label{font-size:12px;font-weight:650;color:#e3e9f1}
+.tg-recovery-candidates select{width:100%;min-height:38px;background:#171e28;border:1px solid #4a5d72;border-radius:7px;color:#f0f3f8;padding:7px 10px}
+.tg-recovery-candidates small{color:#a0aec1;font-size:11px;line-height:1.5}
+.tg-recovery-confirm{display:flex;gap:11px;align-items:flex-start;padding:10px 0;font-size:11px;color:#d2e0ee;line-height:1.6;cursor:pointer}
+.tg-recovery-confirm input{accent-color:#387cdb;width:16px;height:16px;flex-shrink:0;margin-top:2px;cursor:pointer}
+.tg-recovery-failure{color:#ffcbd0!important;font-size:12px!important;overflow-wrap:anywhere}
+.tg-channel-recovery .tg-setup-button{margin-top:3px}
+.tg-channel-recovery .tg-setup-button:disabled{opacity:.48;cursor:not-allowed}
+
+
+/* Clarify that public internet sharing requires a separate secure service. */
+.dc-share-unavailable{display:flex;align-items:flex-start;gap:11px;margin:11px 0 16px;padding:15px;border-radius:10px;background:#29313d;border:1px solid #435169;color:#c8d4e2}
+.dc-share-unavailable>svg{flex:0 0 auto;color:#9dbbe7;margin-top:1px}
+.dc-share-unavailable>div{display:flex;flex-direction:column;gap:8px;min-width:0}
+.dc-share-unavailable strong{color:#eef3fb;font-size:13px}
+.dc-share-unavailable p{color:#bac6d8;font-size:12px;line-height:1.7;margin:0}
+.dc-share-unavailable small{color:#9cacc1;font-size:11px;line-height:1.6}
+.dc-share-unavailable code{color:#d6e6ff;overflow-wrap:anywhere}
+.dc-native-drop-progress{display:flex;align-items:center;gap:10px;margin:0 0 15px;padding:11px 14px;border:1px solid #42546a;border-radius:9px;background:#243346;color:#dceafa;font-size:12px}
+.dc-native-drop-progress .dc-spin{animation:dc-spin 1.2s linear infinite}
+@keyframes dc-spin{to{transform:rotate(360deg)}}
+
+
+/* Folder sync dropdowns: Tauri/GTK native selects used light system menus
+   with pale foreground text. Use the app's own high-contrast menu consistently
+   across Linux, Windows and browser. */
+.dc-remote-root-selection{max-width:600px;gap:8px}
+.dc-remote-root-selection>strong{font-size:12px;font-weight:650;color:#e8edf5}
+.dc-remote-root-selection>.dc-menu-select{width:100%;min-width:0}
+.dc-remote-root-selection .dc-menu-select-trigger{
+  display:flex;min-height:41px;background:#303841;color:#f0f3f9;
+  border:1px solid #4e5c6d;padding:0 12px;opacity:1
+}
+.dc-remote-root-selection .dc-menu-select-trigger:hover:not(:disabled){background:#384653}
+.dc-sync-mode{display:flex;align-items:center;gap:8px;min-width:0}
+.dc-sync-mode>span{color:#c6d0df;font-size:11px;flex-shrink:0}
+.dc-sync-mode .dc-menu-select{min-width:230px;max-width:280px}
+.dc-folder-sync-actions .dc-sync-mode .dc-menu-select-trigger{
+  display:flex;width:100%;min-height:38px;background:#303841;color:#edf3fa;
+  border:1px solid #4e5c6d;padding:0 10px;font-size:11px;
+  font-weight:650;white-space:nowrap;opacity:1
+}
+.dc-folder-sync-actions .dc-sync-mode .dc-menu-select-trigger:hover:not(:disabled){background:#384653}
+.dc-folder-sync-actions .dc-sync-mode .dc-menu-select-trigger:disabled,
+.dc-remote-root-selection .dc-menu-select-trigger:disabled{opacity:.58;cursor:not-allowed}
+.dc-folder-sync-actions .dc-sync-mode .dc-menu-select-trigger>.dc-menu-select-caption{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left
+}
+.dc-select-portal .dc-menu-select-option{color:#f2f5fb;background:transparent}
+.dc-select-portal .dc-menu-select-option:hover:not(:disabled){background:#43516b}
+.dc-select-portal .dc-menu-select-option.selected{background:#344b69}
+@media(max-width:650px){
+ .dc-folder-sync-actions .dc-sync-mode{flex:1 1 100%;width:100%}
+ .dc-folder-sync-actions .dc-sync-mode .dc-menu-select{width:100%;max-width:none}
+}
+
+
+/* Google Drive-style mapping between a local folder and a real Drive folder. */
+.dc-folder-connection{display:grid;grid-template-columns:minmax(0,1fr) 64px minmax(0,1fr);align-items:stretch;gap:12px;margin-top:6px}
+.dc-sync-local-side,.dc-sync-drive-side{display:flex;flex-direction:column;gap:11px;padding:15px;border:1px solid #424750;border-radius:11px;background:#282b31;min-width:0}
+.dc-sync-side-heading{display:flex;align-items:center;gap:9px;color:#aacaf5}
+.dc-sync-side-heading strong{font-size:12px;color:#ecf1f8}
+.dc-sync-link-line{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#83aff1;font-size:10px;font-weight:700}
+.dc-sync-local-side .dc-folder-path-row{align-items:stretch}
+.dc-sync-local-side .dc-folder-path-row input{flex-basis:100%;min-width:0}
+.dc-sync-local-side .dc-folder-path-row button{flex:1 1 auto}
+.dc-sync-drive-side>.dc-menu-select{min-width:0;width:100%}
+.dc-sync-drive-side .dc-menu-select-trigger{width:100%;min-height:39px;background:#343b47;border:1px solid #566376;color:#eff4fb}
+.dc-sync-drive-side>small{font-size:11px;line-height:1.55;color:#aebbd0}
+.dc-new-remote-folder-name{display:flex;flex-direction:column;gap:7px;font-size:11px;color:#c5d3e5}
+.dc-new-remote-folder-name>input{width:100%;min-height:39px;background:#1c2028;border:1px solid #525d6b;border-radius:8px;color:#f0f5fd;padding:9px 11px;outline:none;font-size:12px}
+.dc-new-remote-folder-name>input:focus{border-color:#528ddd}
+.dc-sync-setup-options{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px;margin:5px 0}
+.dc-sync-setup-mode{display:flex;flex-direction:column;gap:7px;flex:0 1 300px;font-size:12px;font-weight:650;color:#e3e9f1}
+.dc-sync-setup-mode .dc-menu-select{width:100%}
+.dc-sync-setup-mode .dc-menu-select-trigger{width:100%;background:#353c46;border:1px solid #515e70}
+.dc-sync-auto-label{display:flex;align-items:center;gap:8px;min-height:39px;color:#d0dceb;font-size:11px}
+.dc-sync-auto-label input{accent-color:#4787e9}
+.dc-sync-mapped-destination{color:#aacdfb!important;font-weight:650}
+.dc-sync-mapped-destination.is-missing{color:#f3aeb6!important}
+@media(max-width:860px){.dc-folder-connection{grid-template-columns:1fr}.dc-sync-link-line{flex-direction:row}.dc-sync-local-side .dc-folder-path-row input{flex-basis:210px}}
+@media(max-width:500px){.dc-sync-setup-mode{flex:1 1 100%}.dc-sync-auto-label{min-height:auto}}
+
+/* Optional public sharing configuration wizard. */
+.dc-public-setup{gap:14px}
+.dc-public-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.dc-public-steps span{font-size:11px;padding:9px 10px;background:#282b32;border:1px solid #41454f;border-radius:8px;color:#a9b2c0}
+.dc-public-steps span.current{border-color:#4a89ed;color:#f2f6ff;background:#263750}
+.dc-public-steps span.done{color:#a1d6bd}
+.dc-public-stage{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:18px;background:#24272d;border:1px solid #424750;border-radius:12px}
+.dc-public-stage>strong{font-size:14px;color:#f4f5f8}
+.dc-public-stage p{margin:0;font-size:12px;line-height:1.6;color:#cbd2df}
+.dc-public-stage a{color:#96bcfb;font-size:12px}
+.dc-public-stage .dc-new-remote-folder-name{width:min(100%,430px)}
+.dc-public-stage small{color:#aab4c4}
+.dc-public-check{display:flex;align-items:center;gap:9px;font-size:12px;color:#e1e8f4}
+.dc-public-check input{accent-color:#4a88ee}
+.dc-public-good{display:flex;gap:8px;align-items:center;color:#98d8b4!important}
+.dc-public-progress{width:100%;height:8px;background:#343842;border-radius:20px;overflow:hidden}
+.dc-public-progress>span{display:block;height:100%;background:#4588ee;transition:width .2s}
+.dc-public-controls{display:flex;justify-content:space-between;gap:12px}
+.dc-public-controls>button:not(.dc-module-primary),.dc-public-stage>button:not(.dc-module-primary){padding:8px 13px;border:1px solid #565d69;background:#30353e;border-radius:8px;color:#e4e9f2}
+.dc-public-controls button:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:720px){.dc-public-steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Keep configured folders visible while Telegram is uploading. */
+.dc-sync-running-indicator{display:inline-flex;align-items:center;gap:6px;color:#9ec7ff;font-weight:650}
+.dc-sync-spinning{animation:dc-sync-rotation 1.25s linear infinite;flex-shrink:0}
+@keyframes dc-sync-rotation{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.dc-sync-spinning{animation:none}}

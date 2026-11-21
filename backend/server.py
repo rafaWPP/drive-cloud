@@ -5,9 +5,14 @@ import io
 import json
 import os
 import re
+import sqlite3
+import time
 from pathlib import Path
-from telethon.tl.functions.channels import CreateChannelRequest
-from telethon.tl.types import Channel
+from telethon.tl.functions.channels import CreateChannelRequest, EditPhotoRequest
+from telethon.tl.types import Channel, InputChatUploadedPhoto, ChatPhotoEmpty
+from channel_brand import channel_avatar_jpeg
+from storage_recovery import archive_channel_metadata, existing_catalog_counts
+from typing import Literal
 
 import qrcode
 from dotenv import load_dotenv
@@ -25,12 +30,16 @@ try:
 except OSError:
     pass
 
+# Load credentials saved by the installed application before initializing Telethon.
+# Values in the app-specific data directory take precedence over the developer .env.
+load_dotenv(DATA / ".env", override=True)
+
 API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
 API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
 app = FastAPI(title="Drive Cloud - Telegram local", docs_url=None, redoc_url=None)
 ALLOWED = {"http://127.0.0.1:5173", "http://localhost:5173", "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
 app.add_middleware(CORSMiddleware, allow_origins=list(ALLOWED), allow_credentials=False,
-                   allow_methods=["GET", "HEAD", "POST", "PATCH", "DELETE"], allow_headers=["Content-Type", "Range"],
+                   allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Content-Type", "Range"],
                    expose_headers=["Content-Length", "Content-Range", "Accept-Ranges", "Content-Disposition"])
 client = None
 phone_pending = None
@@ -65,6 +74,12 @@ async def local_only(request: Request, call_next):
             raise HTTPException(status_code=403, detail="Origem não autorizada")
     return await call_next(request)
 
+@app.get("/api/health")
+async def health():
+    """Fast local readiness probe, independent of Telegram network/login."""
+    return {"ready": True}
+
+
 def configured():
     if not API_ID or not API_HASH:
         raise HTTPException(status_code=422, detail="Configure TELEGRAM_API_ID e TELEGRAM_API_HASH em backend/.env")
@@ -78,9 +93,88 @@ async def connected_client():
         await client.connect()
     return client
 
+async def release_failed_session_client():
+    """Release any SQLite handle left by a failed Telethon status check.
+
+    This never calls log_out() or deletes the .session file. If a legacy
+    backend process is still using the database, the next status request
+    remains blocked until that process exits; do not try to kill it here.
+    """
+    global client
+    failed = client
+    client = None
+    if failed is None:
+        return
+    try:
+        await failed.disconnect()
+    except Exception:
+        pass
+    # Telethon's SQLiteSession.close() is safe to call a second time after
+    # disconnect and avoids keeping an opened DB connection on an error path.
+    try:
+        session = getattr(failed, "session", None)
+        if session is not None:
+            session.close()
+    except Exception:
+        pass
+
+
 def response_user(user):
     return {"connected": True, "name": " ".join(filter(None, [user.first_name, user.last_name])),
             "username": user.username, "id": user.id}
+
+def safe_session_status_error(exc):
+    """Diagnose known SQLite failures without disclosing session database data.
+
+    A local SQLite failure is not evidence that the user logged out.
+    Never delete/rebuild the Telethon session as an automatic fix.
+    """
+    if isinstance(exc, sqlite3.Error):
+        message = str(exc).lower()
+        if "locked" in message or "busy" in message:
+            return {
+                "code": "SESSION_DATABASE_BUSY",
+                "error": "O banco de sessão Telegram está bloqueado (SESSION_DATABASE_BUSY), possivelmente por outra instância. "
+                         "Feche todas as janelas do Drive Cloud e verifique se ficou algum "
+                         "processo drive-cloud-backend em execução. Encerre apenas o "
+                         "processo antigo, depois abra o aplicativo novamente. "
+                         "Nunca exclua o arquivo telegram.session.",
+            }
+        if any(word in message for word in ("readonly", "read-only", "permission denied")):
+            return {
+                "code": "SESSION_READ_ONLY",
+                "error": "O banco de sessão Telegram está sem permissão de escrita (SESSION_READ_ONLY). "
+                         "Verifique as permissões da pasta de dados do Drive Cloud. "
+                         "Não exclua o arquivo de sessão.",
+            }
+        if any(word in message for word in ("disk i/o", "disk is full", "database or disk is full",
+                                            "unable to open database file", "no space left")):
+            return {
+                "code": "SESSION_STORAGE_ERROR",
+                "error": "Falha de leitura/gravação ou espaço no disco do banco Telegram (SESSION_STORAGE_ERROR). "
+                         "Verifique o espaço livre e a pasta de dados. A sessão não foi apagada.",
+            }
+        if any(word in message for word in ("malformed", "not a database", "database disk image")):
+            return {
+                "code": "SESSION_INTEGRITY_ERROR",
+                "error": "O banco de sessão Telegram apresenta problema de integridade "
+                         "(SESSION_INTEGRITY_ERROR). Preserve o arquivo original e faça uma cópia "
+                         "antes de qualquer tentativa de recuperação.",
+            }
+        return {
+            "code": "SESSION_SQLITE_ERROR",
+            "error": "Não foi possível acessar o banco local da sessão Telegram "
+                     "(SESSION_SQLITE_ERROR: " + type(exc).__name__ + "). "
+                     "Os arquivos não foram alterados.",
+        }
+    return {
+        "code": "TELEGRAM_CHECK_ERROR",
+        "error": "Falha temporária ao verificar a sessão Telegram ("
+                 + type(exc).__name__ + "). "
+                 "Não significa que a conta foi desconectada. "
+                 "Verifique a conexão e tente novamente.",
+    }
+
 
 @app.get("/api/telegram/status")
 async def status():
@@ -92,8 +186,15 @@ async def status():
             if await c.is_user_authorized():
                 return {"configured": True, **response_user(await c.get_me())}
             return {"connected": False, "configured": True}
-        except Exception:
-            return {"connected": False, "configured": True, "error": "Não foi possível consultar o Telegram"}
+        except sqlite3.Error as exc:
+            # A failed local DB connection must not be held indefinitely by
+            # this backend. Another (legacy) process may still own the lock.
+            diagnostic = safe_session_status_error(exc)
+            await release_failed_session_client()
+            return {"connected": False, "configured": True, **diagnostic}
+        except Exception as exc:
+            # Never present an unverified session as a logout.
+            return {"connected": False, "configured": True, **safe_session_status_error(exc)}
 
 
 @app.post("/api/telegram/credentials")
@@ -112,7 +213,7 @@ async def save_credentials(payload: CredentialsIn):
         config_path = DATA / ".env"
         temp_path = DATA / ".env.tmp"
         try:
-            with temp_path.open("x", encoding="utf-8") as stream:
+            with temp_path.open("w", encoding="utf-8") as stream:
                 os.chmod(temp_path, 0o600)
                 stream.write(f"TELEGRAM_API_ID={payload.api_id}\\nTELEGRAM_API_HASH={new_hash}\\n".replace("\\n", "\n"))
                 stream.flush()
@@ -223,20 +324,114 @@ def channel_info(channel, created=False):
     return {"ready": True, "channel_id": str(channel.id),
             "title": channel.title, "created": created}
 
+async def assign_drive_channel_logo(client, channel):
+    """Brand an unpictured channel without replacing a user's chosen avatar.
+
+    Channel creation has already been persisted before calling this method.
+    If Telegram rejects a photo update, channel storage remains usable.
+    """
+    if not getattr(channel, "creator", False):
+        return False
+    current_photo = getattr(channel, "photo", None)
+    if current_photo is not None and not isinstance(current_photo, ChatPhotoEmpty):
+        return False
+    try:
+        photo_bytes = io.BytesIO(channel_avatar_jpeg())
+        photo_bytes.name = "drive-cloud-channel.jpg"
+        uploaded = await client.upload_file(photo_bytes)
+        await client(EditPhotoRequest(
+            channel=channel, photo=InputChatUploadedPhoto(file=uploaded)
+        ))
+        return True
+    except Exception:
+        # Branding is cosmetic: never block account setup or create another channel.
+        return False
+
+
+def channel_has_public_username(channel):
+    """A Telegram channel with an active public username cannot be a private
+    Drive Cloud storage destination, even if its visible title matches.
+    """
+    if getattr(channel, "username", None):
+        return True
+    return any(
+        getattr(entry, "active", False) and getattr(entry, "username", None)
+        for entry in (getattr(channel, "usernames", None) or [])
+    )
+
+
+async def locate_storage_channels(client, linked_id=None):
+    """Resolve an existing private channel from dialogs even when Telethon's
+    in-memory entity cache is empty after restart.
+
+    With a recorded ID we *never* fall back to some other same-named channel:
+    a missing ID is an explicit error, not permission to create another one.
+    """
+    matches = []
+    async for dialog in client.iter_dialogs():
+        entity = dialog.entity
+        if not isinstance(entity, Channel) or not entity.broadcast:
+            continue
+        if linked_id is not None:
+            if entity.id == linked_id:
+                return [entity]
+        elif entity.creator and entity.title == CHANNEL_TITLE:
+            if channel_has_public_username(entity):
+                raise HTTPException(409, detail="Já existe um canal Drive Cloud Storage público na sua conta. "
+                                                "Por segurança, não vamos usá-lo nem criar outro automaticamente.")
+            matches.append(entity)
+    return [] if linked_id is not None else matches
+
+
+async def linked_storage_channel(client, entry):
+    try:
+        recorded_id = int(entry["channel_id"])
+    except (ValueError, TypeError, KeyError) as exc:
+        raise HTTPException(409, detail="O vínculo salvo do canal é inválido. Seus dados foram preservados; o Drive Cloud não criará outro canal.") from exc
+    if recorded_id <= 0:
+        raise HTTPException(409, detail="O identificador do canal salvo é inválido. Nenhum outro canal será criado.")
+    entity = None
+    try:
+        entity = await client.get_entity(recorded_id)
+    except errors.FloodWaitError:
+        raise
+    except (ValueError, TypeError, errors.RPCError):
+        # Missing access hash in the Telethon cache is common after restarting
+        # a desktop sidecar. Listing dialogs rehydrates the input entity.
+        matches = await locate_storage_channels(client, linked_id=recorded_id)
+        entity = matches[0] if matches else None
+    if not isinstance(entity, Channel) or not entity.broadcast or entity.id != recorded_id:
+        raise HTTPException(
+            409, detail="O canal privado já está vinculado, mas não foi encontrado na conta Telegram conectada. "
+                        "Confirme que é a mesma conta. Nenhum canal será criado ou excluído.",
+        )
+    if channel_has_public_username(entity):
+        raise HTTPException(409, detail="O canal vinculado tem endereço público no Telegram. "
+                                        "Para proteger seus arquivos, o Drive Cloud não o utilizará como armazenamento privado.")
+    return entity
+
+
 @app.get("/api/telegram/storage/status")
 async def storage_status():
     async with lock:
         c, user_id = await authorized_account()
         entry = channel_links().get(user_id)
         if not entry:
-            return {"ready": False, "state": "not_configured"}
+            return {"ready": False, "state": "not_configured",
+                    "detail": "Nenhum canal vinculado. A configuração inicial procurará um canal existente antes de criar."}
         try:
-            channel = await c.get_entity(int(entry["channel_id"]))
-            if not isinstance(channel, Channel) or not channel.broadcast:
-                raise ValueError("Não é um canal")
+            channel = await linked_storage_channel(c, entry)
             return channel_info(channel)
-        except (ValueError, TypeError, errors.RPCError):
-            return {"ready": False, "state": "missing", "detail": "Canal associado não está acessível. Nenhum novo canal será criado automaticamente."}
+        except HTTPException as exc:
+            return {"ready": False, "state": "missing", "detail": exc.detail}
+        except errors.FloodWaitError as exc:
+            raise HTTPException(429, detail=f"O Telegram pediu uma pausa de {exc.seconds} segundos antes de verificar o canal.") from exc
+        except (errors.RPCError, ConnectionError, TimeoutError, OSError) as exc:
+            raise HTTPException(
+                503, detail="Falha temporária ao verificar o canal no Telegram (" + type(exc).__name__ + "). "
+                            "Sua conta não foi desconectada; tente novamente.",
+            ) from exc
+
 
 @app.post("/api/telegram/storage/ensure")
 async def ensure_storage():
@@ -244,40 +439,181 @@ async def ensure_storage():
         c, user_id = await authorized_account()
         links = channel_links()
         entry = links.get(user_id)
-        if entry:
-            try:
-                entity = await c.get_entity(int(entry["channel_id"]))
-                if not isinstance(entity, Channel) or not entity.broadcast:
-                    raise ValueError("O vínculo aponta para outra entidade")
-                return channel_info(entity)
-            except (ValueError, TypeError, errors.RPCError):
-                raise HTTPException(409, detail="Seu canal já foi registrado, mas não está acessível. Verifique o Telegram; não criaremos um duplicado.")
-        # Recuperação após falha entre a criação e a gravação local: localizar
-        # um canal próprio com título e descrição específicos antes de criar.
         try:
-            matches = []
-            async for dialog in c.iter_dialogs():
-                entity = dialog.entity
-                if isinstance(entity, Channel) and entity.broadcast and entity.creator and entity.title == CHANNEL_TITLE:
-                    matches.append(entity)
+            if entry:
+                entity = await linked_storage_channel(c, entry)
+                await assign_drive_channel_logo(c, entity)
+                return channel_info(entity)
+
+            # First launch or recovery after a crash during channel creation:
+            # look for exactly one owned channel BEFORE attempting CreateChannel.
+            matches = await locate_storage_channels(c)
             if len(matches) == 1:
                 channel = matches[0]
                 links[user_id] = {"channel_id": str(channel.id)}
                 save_channel_links(links)
-                return channel_info(channel)
+                await assign_drive_channel_logo(c, channel)
+                return {**channel_info(channel), "recovered": True}
             if len(matches) > 1:
-                raise HTTPException(409, detail="Encontrados vários canais com o nome Drive Cloud Storage. Resolva a duplicidade manualmente antes de continuar.")
-            result = await c(CreateChannelRequest(title=CHANNEL_TITLE, about=CHANNEL_MARKER, broadcast=True, megagroup=False))
+                raise HTTPException(
+                    409, detail="Há vários canais próprios chamados Drive Cloud Storage. "
+                                "Para evitar duplicar seus arquivos, nenhum canal foi criado. "
+                                "Verifique os canais no Telegram e escolha qual manter.",
+                )
+
+            result = await c(CreateChannelRequest(
+                title=CHANNEL_TITLE, about=CHANNEL_MARKER, broadcast=True, megagroup=False,
+            ))
             channel = next((item for item in result.chats if isinstance(item, Channel)), None)
             if channel is None:
-                raise HTTPException(502, detail="O Telegram não retornou o canal criado.")
+                raise HTTPException(502, detail="O Telegram não confirmou o canal criado. "
+                                               "Tente novamente: o Drive Cloud procurará um canal existente primeiro.")
+            # Persist first: even if uploading a logo fails, the channel is safe.
             links[user_id] = {"channel_id": str(channel.id)}
             save_channel_links(links)
-            return channel_info(channel, created=True)
+            avatar_applied = await assign_drive_channel_logo(c, channel)
+            return {**channel_info(channel, created=True), "logo_applied": avatar_applied}
+        except HTTPException:
+            raise
         except errors.FloodWaitError as exc:
-            raise HTTPException(429, detail=f"Limite do Telegram. Tente novamente em {exc.seconds} segundos.") from exc
+            raise HTTPException(429, detail=f"Limite temporário do Telegram. Tente novamente em {exc.seconds} segundos.") from exc
         except errors.RPCError as exc:
-            raise HTTPException(502, detail="O Telegram não permitiu criar/verificar o canal: " + type(exc).__name__) from exc
+            raise HTTPException(
+                502, detail="Telegram recusou a verificação ou criação do canal (" + type(exc).__name__ + "). "
+                            "Confira sua conexão e permissões e tente novamente.",
+            ) from exc
+        except (ConnectionError, TimeoutError, OSError) as exc:
+            raise HTTPException(
+                503, detail="Conexão interrompida ao verificar o canal (" + type(exc).__name__ + "). "
+                            "Sua conta e arquivos foram preservados. Tente novamente.",
+            ) from exc
+        except Exception as exc:
+            # An internal error must have a visible, actionable classification;
+            # do not expose credentials, session bytes, phone numbers or paths.
+            raise HTTPException(
+                500, detail="Falha inesperada ao preparar o canal (" + type(exc).__name__ + "). "
+                            "Seu vínculo não foi apagado. Informe este tipo de erro ao suporte.",
+            ) from exc
+
+
+class RecoverStorageRequest(BaseModel):
+    action: Literal["create", "link"]
+    expected_channel_id: str = Field(min_length=1, max_length=32)
+    channel_id: str | None = Field(default=None, max_length=32)
+    confirmed: bool = False
+
+
+def is_missing_channel_error(error):
+    """Never allow recovery for temporary errors or a reachable public channel."""
+    return (isinstance(error, HTTPException) and error.status_code == 409
+            and isinstance(error.detail, str)
+            and error.detail.startswith("O canal privado já está vinculado, mas não foi encontrado"))
+
+
+async def missing_channel_recovery_context(client, account):
+    links = channel_links()
+    previous = links.get(account)
+    if not previous:
+        raise HTTPException(409, "Não existe vínculo anterior; use a configuração normal.")
+    try:
+        recorded = int(previous["channel_id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(409, "O vínculo anterior é inválido. Preserve o arquivo de configuração.") from exc
+    if recorded <= 0:
+        raise HTTPException(409, "O vínculo anterior possui identificador inválido.")
+    try:
+        await linked_storage_channel(client, previous)
+    except HTTPException as exc:
+        if not is_missing_channel_error(exc):
+            raise
+    else:
+        raise HTTPException(409, "O canal antigo está acessível novamente. Nenhuma substituição foi feita.")
+
+    # Do not create a duplicate if a user-owned, same-name private channel
+    # is discoverable after a previous interrupted Telegram creation.
+    matches = await locate_storage_channels(client)
+    with connection() as db:
+        counts = existing_catalog_counts(db, account)
+    return links, previous, str(recorded), matches, counts
+
+
+@app.get("/api/telegram/storage/recovery/options")
+async def recovery_options():
+    async with lock:
+        client, account = await authorized_account()
+        links, old_entry, old_id, channels, counts = await missing_channel_recovery_context(client, account)
+        return {
+            "eligible": True, "expected_channel_id": old_id,
+            "candidates": [
+                {"channel_id": str(channel.id), "title": channel.title}
+                for channel in channels[:20]
+            ],
+            "too_many_candidates": len(channels) > 20,
+            **counts,
+            "message": "O canal antigo não está disponível nesta conta. Criar outro canal "
+                       "não restaura as mensagens ou arquivos excluídos do Telegram. "
+                       "O catálogo local anterior será arquivado sem excluir registros."
+        }
+
+
+@app.post("/api/telegram/storage/recovery")
+async def recover_storage(body: RecoverStorageRequest):
+    if not body.confirmed:
+        raise HTTPException(422, "Confirme que compreende que o novo canal não restaura arquivos excluídos.")
+    async with lock:
+        client, account = await authorized_account()
+        links, previous, old_id, candidates, counts = await missing_channel_recovery_context(client, account)
+        if body.expected_channel_id != old_id:
+            raise HTTPException(409, "O canal vinculado mudou durante a recuperação. Atualize as opções.")
+        if body.action == "create":
+            if candidates:
+                raise HTTPException(
+                    409, "Já existe outro canal privado Drive Cloud Storage na conta. "
+                         "Selecione-o para evitar duplicação, ou revise a conta Telegram."
+                )
+            try:
+                result = await client(CreateChannelRequest(
+                    title=CHANNEL_TITLE, about=CHANNEL_MARKER,
+                    broadcast=True, megagroup=False,
+                ))
+            except errors.FloodWaitError as exc:
+                raise HTTPException(429, f"Telegram pediu uma pausa de {exc.seconds} segundos.") from exc
+            except errors.RPCError as exc:
+                raise HTTPException(502, "Telegram não permitiu criar o canal (" + type(exc).__name__ + ").") from exc
+            channel = next((item for item in result.chats if isinstance(item, Channel)), None)
+            if not channel or not channel.broadcast or channel_has_public_username(channel):
+                raise HTTPException(502, "O Telegram não confirmou a criação de um canal privado.")
+            created = True
+        else:
+            wanted = body.channel_id
+            channel = next((c for c in candidates if str(c.id) == wanted), None)
+            if channel is None:
+                raise HTTPException(409, "O canal escolhido não está mais entre os canais privados encontrados.")
+            created = False
+
+        # Never reuse old message IDs against the new channel. Preserve every
+        # previous node, sync folder, backup, and share reference in a separate
+        # local archive account scope. The new channel starts with an empty view.
+        with connection() as db:
+            archive = archive_channel_metadata(db, account, old_id, str(channel.id))
+
+        updated = dict(previous)
+        updated["channel_id"] = str(channel.id)
+        history = list(updated.get("previous_channels") or [])
+        history.append({
+            "channel_id": old_id,
+            "archived_account": archive["archived_account"],
+            "created": int(time.time()),
+        })
+        updated["previous_channels"] = history
+        links[account] = updated
+        save_channel_links(links)
+        logo_applied = await assign_drive_channel_logo(client, channel)
+        return {**channel_info(channel, created=created), "recovered": True,
+                "previous_catalog_archived": archive["node_count"],
+                "previous_sync_folders_archived": archive["folder_sync_count"],
+                "logo_applied": logo_applied}
+
 
 @app.post("/api/telegram/qr/start")
 async def start_qr():
@@ -416,10 +752,20 @@ async def shutdown():
         await client.disconnect()
 
 # Rotas locais de arquivos; usam a mesma sessão, vínculo de canal e trava de conta.
+from folder_sync import build_folder_sync_router
+from resumable_upload import build_resumable_router
+from catalog_telegram import build_catalog_sync_router
 from storage_api import build_router
 from backup_api import build_backup_router, backup_scheduler
 from share_api import build_share_router
+from public_setup import router as public_setup_router
+app.include_router(public_setup_router)
 app.include_router(build_router(authorized_account, channel_links, lock))
+app.include_router(build_resumable_router(authorized_account, channel_links, lock))
+from storage_api import connection, channel_id
+app.include_router(build_catalog_sync_router(authorized_account, channel_links, lock, connection, channel_id))
+folder_sync_router, folder_sync_scheduler = build_folder_sync_router(authorized_account, channel_links, lock)
+app.include_router(folder_sync_router)
 app.include_router(build_backup_router(authorized_account, channel_links, lock))
 app.include_router(build_share_router(authorized_account, channel_links, lock))
 
@@ -428,9 +774,17 @@ async def start_catalog_backup_scheduler():
     app.state.catalog_backup_task = asyncio.create_task(
         backup_scheduler(authorized_account, channel_links, lock)
     )
+    app.state.folder_sync_task = asyncio.create_task(folder_sync_scheduler())
 
 @app.on_event("shutdown")
 async def stop_catalog_backup_scheduler():
+    folder_task = getattr(app.state, "folder_sync_task", None)
+    if folder_task:
+        folder_task.cancel()
+        try:
+            await folder_task
+        except asyncio.CancelledError:
+            pass
     task = getattr(app.state, "catalog_backup_task", None)
     if task:
         task.cancel()
