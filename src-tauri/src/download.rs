@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri_plugin_dialog::DialogExt;
 
-const MAX_DOWNLOAD_BYTES: u64 = 4 * 1024 * 1024 * 1024 - 1024 * 1024;
+const MAX_DOWNLOAD_BYTES: u64 = 7999 * 512 * 1024;
 
 fn valid_id(value: &str) -> bool {
     let raw = value.as_bytes();
