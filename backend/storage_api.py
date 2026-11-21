@@ -23,7 +23,8 @@ from pydantic import BaseModel, Field
 
 DB_PATH = (Path(os.environ["DRIVE_CLOUD_DATA_DIR"]).expanduser() if os.environ.get("DRIVE_CLOUD_DATA_DIR") else Path(__file__).resolve().parent / ".data") / "files.sqlite3"
 from telegram_limits import FREE_MAX_FILE, PREMIUM_MAX_FILE, upload_limit, readable_limit
-MAX_SIZE = PREMIUM_MAX_FILE  # Absolute request cap; account tier is checked before sending.
+from multipart_telegram import MAX_FILE_BYTES, send_document, download_document
+MAX_SIZE = MAX_FILE_BYTES  # Multipart uploads can hold up to 20 GiB.
 MAX_PREVIEW_SIZE = 20 * 1024 * 1024  # RAM-backed previews remain deliberately small.
 # Transient progress is local to the running backend process.
 UPLOAD_PROGRESS = {}
@@ -155,7 +156,7 @@ def build_router(authorized_account, channel_links, lock):
         async with lock:
             client, account = await authorized_account()
             cid = channel_id(channel_links, account)
-            max_size = await upload_limit(client)
+            max_size = MAX_FILE_BYTES
             with connection() as db:
                 parent_valid(db, account, parent)
             name = os.path.basename((file.filename or "arquivo").replace("\\", "/"))[:180]
@@ -176,16 +177,16 @@ def build_router(authorized_account, channel_links, lock):
                             break
                         total_bytes += len(chunk)
                         if total_bytes > max_size:
-                            raise HTTPException(413, "Limite desta conta Telegram: " + readable_limit(max_size) + " por arquivo.")
+                            raise HTTPException(413, "Limite inicial do Drive Cloud: 20 GB por arquivo.")
                         output.write(chunk)
                 update_upload_progress(upload_id, "telegram", 0, total_bytes)
                 def report_progress(sent, total):
                     update_upload_progress(upload_id, "telegram", sent, total)
                 try:
-                    msg = await client.send_file(
-                        cid, str(target), force_document=True,
-                        caption="Drive Cloud • arquivo", part_size_kb=512,
-                        progress_callback=report_progress
+                    msg = await send_document(
+                        client, cid, target, name,
+                        file.content_type or "application/octet-stream",
+                        progress=report_progress,
                     )
                     update_upload_progress(upload_id, "catalog", total_bytes, total_bytes)
                 except Exception as exc:
@@ -464,28 +465,14 @@ def build_router(authorized_account, channel_links, lock):
             if not row:
                 raise HTTPException(404, "Arquivo não encontrado.")
             try:
-                msg = await client.get_messages(cid, ids=row["message_id"])
-                if not msg or not msg.media:
-                    raise HTTPException(404, "Arquivo não encontrado no canal do Telegram.")
-                # Download into a private file instead of allocating hundreds
-                # of megabytes of Python RAM, then stream it to the UI.
+                # Multipart manifests point to ordered Telegram chunks.
+                # This reconstructs to private disk and verifies every SHA-256.
                 with tempfile.NamedTemporaryFile(prefix=".dc-download-", dir=str(DB_PATH.parent),
                                                  delete=False) as temporary:
                     temporary_path = Path(temporary.name)
                 os.chmod(temporary_path, 0o600)
                 try:
-                    saved = await client.download_media(msg, file=str(temporary_path))
-                    if not saved:
-                        raise HTTPException(502, "Não foi possível recuperar arquivo.")
-                    # Telethon may append the document extension to a path.
-                    received = Path(saved) if isinstance(saved, str) else temporary_path
-                    if received.parent.resolve() != DB_PATH.parent.resolve() or received.is_symlink():
-                        raise HTTPException(502, "Destino inesperado no download do Telegram.")
-                    if received != temporary_path:
-                        temporary_path.unlink(missing_ok=True)
-                        temporary_path = received
-                    if not temporary_path.is_file() or temporary_path.stat().st_size != row["size"]:
-                        raise HTTPException(502, "Tamanho do download não confere com o catálogo.")
+                    await download_document(client, cid, row["message_id"], row["size"], temporary_path)
                 except Exception:
                     temporary_path.unlink(missing_ok=True)
                     raise
