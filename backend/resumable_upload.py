@@ -18,9 +18,10 @@ from telethon.tl.types import DocumentAttributeFilename
 
 from storage_api import DB_PATH, MAX_SIZE, connection, parent_valid, channel_id, update_upload_progress
 from telegram_limits import upload_limit, readable_limit
+from multipart_telegram import send_document, MANIFEST_MARKER
 
 CHUNK_SIZE = 1024 * 1024
-MAX_STAGED_BYTES = 8 * 1024 * 1024 * 1024  # total across active staged uploads
+MAX_STAGED_BYTES = 40 * 1024 * 1024 * 1024  # total across active staged uploads
 MAX_ACTIVE_SESSIONS = 16
 STAGE_DIR = DB_PATH.parent / "resumable_staging"
 STAGE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -127,9 +128,8 @@ def build_resumable_router(authorized_account, channel_links, lock):
         async with lock:
             client, account = await authorized_account()
             channel = channel_id(channel_links, account)
-            max_size = await upload_limit(client)
-            if body.size > max_size:
-                raise HTTPException(413, "Limite desta conta Telegram: " + readable_limit(max_size) + " por arquivo.")
+            # Large files are automatically split into Telegram documents
+            # when their size exceeds this account's single-document limit.
             with connection() as db:
                 schema(db)
                 parent = str(body.parent) if body.parent is not None else None
@@ -224,7 +224,7 @@ def build_resumable_router(authorized_account, channel_links, lock):
     async def find_sent(client, channel, upload_id):
         marker = caption(upload_id)
         async for message in client.iter_messages(channel, search=marker, limit=30):
-            if message.message == marker and message.file:
+            if message.file and (message.message == marker or message.message == MANIFEST_MARKER + ":" + marker):
                 return message
         return None
 
@@ -265,7 +265,7 @@ def build_resumable_router(authorized_account, channel_links, lock):
             if row["message_id"]:
                 try:
                     known = await client.get_messages(channel, ids=row["message_id"])
-                    if known and known.message == caption(upload_id) and known.file:
+                    if known and known.file and known.message in (caption(upload_id), MANIFEST_MARKER + ":" + caption(upload_id)):
                         message = known
                 except Exception:
                     pass
@@ -294,12 +294,9 @@ def build_resumable_router(authorized_account, channel_links, lock):
             try:
                 def on_progress(sent, total):
                     update_upload_progress(str(upload_id), "telegram", sent, total)
-                message = await client.send_file(
-                    channel, str(stage_path(upload_id)), force_document=True,
-                    caption=caption(upload_id), part_size_kb=512,
-                    mime_type=row["mime"],
-                    attributes=[DocumentAttributeFilename(row["name"])],
-                    progress_callback=on_progress,
+                message = await send_document(
+                    client, channel, stage_path(upload_id), row["name"], row["mime"],
+                    tracking_caption=caption(upload_id), progress=on_progress,
                 )
             except Exception as exc:
                 update_upload_progress(str(upload_id), "uncertain")
