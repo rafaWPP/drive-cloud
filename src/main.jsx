@@ -594,6 +594,27 @@ async function discardResumable(item){
 async function request(path,options){const r=await fetch(base+path,options);if(!r.ok){let detail='Erro HTTP '+r.status;try{const e=await r.json();detail=typeof e.detail==='string'?e.detail:detail}catch{}throw Error(detail)}return r}
 async function reload(){try{const r=await request('/items');setNodes((await r.json()).items);setError('')}catch(e){setError(e.message)}finally{setLoading(false)}}
 useEffect(()=>{reload()},[]);
+// Background folder synchronization writes directly to the backend catalog.
+// Keep Meu Drive fresh without requiring a manual "Atualizar" click.
+// Poll silently to avoid repetitive toast errors if Telegram is offline.
+useEffect(()=>{
+ let active=true;
+ const update=async()=>{
+  if(document.hidden)return;
+  try{
+   const response=await fetch(base+'/items',{cache:'no-store'});
+   if(response.ok){
+    const data=await response.json();
+    if(active&&Array.isArray(data.items))setNodes(data.items);
+   }
+  }catch{}
+ };
+ const timer=setInterval(update,12000);
+ const onFocus=()=>{void update()};
+ window.addEventListener('focus',onFocus);
+ window.addEventListener('drive-cloud-catalog-updated',onFocus);
+ return()=>{active=false;clearInterval(timer);window.removeEventListener('focus',onFocus);window.removeEventListener('drive-cloud-catalog-updated',onFocus)};
+},[base]);
 useEffect(()=>{if(!loading)onInitialReady?.()},[loading,onInitialReady]);
 useEffect(()=>{if(notice){onToast?.({kind:'success',message:notice});setNotice('')}},[notice]);
 useEffect(()=>{if(error){onToast?.({kind:'error',message:error,duration:6500});setError('')}},[error]);
@@ -1174,31 +1195,41 @@ function SyncPages({section,onToast}){
    if(typeof selected==='string'){setPath(selected);setRemoteName(selected.split(/[\\/]/).filter(Boolean).at(-1)||'Minha pasta');setPreview(null)}
   }catch(e){setError('Não foi possível abrir o seletor de pastas: '+String(e))}
  }
- async function inspect(){
-  if(!path.trim())return;
-  setBusy(true);setError('');setPreview(null);
-  try{setPreview(await request('/folders/preview','POST',{path:path.trim()}))}
-  catch(e){setError(e.message)}finally{setBusy(false)}
- }
- async function register(){
-  if(!preview)return;
+ async function analyzeAndSync(){
+  const localPath=path.trim();
+  if(!localPath){setError('Escolha uma pasta do computador antes de sincronizar.');return}
   const name=(remoteName||'').trim();
-  if(!selectedRoot&&!name){setError('Informe o nome da nova pasta no Meu Drive ou escolha uma pasta existente.');return}
-  if(newMode==='two-way'&&!confirm('Vincular as duas pastas em duas direções? Arquivos existentes no Telegram poderão ser baixados para o PC. O aplicativo preservará arquivos divergentes e não apagará automaticamente arquivos. Recomenda-se começar com arquivos de teste.'))return;
-  setBusy(true);setError('');
+  if(!selectedRoot&&!name){setError('Selecione uma pasta no Meu Drive ou informe um nome para a nova pasta.');return}
+  if(newMode==='two-way'&&!confirm('Ativar sincronização em duas direções? Arquivos do Telegram podem ser baixados para o computador. Versões diferentes serão preservadas, sem exclusão automática. Recomenda-se testar primeiro com arquivos descartáveis.'))return;
+  setBusy(true);setError('');setPreview(null);setLastResult(null);
   try{
+   // Validate directory before creating any persistent pairing.
+   const checked=await request('/folders/preview','POST',{path:localPath});
    const result=await request('/folders','POST',{
-    path:preview.path,
-    remote_root_id:selectedRoot||null,
+    path:checked.path,remote_root_id:selectedRoot||null,
     remote_folder_name:selectedRoot?null:name,
     mode:newMode,automatic:autoStart
    });
-   if(result.already_exists){setError('Esta pasta do computador já está vinculada. Remova o vínculo antigo antes de alterá-lo.');return}
-   setPath('');setSelectedRoot('');setRemoteName('');setNewMode('backup');setAutoStart(false);setPreview(null);await refresh();
+   if(result.already_exists){
+    setError('Esta pasta do computador já está vinculada. Remova o vínculo antigo antes de alterá-lo.');
+    return;
+   }
+   setPath('');setSelectedRoot('');setRemoteName('');setNewMode('backup');setAutoStart(false);
+   await refresh();
+   window.dispatchEvent(new Event('drive-cloud-catalog-updated'));
    if(result.catalog_snapshot_saved===false){
-    onToast?.({kind:'info',message:'Vínculo local criado, mas o catálogo remoto não foi atualizado. Em Backups, clique em Salvar catálogo no Telegram.',duration:9000});
-   }else{
-    onToast?.({kind:'success',message:'Vínculo criado: Meu Drive / '+result.remote_path+'. '+(autoStart?'Sincronização automática ativada.':'Clique em Sincronizar agora para iniciar.'),duration:7000});
+    onToast?.({kind:'info',message:'Vínculo criado, mas o catálogo remoto não foi atualizado. Verifique Backups e salve o catálogo no Telegram.',duration:9000});
+   }
+   // Start the first batch immediately. Subsequent batches follow the
+   // optional automatic schedule, or can be started with "Sincronizar agora".
+   try{
+    const synced=await request('/folders/'+encodeURIComponent(result.id)+'/run','POST');
+    setLastResult({path:checked.path,...synced});
+    await refresh();
+    window.dispatchEvent(new Event('drive-cloud-catalog-updated'));
+    onToast?.({kind:'success',message:'Pastas vinculadas. '+synced.sent+' arquivo(s) enviado(s) no primeiro ciclo.'+(synced.remaining_estimate?' Ainda restam arquivos para os próximos ciclos.':'')+(autoStart?' Sincronização automática ativada.':''),duration:8000});
+   }catch(syncError){
+    setError('O vínculo foi salvo, mas a primeira sincronização falhou: '+syncError.message+'. Use "Sincronizar agora" nas pastas configuradas.');
    }
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
@@ -1211,6 +1242,7 @@ function SyncPages({section,onToast}){
    setLastResult({path:folder.path,...response});
    onToast?.({kind:'success',message:response.sent+' arquivo(s) enviados'+(response.remote?', '+response.remote.downloaded+' recuperados e '+response.remote.conflicts+' conflitos preservados':'')+'. '+(response.remaining_estimate?'Execute novamente para continuar.':'')+(response.sent&&!response.catalog_snapshot_saved?' Atenção: catálogo remoto não foi atualizado; tente salvar em Backups.':'')});
    await refresh();
+   window.dispatchEvent(new Event('drive-cloud-catalog-updated'));
   }catch(e){setError(e.message)}finally{setRunning(null)}
  }
  async function updateCatalog(){
@@ -1218,6 +1250,7 @@ function SyncPages({section,onToast}){
   try{
    const result=await request('/catalog/refresh','POST');
    await refresh();
+   window.dispatchEvent(new Event('drive-cloud-catalog-updated'));
    onToast?.({kind:'success',message:result.items_added+' registros recuperados do catálogo Telegram. '+(result.metadata_differences_preserved?'Mudanças divergentes foram preservadas localmente.':'')});
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
@@ -1268,7 +1301,7 @@ function SyncPages({section,onToast}){
    <div className="dc-folder-connection">
     <div className="dc-sync-local-side">
      <div className="dc-sync-side-heading"><HardDrive size={17}/><strong>1. Pasta do computador</strong></div>
-     <div className="dc-folder-path-row"><input aria-label="Pasta do computador" value={path} onChange={e=>{const value=e.target.value;setPath(value);setRemoteName(value.split(/[\\/]/).filter(Boolean).at(-1)||'');setPreview(null)}} placeholder="Escolha uma pasta do PC"/><button type="button" disabled={busy} onClick={browseFolder}><Folder size={15}/> Procurar</button><button type="button" disabled={busy||!path.trim()} onClick={inspect}>Analisar</button></div>
+     <div className="dc-folder-path-row"><input aria-label="Pasta do computador" value={path} onChange={e=>{const value=e.target.value;setPath(value);setRemoteName(value.split(/[\\/]/).filter(Boolean).at(-1)||'');setPreview(null)}} placeholder="Escolha uma pasta do PC"/><button type="button" disabled={busy} onClick={browseFolder}><Folder size={15}/> Procurar</button></div>
     </div>
     <div className="dc-sync-link-line"><RefreshCw size={18}/><span>Vincular</span></div>
     <div className="dc-sync-drive-side">
@@ -1285,6 +1318,7 @@ function SyncPages({section,onToast}){
      <small>Você pode escolher qualquer pasta existente, inclusive subpastas. Isso não cria outro canal no Telegram.</small>
     </div>
    </div>
+   <button type="button" className="dc-module-primary" disabled={busy||!!running||!path.trim()||(!selectedRoot&&!remoteName.trim())} onClick={analyzeAndSync}><RefreshCw size={16}/> {busy?'Analisando e sincronizando...':'Analisar e sincronizar'}</button>
    <button type="button" className="dc-sync-refresh" disabled={busy||!!running} onClick={updateCatalog}><RefreshCw size={15}/> Atualizar pastas do Drive (outros computadores)</button>
    <div className="dc-sync-setup-options"><label className="dc-sync-setup-mode">3. Como sincronizar?
     <DriveMenuSelect label="Como sincronizar" value={newMode} onChange={setNewMode} disabled={busy} icon={RefreshCw}
@@ -1293,7 +1327,6 @@ function SyncPages({section,onToast}){
    </label>
    <label className="dc-sync-auto-label"><input type="checkbox" checked={autoStart} disabled={busy} onChange={e=>setAutoStart(e.target.checked)}/> Sincronizar automaticamente a cada 2 minutos</label>
    </div>
-   {preview&&<div className="dc-folder-preview"><strong>{preview.files} arquivo(s) na pasta do PC • {size(preview.bytes)}</strong><small>{preview.over_limit?preview.over_limit+' arquivo(s) acima de 512 MB serão ignorados.':'Nenhum arquivo acima de 512 MB.'} Arquivos existentes na pasta do Drive serão preservados; o sistema não apaga automaticamente arquivos.</small><button className="dc-module-primary" disabled={busy||(!selectedRoot&&!remoteName.trim())} onClick={register}><RefreshCw size={16}/> Vincular pastas</button></div>}
   </div>}
   <div className="dc-module-section"><h3>{section==='devices'?'Pastas neste dispositivo':section==='syncActivity'?'Atividade de backup':'Pastas configuradas'}</h3><p>O Drive Cloud envia e recupera até três arquivos por execução; no modo duas direções, consulta os snapshots do catálogo e preserva arquivos divergentes com nomes diferentes. O monitoramento automático roda a cada dois minutos quando ativado.</p>
    <div className="dc-folder-sync-list">{folders.length?folders.map(folder=><div className="dc-folder-sync-item" key={folder.id}><div className="dc-folder-sync-title"><Folder size={19}/><div><strong>{folder.path.split(/[\\/]/).filter(Boolean).at(-1)||folder.path}</strong><small title={folder.path}>PC: {folder.path}</small><small className={'dc-sync-mapped-destination'+(!folder.remote_available?' is-missing':'')} title={folder.remote_path}>Meu Drive: {folder.remote_path}</small></div></div>
