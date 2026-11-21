@@ -72,7 +72,7 @@ fn save_stream(origin: &str, file_id: &str, expected_size: u64, destination: &Pa
         let client = reqwest::blocking::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy() // Local file bytes must never pass through an HTTP proxy.
-            .timeout(Duration::from_secs(60 * 60 * 2))
+            .timeout(Duration::from_secs(12 * 60 * 60))
             .build()
             .map_err(|_| "Não foi possível preparar o download.".to_string())?;
         // origin comes exclusively from the running Tauri backend state.
