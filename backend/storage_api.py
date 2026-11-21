@@ -113,7 +113,7 @@ def build_router(authorized_account, channel_links, lock):
         async with lock:
             client, account = await authorized_account()
             channel_id(channel_links, account)
-            max_size = await upload_limit(client)
+            max_size = MAX_FILE_BYTES
             with connection() as db:
                 rows = db.execute("SELECT * FROM nodes WHERE account=? ORDER BY kind DESC, name COLLATE NOCASE",
                                   (account,)).fetchall()
