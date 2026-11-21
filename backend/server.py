@@ -758,6 +758,8 @@ from catalog_telegram import build_catalog_sync_router
 from storage_api import build_router
 from backup_api import build_backup_router, backup_scheduler
 from share_api import build_share_router
+from public_setup import router as public_setup_router
+app.include_router(public_setup_router)
 app.include_router(build_router(authorized_account, channel_links, lock))
 app.include_router(build_resumable_router(authorized_account, channel_links, lock))
 from storage_api import connection, channel_id
