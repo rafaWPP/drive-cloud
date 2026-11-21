@@ -11,7 +11,7 @@ import {openUrl} from '@tauri-apps/plugin-opener';
 import {open as openNativeDialog} from '@tauri-apps/plugin-dialog';
 let backendOrigin='http://127.0.0.1:8000';
 const uid=()=>crypto.randomUUID();
-const MAX_FILE_BYTES = 4*1024*1024*1024-1024*1024; // Absolute cap; backend checks Telegram Free/Premium.
+const MAX_FILE_BYTES = 7999*512*1024; // Absolute cap; backend checks Telegram Free/Premium.
 const size=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';
 const date=n=>new Date(n).toLocaleDateString('pt-BR');
 function IconFile({item,large=false}){const n=large?56:26;if(item.kind==='folder')return <Folder size={n} fill="#8db8fc" color="#a8cbff" strokeWidth={1.4}/>;if(item.type?.startsWith('image/'))return <Image size={n} color="#c3a4ff"/>;if(item.type?.startsWith('video/'))return <Video size={n} color="#70caa8"/>;if(/zip|tar|gz|rar/i.test(item.name))return <FileArchive size={n} color="#e5bd78"/>;if(item.name.toLowerCase().endsWith('.pdf'))return <FileText size={n} color="#fa929e"/>;return <File size={n} color="#b8b8ce"/>}
