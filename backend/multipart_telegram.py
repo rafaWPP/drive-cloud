@@ -37,7 +37,7 @@ def digest_file(path):
     return value.hexdigest()
 
 
-async def send_document(client, channel, path, name, mime, *, progress=None):
+async def send_document(client, channel, path, name, mime, *, progress=None, tracking_caption=None):
     """Upload a source file; multipart above Telegram's per-document limit."""
     source = Path(path)
     st = source.stat()
@@ -50,7 +50,7 @@ async def send_document(client, channel, path, name, mime, *, progress=None):
             part_size_kb=512, mime_type=mime,
             attributes=[DocumentAttributeFilename(name)],
             progress_callback=progress,
-            caption="Drive Cloud • arquivo",
+            caption=tracking_caption or "Drive Cloud • arquivo",
         )
         return message
     count = math.ceil(st.st_size / PART_BYTES)
@@ -102,7 +102,7 @@ async def send_document(client, channel, path, name, mime, *, progress=None):
         raise HTTPException(413, "Manifesto maior que o limite suportado.")
     data = io.BytesIO(raw)
     data.name = "drive-cloud-multipart-" + upload_id + ".json"
-    marker = await client.send_file(channel, data, caption=MANIFEST_MARKER, force_document=True)
+    marker = await client.send_file(channel, data, caption=(MANIFEST_MARKER + ":" + tracking_caption if tracking_caption else MANIFEST_MARKER), force_document=True)
     if progress:
         progress(st.st_size, st.st_size)
     return marker
@@ -147,7 +147,7 @@ async def download_document(client, channel, message_id, size, output_path):
     if not message or not message.media:
         raise HTTPException(404, "Arquivo ou manifesto indisponível no Telegram.")
     destination = Path(output_path)
-    if message.message != MANIFEST_MARKER:
+    if not (message.message or "").startswith(MANIFEST_MARKER):
         if getattr(message.file, "size", None) != size:
             raise HTTPException(502, "Tamanho remoto diferente do catálogo.")
         with destination.open("wb") as output:
@@ -166,24 +166,21 @@ async def download_document(client, channel, message_id, size, output_path):
                 raise HTTPException(502, "Parte do arquivo ausente ou com tamanho incorreto no Telegram.")
             digest = hashlib.sha256()
             received = 0
-            # Telethon downloads to a file-like target; it does not need to
-            # stage every part in RAM or allocate a second full-size file.
-            class CheckedOutput:
-                def write(self, block):
-                    nonlocal received
-                    received += len(block)
-                    if received > part["size"]:
-                        raise HTTPException(502, "Parte maior que o tamanho esperado.")
-                    digest.update(block)
-                    whole.update(block)
-                    return output.write(block)
-                def flush(self):
-                    return output.flush()
-                def seek(self, *args):
-                    return output.seek(*args)
-                def tell(self):
-                    return output.tell()
-            await client.download_media(chunk, file=CheckedOutput())
+            # Stage only one part at a time; a file-like seek must never
+            # overwrite already verified earlier bytes in the destination.
+            with tempfile.TemporaryDirectory(prefix=".dc-restore-") as tmp:
+                part_path = Path(tmp) / "part.bin"
+                with part_path.open("xb") as part_out:
+                    os.chmod(part_path, 0o600)
+                    await client.download_media(chunk, file=part_out)
+                if part_path.stat().st_size != part["size"]:
+                    raise HTTPException(502, "Tamanho incorreto na parte recuperada.")
+                with part_path.open("rb") as part_in:
+                    for block in iter(lambda: part_in.read(READ_BYTES), b""):
+                        received += len(block)
+                        digest.update(block)
+                        whole.update(block)
+                        output.write(block)
             if received != part["size"] or digest.hexdigest() != part["sha256"]:
                 raise HTTPException(502, "Uma parte do arquivo falhou na verificação SHA-256.")
         output.flush()
