@@ -221,6 +221,18 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
     router = APIRouter(prefix="/api/sync")
     active_runs = set()
 
+    @router.get("/activity")
+    async def activity():
+        """Non-blocking activity probe.
+
+        Folder listing uses the account lock, held throughout Telegram uploads.
+        Returning only active folder IDs here lets the desktop keep its last
+        known rows visible and report live activity without blocking on upload.
+        This route is reachable only through the loopback-only application.
+        """
+        return {"active_folder_ids": sorted(active_runs)}
+
+
     async def refresh_catalog_impl(client, account, channel):
         """Append-only union of bounded channel snapshots; must hold account lock."""
         messages = []
