@@ -1195,7 +1195,11 @@ function SyncPages({section,onToast}){
    });
    if(result.already_exists){setError('Esta pasta do computador já está vinculada. Remova o vínculo antigo antes de alterá-lo.');return}
    setPath('');setSelectedRoot('');setRemoteName('');setNewMode('backup');setAutoStart(false);setPreview(null);await refresh();
-   onToast?.({kind:'success',message:'Vínculo criado: Meu Drive / '+result.remote_path+'. '+(autoStart?'Sincronização automática ativada.':'Clique em Sincronizar agora para iniciar.'),duration:7000});
+   if(result.catalog_snapshot_saved===false){
+    onToast?.({kind:'info',message:'Vínculo local criado, mas o catálogo remoto não foi atualizado. Em Backups, clique em Salvar catálogo no Telegram.',duration:9000});
+   }else{
+    onToast?.({kind:'success',message:'Vínculo criado: Meu Drive / '+result.remote_path+'. '+(autoStart?'Sincronização automática ativada.':'Clique em Sincronizar agora para iniciar.'),duration:7000});
+   }
   }catch(e){setError(e.message)}finally{setBusy(false)}
  }
  async function runOne(folder){
