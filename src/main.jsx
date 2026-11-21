@@ -1175,8 +1175,12 @@ function BackupPages({section,onToast}){
  {(section==='backups'||section==='backupSchedule')&&<div className="dc-module-section"><div><h3>Backup do catálogo</h3><p>Faça uma cópia agora ou programe snapshots automáticos.</p></div><button className="dc-module-primary" disabled={loading} onClick={snapshot}><DatabaseBackup size={17}/>{loading?'Processando...':'Criar backup agora'}</button><div className="dc-schedule-controls"><label htmlFor="backup-frequency">Frequência</label><select className="dc-native-select" id="backup-frequency" disabled={loading||!status} value={frequency} onChange={e=>schedule(e.target.value)}><option value="off">Desativado</option><option value="daily">Diariamente</option><option value="weekly">Semanalmente</option></select><small>O computador e o backend precisam permanecer ligados para executar no horário programado.</small></div></div>}
  {(section==='backups'||section==='backupHistory')&&<div className="dc-module-section"><div><h3>Histórico de backups</h3><p>Baixe o JSON para guardar uma cópia fora do computador.</p></div><div className="dc-history-list">{history.length?history.map(x=><div className="dc-history-row" key={x.id}><DatabaseBackup size={19}/><div><strong>{new Date(x.created*1000).toLocaleString('pt-BR')}</strong><small>{x.item_count} registros • {size(x.bytes)} • {x.source==='scheduled'?'Automático':'Manual'}</small></div><a href={base+'/history/'+encodeURIComponent(x.id)+'/download'} title="Baixar snapshot"><Download size={17}/> Baixar</a></div>):<p className="dc-empty-message">Ainda não existem cópias do catálogo.</p>}</div></div>}</div>
 }
-function SyncPages({section,onToast}){
- const [folders,setFolders]=useState([]),[path,setPath]=useState(''),[preview,setPreview]=useState(null),[busy,setBusy]=useState(false),[running,setRunning]=useState(null),[error,setError]=useState(''),[lastResult,setLastResult]=useState(null);
+// Reuse the last successful folder snapshot when navigating away and back.
+// Cache by Telegram account: never display another account's directory paths.
+const syncFolderSnapshots = new Map();
+function SyncPages({section,onToast,accountId}){
+ const cacheKey=accountId||'unknown';
+ const [folders,setFolders]=useState(()=>syncFolderSnapshots.get(cacheKey)||[]),[initialLoading,setInitialLoading]=useState(()=>!syncFolderSnapshots.has(cacheKey)),[activityIds,setActivityIds]=useState([]),[refreshPending,setRefreshPending]=useState(false),[path,setPath]=useState(''),[preview,setPreview]=useState(null),[busy,setBusy]=useState(false),[running,setRunning]=useState(null),[error,setError]=useState(''),[lastResult,setLastResult]=useState(null);
  const [remoteFolders,setRemoteFolders]=useState([]),[selectedRoot,setSelectedRoot]=useState(''),[remoteName,setRemoteName]=useState(''),[newMode,setNewMode]=useState('backup'),[autoStart,setAutoStart]=useState(false),[pullPreview,setPullPreview]=useState(null),[pullResult,setPullResult]=useState(null);
  async function request(endpoint,method='GET',payload){
   const response=await fetch(backendOrigin+'/api/sync'+endpoint,{method,headers:payload?{'Content-Type':'application/json'}:undefined,body:payload?JSON.stringify(payload):undefined});
@@ -1184,10 +1188,56 @@ function SyncPages({section,onToast}){
   if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'Falha no serviço de sincronização.');
   return data;
  }
- async function refresh(){
-  try{const [data,remote]=await Promise.all([request('/folders'),request('/remote-folders')]);setFolders(data.folders||[]);setRemoteFolders(remote.folders||[])}catch(e){setError(e.message)}
+ async function refresh(silent=false){
+  if(!silent)setRefreshPending(true);
+  try{
+   const [data,remote]=await Promise.all([request('/folders'),request('/remote-folders')]);
+   const next=data.folders||[];
+   syncFolderSnapshots.set(cacheKey,next);
+   setFolders(next);
+   setRemoteFolders(remote.folders||[]);
+   setInitialLoading(false);
+   if(!silent)setError('');
+  }catch(e){
+   // An upload holds the backend account lock. Never replace a successful
+   // folder snapshot with an empty array during transient failures.
+   if(!silent)setError(e.message);
+  }finally{if(!silent)setRefreshPending(false)}
  }
- useEffect(()=>{refresh()},[]);
+ useEffect(()=>{
+  let live=true;
+  let previousActive=false;
+  let pendingRequest=false;
+  let listingRequest=false;
+  async function pollActivity(){
+   if(!live||pendingRequest)return;
+   pendingRequest=true;
+   try{
+    const r=await fetch(backendOrigin+'/api/sync/activity',{cache:'no-store'});
+    if(r.ok){
+     const data=await r.json();
+     if(!live)return;
+     const active=Array.isArray(data.active_folder_ids)?data.active_folder_ids:[];
+     setActivityIds(active);
+     if(previousActive&&active.length===0&&!listingRequest){
+      listingRequest=true;
+      refresh(true).finally(()=>{listingRequest=false});
+      window.dispatchEvent(new Event('drive-cloud-catalog-updated'));
+     }
+     previousActive=active.length>0;
+    }
+   }catch{}finally{pendingRequest=false}
+  }
+  void refresh(true);
+  void pollActivity();
+  const activityTimer=setInterval(pollActivity,2500);
+  const listTimer=setInterval(()=>{
+   if(!live||listingRequest||previousActive)return;
+   listingRequest=true;
+   refresh(true).finally(()=>{listingRequest=false});
+  },15000);
+  return()=>{live=false;clearInterval(activityTimer);clearInterval(listTimer)};
+ },[cacheKey]);
  async function browseFolder(){
   setError('');setPreview(null);
   try{
@@ -1330,11 +1380,11 @@ function SyncPages({section,onToast}){
    </div>
   </div>}
   <div className="dc-module-section"><h3>{section==='devices'?'Pastas neste dispositivo':section==='syncActivity'?'Atividade de backup':'Pastas configuradas'}</h3><p>O Drive Cloud envia e recupera até três arquivos por execução; no modo duas direções, consulta os snapshots do catálogo e preserva arquivos divergentes com nomes diferentes. O monitoramento automático roda a cada dois minutos quando ativado.</p>
-   <div className="dc-folder-sync-list">{folders.length?folders.map(folder=><div className="dc-folder-sync-item" key={folder.id}><div className="dc-folder-sync-title"><Folder size={19}/><div><strong>{folder.path.split(/[\\/]/).filter(Boolean).at(-1)||folder.path}</strong><small title={folder.path}>PC: {folder.path}</small><small className={'dc-sync-mapped-destination'+(!folder.remote_available?' is-missing':'')} title={folder.remote_path}>Meu Drive: {folder.remote_path}</small></div></div>
-    <div className="dc-folder-sync-actions"><span>{folder.enabled?'Sincronização automática ativada':'Sincronização automática desativada'}{folder.last_run?' • Última execução: '+new Date(folder.last_run*1000).toLocaleString('pt-BR'):''}</span><button disabled={!!running||busy} onClick={()=>runOne(folder)}>{running===folder.id?'Enviando...':'Sincronizar agora'}</button><button type="button" disabled={!!running||busy} onClick={()=>previewRemote(folder)}>Recuperar do Telegram</button><div className="dc-sync-mode"><span>Modo</span><DriveMenuSelect label={'Modo de sincronização de '+folder.path}
-      value={folder.mode||'backup'} onChange={value=>setMode(folder,value)} disabled={!!running||busy} icon={RefreshCw}
+   <div className="dc-folder-sync-list">{initialLoading&&!folders.length?<p className="dc-empty-message" role="status"><RefreshCw size={15} className="dc-sync-spinning"/> Carregando pastas configuradas... Se houver uma transferência em andamento, elas aparecerão ao finalizar a consulta.</p>:folders.length?folders.map(folder=><div className="dc-folder-sync-item" key={folder.id}><div className="dc-folder-sync-title"><Folder size={19}/><div><strong>{folder.path.split(/[\\/]/).filter(Boolean).at(-1)||folder.path}</strong><small title={folder.path}>PC: {folder.path}</small><small className={'dc-sync-mapped-destination'+(!folder.remote_available?' is-missing':'')} title={folder.remote_path}>Meu Drive: {folder.remote_path}</small></div></div>
+    <div className="dc-folder-sync-actions"><span>{activityIds.includes(folder.id)?<span className="dc-sync-running-indicator" role="status"><RefreshCw size={13} className="dc-sync-spinning"/> Sincronizando automaticamente...</span>:running===folder.id?<span className="dc-sync-running-indicator" role="status"><RefreshCw size={13} className="dc-sync-spinning"/> Sincronizando agora...</span>:folder.enabled?'Sincronização automática ativada':'Sincronização automática desativada'}{folder.last_run?' • Última execução: '+new Date(folder.last_run*1000).toLocaleString('pt-BR'):''}</span><button disabled={!!running||busy||activityIds.length>0} onClick={()=>runOne(folder)}>{running===folder.id||activityIds.includes(folder.id)?'Sincronizando...':'Sincronizar agora'}</button><button type="button" disabled={!!running||busy||activityIds.length>0} onClick={()=>previewRemote(folder)}>Recuperar do Telegram</button><div className="dc-sync-mode"><span>Modo</span><DriveMenuSelect label={'Modo de sincronização de '+folder.path}
+      value={folder.mode||'backup'} onChange={value=>setMode(folder,value)} disabled={!!running||busy||activityIds.length>0} icon={RefreshCw}
       options={[{value:'backup',label:'Backup (PC → Telegram)',hint:'Enviar arquivos novos e alterados do computador'},
-       {value:'two-way',label:'Duas direções (PC ↔ Telegram)',hint:'Enviar alterações e recuperar arquivos remotos sem sobrescrever'}]}/></div><label><input type="checkbox" disabled={!!running||busy} checked={!!folder.enabled} onChange={e=>toggleAuto(folder,e.target.checked)}/> Automático</label><button type="button" disabled={!!running||busy} onClick={()=>removeOne(folder)}>Remover da lista</button></div>
+       {value:'two-way',label:'Duas direções (PC ↔ Telegram)',hint:'Enviar alterações e recuperar arquivos remotos sem sobrescrever'}]}/></div><label><input type="checkbox" disabled={!!running||busy||activityIds.length>0} checked={!!folder.enabled} onChange={e=>toggleAuto(folder,e.target.checked)}/> Automático</label><button type="button" disabled={!!running||busy||activityIds.length>0} onClick={()=>removeOne(folder)}>Remover da lista</button></div>
     {folder.last_error&&<small className="dc-sync-error">{folder.last_error}</small>}</div>):<p className="dc-empty-message">Nenhuma pasta configurada neste dispositivo.</p>}</div>
    {pullPreview&&<div className="dc-folder-preview"><strong>Recuperação de {pullPreview.folder.path.split(/[\\/]/).filter(Boolean).at(-1)}</strong><p>{pullPreview.pending} arquivo(s) para verificar • até {pullPreview.conflicts_possible} possíveis conflitos • {pullPreview.over_limit} acima do limite.</p><small>O Drive Cloud preserva as versões locais. Arquivos divergentes serão salvos com o sufixo (Telegram-...). Não haverá exclusões.</small><button className="dc-module-primary" onClick={()=>pullRemote(pullPreview.folder)} disabled={!!running||busy||!pullPreview.pending}>Confirmar recuperação</button></div>}
    {pullResult&&<p className="dc-sync-result">Recuperação: {pullResult.downloaded} baixados, {pullResult.identical} iguais, {pullResult.conflicts} conflitos preservados. {pullResult.remaining_estimate} pendentes estimados.</p>}
@@ -1517,7 +1567,7 @@ return <div className="shell"><aside className="rail"><div className="logo" titl
 </div></div></aside>
 <main><header><button className="mobile-toggle" onClick={()=>setMobile(!mobile)}>☰</button>{section==='cloudFiles'&&<button className="new" title="Criar pasta no Meu Drive" onClick={()=>{nav('cloudFiles');setCreateFolderToken(n=>n+1)}}><Plus size={18}/> Novo</button>}{['cloudFiles','home','recent','starred'].includes(section)&&<div className="search"><Search size={18}/><input placeholder="Buscar arquivos e pastas..." value={query} onChange={e=>setQuery(e.target.value)}/></div>}<span className="avatar" title={telegramConnected?"Conta Telegram conectada":"Drive Cloud"}>DC{telegramConnected&&telegramAccountId&&<img key={telegramAccountId} src={backendOrigin+"/api/telegram/avatar?account="+encodeURIComponent(telegramAccountId)} alt="Foto do perfil Telegram" onError={e=>{e.currentTarget.style.display="none"}}/>}</span></header>
 <div className="content"><div className="heading"><div><h1>{trail.length&&section==='files'?trail.at(-1).name:label}</h1>{!driveSections.includes(section)&&<p>{section==='telegram'?'Gerencie a conta e o canal privado usados pelo Drive.':area==='backups'?'Agendamentos e histórico de cópias do catálogo.':area==='sync'?'Gerencie as opções de sincronização entre dispositivos.':'Preferências e segurança do Drive Cloud.'}</p>}</div></div>
-<div style={{display:driveSections.includes(section)?'block':'none'}}><CloudFiles mode={section==='cloudFiles'?'files':driveSections.includes(section)?section:'files'} globalSearch={query} onToast={showToast} onDeletionProgress={setDeletionProgress} createFolderToken={createFolderToken} onCatalogChange={setCloudTree} onFolderChange={updateDriveFolder} folderTarget={folderTarget} onInitialReady={()=>setInitialReady(true)} onNavigateFolder={id=>nav('cloudFiles',id)} onConfigureSharing={()=>nav('publicSharing')}/></div>{section==='telegram'?<TelegramSettings onToast={showToast}/>:['backups','backupSchedule','backupHistory'].includes(section)?<BackupPages section={section} onToast={showToast}/>:['sync','devices','syncActivity'].includes(section)?<SyncPages section={section} onToast={showToast}/>:['settings','security','preferences','publicSharing'].includes(section)?<SettingsPages section={section} onToast={showToast}/>:!driveSections.includes(section)&&!['backups','backupSchedule','backupHistory','sync','devices','syncActivity','settings','security','preferences'].includes(section)?<><div className="toolbar"><div className="chips"><button onClick={()=>nav('recent')}><Clock3 size={15}/> Recentes</button><button onClick={()=>nav('starred')}><Star size={15}/> Favoritos</button></div><div className="toggle"><button aria-label="Modo grade" className={view==='grid'?'chosen':''} onClick={()=>setView('grid')}><Grid2X2 size={18}/></button><button aria-label="Modo lista" className={view==='list'?'chosen':''} onClick={()=>setView('list')}><List size={18}/></button></div></div>
+<div style={{display:driveSections.includes(section)?'block':'none'}}><CloudFiles mode={section==='cloudFiles'?'files':driveSections.includes(section)?section:'files'} globalSearch={query} onToast={showToast} onDeletionProgress={setDeletionProgress} createFolderToken={createFolderToken} onCatalogChange={setCloudTree} onFolderChange={updateDriveFolder} folderTarget={folderTarget} onInitialReady={()=>setInitialReady(true)} onNavigateFolder={id=>nav('cloudFiles',id)} onConfigureSharing={()=>nav('publicSharing')}/></div>{section==='telegram'?<TelegramSettings onToast={showToast}/>:['backups','backupSchedule','backupHistory'].includes(section)?<BackupPages section={section} onToast={showToast}/>:['sync','devices','syncActivity'].includes(section)?<SyncPages section={section} onToast={showToast} accountId={telegramAccountId}/>:['settings','security','preferences','publicSharing'].includes(section)?<SettingsPages section={section} onToast={showToast}/>:!driveSections.includes(section)&&!['backups','backupSchedule','backupHistory','sync','devices','syncActivity','settings','security','preferences'].includes(section)?<><div className="toolbar"><div className="chips"><button onClick={()=>nav('recent')}><Clock3 size={15}/> Recentes</button><button onClick={()=>nav('starred')}><Star size={15}/> Favoritos</button></div><div className="toggle"><button aria-label="Modo grade" className={view==='grid'?'chosen':''} onClick={()=>setView('grid')}><Grid2X2 size={18}/></button><button aria-label="Modo lista" className={view==='list'?'chosen':''} onClick={()=>setView('list')}><List size={18}/></button></div></div>
 {visible.length===0?<div className="empty"><Folder size={50}/><h3>Nenhum arquivo por aqui</h3><p>{['shared','sync','backupHistory','backupSchedule','devices','syncActivity','settings','telegram','security','preferences','publicSharing'].includes(section)?'Este recurso será adicionado em uma próxima etapa.':'Envie arquivos ou crie uma pasta para começar.'}</p></div>:view==='grid'?<div className="grid">{visible.map(i=><article key={i.id} className="tile"><button className="more" aria-label={'Opções de '+i.name} onClick={()=>{const action=window.prompt('Ação: '+(i.trashed?'restaurar, excluir':'abrir, favorito, lixeira'));if(!action)return;if(action==='abrir')open(i);else act(i,({favorito:'star',lixeira:'trash',restaurar:'restore',excluir:'delete'})[action]||action)}}><MoreHorizontal size={20}/></button><div className="tile-icon" onDoubleClick={()=>open(i)}><IconFile item={i} large/></div><button className="tile-name" onClick={()=>open(i)} title={i.name}>{i.name}</button><small>{i.kind==='folder'?'Pasta':size(i.size)} {i.starred?'★':''}</small></article>)}</div>:<div className="table-scroll"><div className="table"><div className="table-head"><span>Nome</span><span>Modificado</span><span>Tamanho</span><span>Ações</span></div>{visible.map(i=><div className="table-row" key={i.id}><button onClick={()=>open(i)}><IconFile item={i}/><span>{i.name} {i.starred?'★':''}</span></button><span>{date(i.time)}</span><span>{i.kind==='folder'?'—':size(i.size)}</span><div className="row-actions">{i.trashed?<><button title="Restaurar" onClick={()=>act(i,'restore')}>↶</button><button title="Excluir definitivamente" onClick={()=>act(i,'delete')}><Trash2 size={16}/></button></>:<><button title="Favorito" onClick={()=>act(i,'star')}><Star size={16} fill={i.starred?'#bca3f2':'none'}/></button><button title="Mover para lixeira" onClick={()=>act(i,'trash')}><Trash2 size={16}/></button></>}</div></div>)}</div></div>}
 </>:null}<footer>{['cloudFiles','home','recent','starred'].includes(section)?'Arquivos no Telegram • Catálogo armazenado neste dispositivo':'Mantenha outra cópia dos arquivos importantes'} <span>Drive Cloud</span></footer></div></main><input ref={input} type="file" multiple hidden onChange={e=>upload([...e.target.files])}/><DriveToast toast={deletionProgress?null:toast} progress={deletionProgress} onDismiss={()=>setToast(null)}/>{!initialReady&&<div className="dc-initial-splash" role="status" aria-label="Carregando Drive Cloud" aria-busy="true"><DriveBrandLoader/></div>}</div>}
 const params=new URLSearchParams(window.location.search);
