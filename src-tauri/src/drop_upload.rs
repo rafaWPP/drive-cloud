@@ -44,7 +44,7 @@ fn safe_dragged_file(path: &Path, application_data: &Path) -> Result<(PathBuf, S
             }
         }
     }
-    let filename = resolved.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let filename = resolved.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
     if filename.is_empty() || filename.starts_with('.') ||
         filename.len() > 180 || filename.contains('/') || filename.contains('\\') ||
         filename.chars().any(|c| c.is_control()) {
@@ -57,7 +57,7 @@ fn safe_dragged_file(path: &Path, application_data: &Path) -> Result<(PathBuf, S
     if metadata.len() == 0 {
         return Err("Arquivo vazio não pode ser enviado ao Telegram.".to_string());
     }
-    Ok((resolved, filename.to_string(), metadata.len()))
+    Ok((resolved, filename, metadata.len()))
 }
 
 fn send_file(client: &reqwest::blocking::Client, origin: &str,
