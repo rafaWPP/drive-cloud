@@ -22,7 +22,8 @@ from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
 DB_PATH = (Path(os.environ["DRIVE_CLOUD_DATA_DIR"]).expanduser() if os.environ.get("DRIVE_CLOUD_DATA_DIR") else Path(__file__).resolve().parent / ".data") / "files.sqlite3"
-MAX_SIZE = 512 * 1024 * 1024  # Bounded 512 MiB per file; Telegram handles 512 KiB transfer parts.
+from telegram_limits import FREE_MAX_FILE, PREMIUM_MAX_FILE, upload_limit, readable_limit
+MAX_SIZE = PREMIUM_MAX_FILE  # Absolute request cap; account tier is checked before sending.
 MAX_PREVIEW_SIZE = 20 * 1024 * 1024  # RAM-backed previews remain deliberately small.
 # Transient progress is local to the running backend process.
 UPLOAD_PROGRESS = {}
@@ -114,7 +115,7 @@ def build_router(authorized_account, channel_links, lock):
             with connection() as db:
                 rows = db.execute("SELECT * FROM nodes WHERE account=? ORDER BY kind DESC, name COLLATE NOCASE",
                                   (account,)).fetchall()
-                return {"items": [as_item(r) for r in rows], "max_upload_bytes": MAX_SIZE}
+                return {"items": [as_item(r) for r in rows], "max_upload_bytes": await upload_limit((await authorized_account())[0])}
 
     @router.post("/folders")
     async def create_folder(body: FolderInput):
@@ -150,10 +151,10 @@ def build_router(authorized_account, channel_links, lock):
                 uuid.UUID(upload_id)
             except ValueError:
                 raise HTTPException(422, "Identificador de upload inválido.")
-        # This pilot limits files to 20 MiB. Use chunked transfers in a later version.
         async with lock:
             client, account = await authorized_account()
             cid = channel_id(channel_links, account)
+            max_size = await upload_limit(client)
             with connection() as db:
                 parent_valid(db, account, parent)
             name = os.path.basename((file.filename or "arquivo").replace("\\", "/"))[:180]
@@ -169,12 +170,12 @@ def build_router(authorized_account, channel_links, lock):
                 with target.open("xb") as output:
                     os.chmod(target, 0o600)
                     while True:
-                        chunk = await file.read(min(1024 * 1024, MAX_SIZE - total_bytes + 1))
+                        chunk = await file.read(min(1024 * 1024, max_size - total_bytes + 1))
                         if not chunk:
                             break
                         total_bytes += len(chunk)
-                        if total_bytes > MAX_SIZE:
-                            raise HTTPException(413, "Limite atual: 512 MB por arquivo.")
+                        if total_bytes > max_size:
+                            raise HTTPException(413, "Limite desta conta Telegram: " + readable_limit(max_size) + " por arquivo.")
                         output.write(chunk)
                 update_upload_progress(upload_id, "telegram", 0, total_bytes)
                 def report_progress(sent, total):
