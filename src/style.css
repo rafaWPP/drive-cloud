@@ -1681,3 +1681,9 @@ main>header .search{flex:1 1 320px;max-width:465px}
 .dc-public-controls>button:not(.dc-module-primary),.dc-public-stage>button:not(.dc-module-primary){padding:8px 13px;border:1px solid #565d69;background:#30353e;border-radius:8px;color:#e4e9f2}
 .dc-public-controls button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:720px){.dc-public-steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Keep configured folders visible while Telegram is uploading. */
+.dc-sync-running-indicator{display:inline-flex;align-items:center;gap:6px;color:#9ec7ff;font-weight:650}
+.dc-sync-spinning{animation:dc-sync-rotation 1.25s linear infinite;flex-shrink:0}
+@keyframes dc-sync-rotation{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.dc-sync-spinning{animation:none}}
