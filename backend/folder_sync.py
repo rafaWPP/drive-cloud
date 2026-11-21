@@ -20,6 +20,7 @@ from sync_reconcile import (remote_tree, safe_relative, decision, get_remote_fil
                             install_download, MAX_DOWNLOADS_PER_RUN)
 
 from storage_api import MAX_SIZE, DB_PATH, connection, channel_id
+from telegram_limits import upload_limit
 from catalog_merge import merge_catalog
 from catalog_telegram import MARKER, MAX_SNAPSHOT_BYTES, decode_catalog, send_catalog_snapshot
 
@@ -91,7 +92,7 @@ def source_root(path: str) -> Path:
     return root
 
 
-def scan_folder(root: Path):
+def scan_folder(root: Path, max_size: int = MAX_SIZE):
     """Enumerate regular, non-symlink files with a bounded memory footprint."""
     items = []
     oversized = 0
@@ -110,7 +111,7 @@ def scan_folder(root: Path):
                     continue
                 if not path.is_file():
                     continue
-                if st.st_size > MAX_SIZE:
+                if st.st_size > max_size:
                     oversized += 1
                     continue
                 items.append((path.relative_to(root).as_posix(), st.st_size, st.st_mtime_ns))
@@ -291,10 +292,13 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
     @router.post("/folders/preview")
     async def preview_folder(body: FolderRequest):
         root = source_root(body.path)
-        files, oversized = await asyncio.to_thread(scan_folder, root)
+        async with lock:
+            client, _ = await authorized_account()
+            max_size = await upload_limit(client)
+        files, oversized = await asyncio.to_thread(scan_folder, root, max_size)
         # Never reveal the contents of any file or write them on preview.
         return {"path": str(root), "files": len(files), "bytes": sum(x[1] for x in files),
-                "over_limit": oversized, "max_file_bytes": MAX_SIZE}
+                "over_limit": oversized, "max_file_bytes": max_size}
 
     @router.get("/remote-folders")
     async def remote_folders():
@@ -423,7 +427,8 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                 if not folder:
                     raise HTTPException(404, "Pasta de sincronização não encontrada.")
                 root = source_root(folder["path"])
-                files, oversized = await asyncio.to_thread(scan_folder, root)
+                max_size = await upload_limit((await authorized_account())[0])
+                files, oversized = await asyncio.to_thread(scan_folder, root, max_size)
                 pending = pending_files(db, folder, files)
                 return {"pending": len(pending), "pending_bytes": sum(x[1] for x in pending),
                         "over_limit": oversized, "batch_limit": MAX_UPLOADS_PER_RUN,
@@ -445,7 +450,8 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                         raise HTTPException(404, "Pasta de sincronização não encontrada.")
                     remote_folder_path(db, account, folder["root_node"])
                     root = source_root(folder["path"])
-                    files, oversized = await asyncio.to_thread(scan_folder, root)
+                    max_size = await upload_limit(client)
+                    files, oversized = await asyncio.to_thread(scan_folder, root, max_size)
                     pending = pending_files(db, folder, files)
                 sent = 0
                 for rel, size, mtime in pending[:MAX_UPLOADS_PER_RUN]:
