@@ -75,13 +75,39 @@ fn send_file(client: &reqwest::blocking::Client, origin: &str,
     if let Some(folder) = parent {
         form = form.text("parent", folder.to_owned());
     }
+    // The localhost backend enforces an allowlist for the Origin header on
+    // every write. Native reqwest does not set Origin automatically, unlike
+    // browser fetch. Keep this exact desktop-origin value aligned with
+    // backend/server.py's ALLOWED list.
     let response = client.post(format!("{origin}/api/cloud/upload"))
+        .header(reqwest::header::ORIGIN, "http://tauri.localhost")
         .multipart(form)
         .send()
-        .map_err(|_| "Falha de conexão com o serviço local durante o upload.".to_string())?;
+        .map_err(|error| {
+            // A connection may fail after Telegram accepted the file. Never
+            // automatically retry such uploads: check the Drive catalog first.
+            if error.is_timeout() {
+                "O upload excedeu o tempo de espera do serviço local. Verifique o Meu Drive antes de reenviar.".to_string()
+            } else if error.is_connect() {
+                "O serviço local do Drive Cloud está desconectado. Reinicie o aplicativo e tente novamente.".to_string()
+            } else {
+                format!(
+                    "Conexão interrompida durante o upload ({}). Verifique se o arquivo apareceu no Meu Drive antes de tentar novamente.",
+                    error
+                )
+            }
+        })?;
     if !response.status().is_success() {
-        return Err(format!("Conector recusou o envio (HTTP {}). Verifique a conexão Telegram.",
-                           response.status().as_u16()));
+        let status = response.status();
+        // Do not leak raw backend content to the UI. FastAPI includes a
+        // controlled 'detail' on non-2xx responses; limit its length.
+        let detail = response.text().unwrap_or_default();
+        let message = serde_json::from_str::<serde_json::Value>(&detail)
+            .ok()
+            .and_then(|value| value.get("detail").and_then(|value| value.as_str()).map(str::to_owned))
+            .unwrap_or_else(|| "Verifique a conexão com o Telegram e tente novamente.".to_string());
+        return Err(format!("Falha no upload (HTTP {}): {}",
+                           status.as_u16(), message.chars().take(220).collect::<String>()));
     }
     Ok(())
 }
