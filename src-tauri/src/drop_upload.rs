@@ -10,7 +10,9 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const MAX_BYTES: u64 = 512 * 1024 * 1024;
+// Upper bound for Telegram Premium. The backend checks the account's
+// actual 2 GB or 4 GB allowance before accepting a file.
+const MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024 - 1024 * 1024;
 const MAX_DROP_FILES: usize = 50;
 
 #[derive(Serialize)]
@@ -51,7 +53,7 @@ fn safe_dragged_file(path: &Path, application_data: &Path) -> Result<(PathBuf, S
         return Err("Nome de arquivo inválido ou oculto. Selecione outro arquivo.".to_string());
     }
     if metadata.len() > MAX_BYTES {
-        return Err("Arquivo maior que o limite atual de 512 MiB.".to_string());
+        return Err("Arquivo maior que o limite máximo de 4 GB do Telegram.".to_string());
     }
     // The server does not currently support empty Telegram files.
     if metadata.len() == 0 {
