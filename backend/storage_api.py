@@ -110,12 +110,13 @@ def build_router(authorized_account, channel_links, lock):
     @router.get("/items")
     async def items():
         async with lock:
-            _, account = await authorized_account()
+            client, account = await authorized_account()
             channel_id(channel_links, account)
+            max_size = await upload_limit(client)
             with connection() as db:
                 rows = db.execute("SELECT * FROM nodes WHERE account=? ORDER BY kind DESC, name COLLATE NOCASE",
                                   (account,)).fetchall()
-                return {"items": [as_item(r) for r in rows], "max_upload_bytes": await upload_limit((await authorized_account())[0])}
+                return {"items": [as_item(r) for r in rows], "max_upload_bytes": max_size}
 
     @router.post("/folders")
     async def create_folder(body: FolderInput):
