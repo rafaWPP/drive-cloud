@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri_plugin_dialog::DialogExt;
 
-const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_DOWNLOAD_BYTES: u64 = 4 * 1024 * 1024 * 1024 - 1024 * 1024;
 
 fn valid_id(value: &str) -> bool {
     let raw = value.as_bytes();
@@ -61,7 +61,7 @@ fn save_stream(origin: &str, file_id: &str, expected_size: u64, destination: &Pa
         return Err("Identificador de arquivo inválido.".to_string());
     }
     if expected_size > MAX_DOWNLOAD_BYTES {
-        return Err("Arquivo maior que o limite atual de download (512 MB).".to_string());
+        return Err("Arquivo maior que o limite atual de download (4 GB).".to_string());
     }
     if destination.exists() {
         return Err("O destino já existe. Escolha outro nome para preservar seus arquivos.".to_string());
