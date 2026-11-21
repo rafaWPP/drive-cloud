@@ -123,8 +123,6 @@ def parse_manifest(raw, expected_size):
         not 0 < expected <= MAX_FILE_BYTES or
         not isinstance(parts, list) or not 2 <= len(parts) <= 20):
         raise HTTPException(502, "Tamanho ou partes inválidas no manifesto.")
-    if sum(p.get("size", -1) for p in parts if isinstance(p, dict)) != expected:
-        raise HTTPException(502, "Tamanho das partes não confere com o arquivo.")
     for part in parts:
         if (not isinstance(part, dict) or
             not isinstance(part.get("message_id"), int) or isinstance(part["message_id"], bool) or part["message_id"] <= 0 or
@@ -132,6 +130,8 @@ def parse_manifest(raw, expected_size):
             not isinstance(part.get("sha256"), str) or len(part["sha256"]) != 64 or
             any(c not in "0123456789abcdef" for c in part["sha256"])):
             raise HTTPException(502, "Referência de parte inválida.")
+    if sum(p["size"] for p in parts) != expected:
+        raise HTTPException(502, "Tamanho das partes não confere com o arquivo.")
     if len({p["message_id"] for p in parts}) != len(parts):
         raise HTTPException(502, "Partes duplicadas no manifesto.")
     if (not isinstance(payload.get("sha256"), str) or
