@@ -21,6 +21,7 @@ from sync_reconcile import (remote_tree, safe_relative, decision, get_remote_fil
 
 from storage_api import MAX_SIZE, DB_PATH, connection, channel_id
 from telegram_limits import upload_limit
+from multipart_telegram import send_document, MAX_FILE_BYTES
 from catalog_merge import merge_catalog
 from catalog_telegram import MARKER, MAX_SNAPSHOT_BYTES, decode_catalog, send_catalog_snapshot
 
@@ -92,7 +93,7 @@ def source_root(path: str) -> Path:
     return root
 
 
-def scan_folder(root: Path, max_size: int = MAX_SIZE):
+def scan_folder(root: Path, max_size: int = MAX_FILE_BYTES):
     """Enumerate regular, non-symlink files with a bounded memory footprint."""
     items = []
     oversized = 0
@@ -294,7 +295,7 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
         root = source_root(body.path)
         async with lock:
             client, _ = await authorized_account()
-            max_size = await upload_limit(client)
+            max_size = MAX_FILE_BYTES
         files, oversized = await asyncio.to_thread(scan_folder, root, max_size)
         # Never reveal the contents of any file or write them on preview.
         return {"path": str(root), "files": len(files), "bytes": sum(x[1] for x in files),
@@ -427,7 +428,7 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                 if not folder:
                     raise HTTPException(404, "Pasta de sincronização não encontrada.")
                 root = source_root(folder["path"])
-                max_size = await upload_limit((await authorized_account())[0])
+                max_size = MAX_FILE_BYTES
                 files, oversized = await asyncio.to_thread(scan_folder, root, max_size)
                 pending = pending_files(db, folder, files)
                 return {"pending": len(pending), "pending_bytes": sum(x[1] for x in pending),
@@ -450,7 +451,7 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                         raise HTTPException(404, "Pasta de sincronização não encontrada.")
                     remote_folder_path(db, account, folder["root_node"])
                     root = source_root(folder["path"])
-                    max_size = await upload_limit(client)
+                    max_size = MAX_FILE_BYTES
                     files, oversized = await asyncio.to_thread(scan_folder, root, max_size)
                     pending = pending_files(db, folder, files)
                 sent = 0
@@ -467,10 +468,9 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                     if before.st_size != size or before.st_mtime_ns != mtime:
                         continue
                     try:
-                        message = await client.send_file(
-                            telegram_channel, str(original), force_document=True,
-                            caption="Drive Cloud • backup de pasta",
-                            part_size_kb=512,
+                        message = await send_document(
+                            client, telegram_channel, original, Path(rel).name,
+                            mimetypes.guess_type(rel)[0] or "application/octet-stream",
                         )
                     except Exception as exc:
                         with connection() as db:
@@ -581,7 +581,7 @@ def build_folder_sync_router(authorized_account, channel_links, lock):
                 actions = []
                 over_limit = 0
                 for rel, item in sorted(remote.items()):
-                    if item["size"] > MAX_SIZE:
+                    if item["size"] > MAX_FILE_BYTES:
                         over_limit += 1
                         continue
                     destination = safe_relative(root, tuple(rel.split("/")))
